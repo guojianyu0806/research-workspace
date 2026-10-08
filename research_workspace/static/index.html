@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#165f63">
+  <title>研序 · Research Workspace</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8l-5-5Zm0 0v6h5M8 13h8M8 17h6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 10a8 8 0 1 0-1 7M20 4v6h-6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 5v16M3 4c4-1 6-1 9 1 3-2 5-2 9-1v15c-4-1-6-1-9 2-3-3-5-3-9-2Z"/></symbol>
+  </svg>
+
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="研序工作区首页">
+      <span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span class="brand-name">研序</span>
+      <span class="brand-english">RESEARCH<br>WORKSPACE</span>
+    </a>
+    <div class="header-caption">论文在这里，证据有出处。</div>
+    <div class="header-actions">
+      <span class="connection-state" id="connectionState"><span class="connection-dot"></span><span id="connectionText">连接中</span></span>
+      <button class="button button-primary" id="uploadButton" type="button"><svg class="icon"><use href="#i-upload"></use></svg><span>导入 PDF</span></button>
+    </div>
+    <input class="visually-hidden" id="fileInput" type="file" accept="application/pdf,.pdf" multiple tabindex="-1" aria-label="选择 PDF 文件">
+  </header>
+
+  <div class="app-notice" id="appNotice" role="status" hidden><span id="noticeText"></span><button class="icon-button" id="dismissNotice" type="button" aria-label="关闭提示"><svg class="icon"><use href="#i-close"></use></svg></button></div>
+
+  <nav class="mobile-navigation" aria-label="工作区视图">
+    <button type="button" data-view="library" aria-pressed="true"><svg class="icon"><use href="#i-file"></use></svg>文献</button>
+    <button type="button" data-view="reader" aria-pressed="false"><svg class="icon"><use href="#i-book"></use></svg>阅读</button>
+    <button type="button" data-view="evidence" aria-pressed="false"><svg class="icon"><use href="#i-search"></use></svg>证据</button>
+  </nav>
+
+  <main class="workspace" id="workspace" data-mobile-view="library">
+    <aside class="library-panel panel" id="libraryPanel" aria-label="文献库">
+      <div class="panel-heading"><div><span class="eyebrow">LIBRARY</span><h1>我的文献 <span class="count-label" id="documentCount">—</span></h1></div></div>
+      <label class="library-search input-with-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><span class="visually-hidden">按文件名查找文献</span><input id="documentFilter" type="search" placeholder="查找已导入的文献" autocomplete="off"></label>
+      <button class="drop-zone" id="dropZone" type="button"><svg class="icon" aria-hidden="true"><use href="#i-upload"></use></svg><span>拖放 PDF 到这里<span id="uploadLimit">或点击选择文件</span></span></button>
+      <div class="upload-status" id="uploadStatus" role="status" hidden></div>
+      <div class="document-list" id="documentList" aria-label="已导入文献" aria-busy="true"></div>
+      <div class="library-footer"><span class="small-dot" aria-hidden="true"></span><span id="libraryFooter">正在连接工作区</span></div>
+    </aside>
+
+    <section class="reader-panel panel" aria-label="原文阅读">
+      <div class="reader-heading">
+        <div class="reader-title-group"><span class="eyebrow">READ & TRACE</span><h2 id="readerTitle">原文阅读</h2><div class="reader-subtitle" id="readerSubtitle">从文献到证据，保留每一处原文位置。</div></div>
+        <button class="icon-button reparse-button" id="reparseButton" type="button" disabled title="重新提取文字，保留已有结果" aria-label="重新提取文字"><svg class="icon"><use href="#i-retry"></use></svg></button>
+      </div>
+      <div class="reader-toolbar" id="readerToolbar" hidden>
+        <span class="reader-mode">原文</span>
+        <form class="page-navigation" id="pageForm">
+          <button class="icon-button" id="previousPage" type="button" disabled aria-label="上一页"><svg class="icon"><use href="#i-left"></use></svg></button>
+          <label><span class="visually-hidden">页码</span><input id="pageNumber" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="跳转到页码"></label><span class="page-total" id="pageTotal">/ —</span>
+          <button class="icon-button" id="nextPage" type="button" disabled aria-label="下一页"><svg class="icon"><use href="#i-right"></use></svg></button>
+        </form>
+        <span class="page-fit-label">适合宽度</span>
+      </div>
+      <div class="reader-message" id="readerMessage" role="status" hidden></div>
+      <div class="reader-viewport" id="readerViewport">
+        <div class="reader-empty" id="readerEmpty">
+          <div class="empty-paper" aria-hidden="true"><span></span><span></span><span></span><span></span><i></i></div>
+          <span class="eyebrow">YOUR RESEARCH STARTS HERE</span>
+          <h2>从一篇论文开始</h2>
+          <p>导入 PDF，阅读原文，<br>查找可回到出处的证据。</p>
+          <button class="button button-primary" id="emptyUploadButton" type="button"><svg class="icon"><use href="#i-upload"></use></svg>导入第一篇论文</button>
+          <span class="empty-footnote">文件不会在这里被修改或覆盖</span>
+        </div>
+        <div class="page-loading" id="pageLoading" role="status" hidden><span class="spinner" aria-hidden="true"></span><span>正在打开这一页</span></div>
+        <div class="page-error" id="pageError" hidden><svg class="icon" aria-hidden="true"><use href="#i-file"></use></svg><p id="pageErrorText"></p><button class="button button-secondary" id="retryPageButton" type="button">重新打开</button></div>
+        <figure class="paper-page" id="paperPage" hidden><img id="pageImage" alt="论文原文页面"><div class="evidence-highlight" id="evidenceHighlight" hidden><span>原文证据</span></div></figure>
+      </div>
+      <div class="reader-footer" id="readerFooter"><svg class="icon" aria-hidden="true"><use href="#i-book"></use></svg><span id="readerFooterText">原文与检索证据将在这里关联</span></div>
+    </section>
+
+    <aside class="evidence-panel panel" aria-label="证据检索">
+      <div class="panel-heading"><div><span class="eyebrow">EVIDENCE</span><h2>查找原文证据</h2></div><span class="mode-badge">关键词检索</span></div>
+      <form class="evidence-form" id="searchForm">
+        <label class="field-label" for="searchQuery">你想在论文中找到什么？</label>
+        <div class="query-input"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input id="searchQuery" type="search" placeholder="输入术语、作者或原文片段" autocomplete="off" required></div>
+        <div class="search-options"><label for="searchScope" class="visually-hidden">检索范围</label><select id="searchScope"><option value="all">全部已导入文献</option><option value="current" id="currentScopeOption" disabled>当前文献</option></select><button class="button button-primary" id="searchButton" type="submit">查找证据<svg class="icon"><use href="#i-arrow"></use></svg></button></div>
+        <p class="search-explanation" id="searchExplanation">按关键词查找原文片段，结果保留出处。这里不会生成没有来源的回答。</p>
+      </form>
+      <div class="results-heading" id="resultsHeading" hidden><span id="resultsTitle"></span><button class="text-button" id="clearSearchButton" type="button">清除</button></div>
+      <div class="search-results" id="searchResults" aria-live="polite" aria-busy="false">
+        <div class="search-empty"><div class="evidence-empty-icon" aria-hidden="true"><svg class="icon"><use href="#i-search"></use></svg><span></span><span></span></div><h3>让每个发现，都有出处</h3><p>输入论文中出现的关键词。<br>点击匹配片段，回到对应原文。</p><div class="search-tip">想找具体细节？<br>试试方法名称、参数或一句原文。</div></div>
+      </div>
+      <div class="evidence-footer"><span class="source-mark" aria-hidden="true"></span><span>来源片段 · 页码定位 · 原文核对</span></div>
+    </aside>
+  </main>
+</body>
+</html>
