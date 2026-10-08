@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import os
 import sqlite3
 import subprocess
 import sys
@@ -9,10 +10,73 @@ import threading
 import time
 
 from fastapi.testclient import TestClient
+import pytest
 
 from research_workspace.api import create_app
 from research_workspace.discovery import DiscoveryService
 from research_workspace.library import Library, _schema_lock
+
+
+@pytest.mark.skipif(os.name != 'nt',reason='Windows byte-range lock regression')
+def test_schema_initial_byte_is_flushed_only_after_owning_system_lock(tmp_path,monkeypatch):
+    """Inject the exact competitor-before-flush interleaving from the failure."""
+    import msvcrt
+
+    actual_open,actual_locking = Path.open,msvcrt.locking
+    owners = set()
+    guarded_flushes = []
+
+    def locking(descriptor,mode,count):
+        result = actual_locking(descriptor,mode,count)
+        if mode == msvcrt.LK_NBLCK:
+            owners.add(descriptor)
+        elif mode == msvcrt.LK_UNLCK:
+            owners.discard(descriptor)
+        return result
+
+    class FlushInterleaving:
+        def __init__(self,path,handle):
+            self.path,self.handle = path,handle
+
+        def __getattr__(self,name):
+            return getattr(self.handle,name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self,*args):
+            return self.handle.__exit__(*args)
+
+        def flush(self):
+            if self.handle.fileno() in owners:
+                guarded_flushes.append(self.path)
+                return self.handle.flush()
+            # Deterministically let a competing handle own byte zero immediately
+            # before an unguarded initializer flushes its buffered first byte.
+            with actual_open(self.path,'a+b') as competitor:
+                competitor.seek(0)
+                actual_locking(competitor.fileno(),msvcrt.LK_NBLCK,1)
+                try:
+                    return self.handle.flush()
+                finally:
+                    competitor.seek(0)
+                    actual_locking(competitor.fileno(),msvcrt.LK_UNLCK,1)
+
+    def open_file(path,*args,**kwargs):
+        handle = actual_open(path,*args,**kwargs)
+        return FlushInterleaving(path,handle) if path.name.endswith('.schema.lock') else handle
+
+    monkeypatch.setattr(Path,'open',open_file)
+    monkeypatch.setattr(msvcrt,'locking',locking)
+    # Prove that the injected interleaving reproduces the observed Windows error.
+    with pytest.raises(PermissionError):
+        with (tmp_path/'legacy.schema.lock').open('a+b') as handle:
+            handle.write(b'\0')
+            handle.flush()
+    with _schema_lock(tmp_path/'fresh.sqlite3'):
+        assert (tmp_path/'.fresh.sqlite3.schema.lock').stat().st_size == 1
+    assert guarded_flushes == [tmp_path/'.fresh.sqlite3.schema.lock']
+    assert not owners
 
 
 def test_concurrent_first_open_initializes_both_databases_once(tmp_path):

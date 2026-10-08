@@ -44,9 +44,6 @@ def _schema_lock(database_path: Path, *, timeout: float = 30.0):
     """
     lock_path = database_path.with_name('.'+database_path.name+'.schema.lock')
     with lock_path.open('a+b') as handle:
-        if lock_path.stat().st_size == 0:
-            handle.write(b'\0')
-            handle.flush()
         deadline = time.monotonic()+timeout
         while True:
             handle.seek(0)
@@ -65,6 +62,12 @@ def _schema_lock(database_path: Path, *, timeout: float = 30.0):
                     raise LibraryError('工作空间正在初始化，请稍后重试。') from None
                 time.sleep(.025)
         try:
+            # Windows permits locking a range beyond EOF. Initialize the byte
+            # only after ownership: a pre-lock buffered flush can otherwise
+            # collide with another initializer that already locked byte zero.
+            if lock_path.stat().st_size == 0:
+                handle.write(b'\0')
+                handle.flush()
             yield
         finally:
             handle.seek(0)
