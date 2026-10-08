@@ -10,7 +10,8 @@ import pytest
 
 from research_workspace.intelligence import (
     AnswerPayload, ChatCompletionProvider, IntelligenceService, ModelConfig,
-    ModelNotConfigured, ModelOutputError, ModelProviderError, tokenize,
+    ModelNotConfigured, ModelOutputError, ModelProviderError, protect_text,
+    restore_text, split_protected_text, tokenize,
 )
 from research_workspace.library import Library
 
@@ -100,14 +101,25 @@ def test_authentication_error_does_not_retry_or_echo_body():
     assert len(calls) == 1 and "fixture-not-a-real-key" not in str(caught.value)
 
 
-def test_timeout_retries_are_bounded():
+def test_read_timeout_is_not_automatically_replayed():
     calls = []
     def handler(request):
         calls.append(1)
         raise httpx.ReadTimeout("private request information", request=request)
     with pytest.raises(ModelProviderError) as caught:
         run(provider(handler).generate("test", {}, AnswerPayload))
-    assert len(calls) == 3 and "private request" not in str(caught.value)
+    assert len(calls) == 1 and "private request" not in str(caught.value)
+    assert "结果未知" in str(caught.value)
+
+
+def test_connection_failure_retries_are_bounded():
+    calls = []
+    def handler(request):
+        calls.append(1)
+        raise httpx.ConnectError("private network information",request=request)
+    with pytest.raises(ModelProviderError):
+        run(provider(handler).generate("test",{},AnswerPayload))
+    assert len(calls)==3
 
 
 def test_invalid_model_schema_gets_only_finite_repair():
@@ -174,3 +186,150 @@ def test_comparison_requires_evidence_from_each_selected_document(library):
     result = run(service.answer("encoder parameters", [first, second], mode="compare"))
     assert result["status"] == "insufficient_evidence" and result["missing_document_ids"] == [second]
     assert calls == []
+
+
+def translation_echo(request):
+    payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+    return envelope({"translated_text": payload["text"]})
+
+
+def test_translation_preserves_code_math_references_and_numbers(library):
+    source = "Result 12.5% on 2026 data [11].\n`value = 7` and $x^2 + y$.\n```python\ncount = 20\n```\nhttps://example.invalid/a1"
+    service = IntelligenceService(library, provider(translation_echo))
+    result = run(service.translate_text(source, target_language="en"))
+    assert result["source_text"] == source and result["translated_text"] == source
+    assert result["prompt_version"] and result["trace"]
+
+
+@pytest.mark.parametrize("mutation", ["delete", "duplicate", "new_number"])
+def test_translation_rejects_marker_or_number_corruption(library, mutation):
+    def handler(request):
+        payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+        text = payload["text"]
+        if mutation == "delete":
+            text = "Deleted all preserved values"
+        elif mutation == "duplicate":
+            text = text + text
+        else:
+            text = text + " 999"
+        return envelope({"translated_text": text})
+    with pytest.raises(ModelOutputError):
+        run(IntelligenceService(library, provider(handler)).translate_text("The parameter is 100.", target_language="zh"))
+
+
+def test_long_translation_reports_segments_without_truncating(library):
+    source = ("A sentence about research. " * 410) + "Last value is 0.998."
+    progress = []
+    result = run(IntelligenceService(library, provider(translation_echo)).translate_text(source, progress=progress.append))
+    assert len(result["segments"]) >= 3
+    assert "".join(segment["source_text"] for segment in result["segments"]) == source
+    assert result["translated_text"].endswith("Last value is 0.998.")
+    assert len(progress) == len(result["segments"])
+
+
+def test_translation_scope_reports_missing_pages_and_binds_real_block(library):
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((40, 80), "Real source has 12 layers [1].")
+        pdf.new_page()
+        doc = library.import_document(pdf.tobytes(), "mixed.pdf")["document"]
+    library.process_next_job()
+    service = IntelligenceService(library, provider(translation_echo))
+    selection = service.list_translation_blocks(doc["id"])
+    assert selection["total_pages"] == 2 and selection["parsed_pages"] == 1
+    assert selection["missing_pages"] == [{"page": 2, "status": "no_extractable_text"}]
+    block = selection["blocks"][0]
+    block["text"] = "Injected content"
+    translated = run(service.translate_block(block))
+    assert translated["block_id"] == block["block_id"]
+    assert translated["source_text"] == "Real source has 12 layers [1]."
+    progress = []
+    result = run(service.translate(doc["id"], progress=progress.append))
+    assert result["status"] == "partial" and result["completed_blocks"] == 1
+    assert progress[0]["block_id"] == block["block_id"]
+
+
+def test_translation_callback_can_cancel_without_losing_completed_result(library):
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((40, 80), "First source text")
+        pdf.new_page().insert_text((40, 80), "Second source text")
+        doc = library.import_document(pdf.tobytes(), "two-pages.pdf")["document"]
+    library.process_next_job()
+    calls, completed = [], []
+    def handler(request):
+        calls.append(1)
+        return translation_echo(request)
+    def on_progress(block):
+        completed.append(block)
+        raise asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        run(IntelligenceService(library, provider(handler)).translate(doc["id"], progress=on_progress))
+    assert len(calls) == 1 and len(completed) == 1
+    assert completed[0]["page"] == 1
+
+
+def test_split_does_not_cut_protected_marker():
+    source = "中" * 3990 + "123.45" + "文" * 20
+    protected, replacements = protect_text(source)
+    chunks = split_protected_text(protected)
+    assert "".join(chunks) == protected
+    assert "".join(restore_text(chunk, replacements) for chunk in chunks) == source
+
+
+def synthesis_reply(request):
+    payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+    source = payload["evidence"][0]
+    claim = {"text": source["text"], "citations": [{"evidence_id": source["evidence_id"], "quote": source["text"]}]}
+    headings = ["Abstract", "Introduction", "Related Work"] if payload["task"] == "draft" else ["Supported background"]
+    architecture = {"nodes": [{"id": "Input", "label": "Input text"}, {"id": "Model", "label": "Proposed model"}],
+                    "edges": [{"source": "Input", "target": "Model"}]} if payload["task"] == "draft" else None
+    return envelope({"status": "generated", "sections": [{"heading": heading, "claims": [claim],
+        "proposed_work": "An untested proposal" if payload["task"] == "draft" else ""} for heading in headings],
+        "message": "", "architecture": architecture})
+
+
+@pytest.mark.parametrize("kind", ["review", "future_work", "draft"])
+def test_synthesis_sources_are_constructed_from_actual_documents(library, kind):
+    document_id = import_pdf(library, "Future work needs better encoder evaluation. Abstract results are limited.", "actual.pdf")
+    result = run(IntelligenceService(library, provider(synthesis_reply)).synthesize(kind, [document_id], instruction="encoder evaluation"))
+    assert result["status"] == "generated" and result["references"][0]["filename"] == "actual.pdf"
+    assert result["references"][0]["document_id"] == document_id
+    assert result["prompt_version"] and result["trace"]
+    if kind == "future_work":
+        assert result["future_work_verification"] == "evidence_insufficient"
+        assert result["search_time_range"] is None
+    if kind == "draft":
+        assert "## Abstract" in result["content"] and "## References" in result["content"]
+        assert result["architecture"]["edges"][0] == {"source": "Input", "target": "Model"}
+        assert result["architecture_status"] == "proposed_design_not_experimental_evidence"
+
+
+def test_unknown_citation_in_synthesis_is_rejected(library):
+    document_id = import_pdf(library, "Abstract encoder result")
+    def handler(request):
+        return envelope({"status": "generated", "sections": [{"heading": "Summary", "claims": [
+            {"text": "Unsupported", "citations": [{"evidence_id": "unknown", "quote": "Fabricated"}]}],
+            "proposed_work": ""}], "message": "", "architecture": None})
+    with pytest.raises(ModelOutputError):
+        run(IntelligenceService(library, provider(handler)).synthesize("review", [document_id]))
+
+
+def test_all_model_operations_report_unconfigured(library):
+    service = IntelligenceService(library, ChatCompletionProvider(ModelConfig()))
+    operations = [service.translate_text("source"), service.translate_block({}), service.translate("unknown"),
+                  service.synthesize("review", ["unknown"])]
+    for operation in operations:
+        with pytest.raises(ModelNotConfigured):
+            run(operation)
+
+
+def test_provider_rejects_truncated_completion():
+    calls = []
+    def handler(request):
+        calls.append(1)
+        request_payload = json.loads(request.content)
+        assert request_payload["max_tokens"] == 8192
+        return httpx.Response(200, json={"choices": [{"finish_reason": "length", "message": {
+            "content": json.dumps({"status": "insufficient_evidence", "claims": [], "message": "truncated"})}}]})
+    with pytest.raises(ModelOutputError, match="截断"):
+        run(provider(handler).generate("test", {}, AnswerPayload))
+    assert len(calls) == 3
