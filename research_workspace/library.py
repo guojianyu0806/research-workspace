@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import sqlite3
 import threading
@@ -76,8 +78,25 @@ class Library:
                 );
                 CREATE INDEX IF NOT EXISTS runs_status ON parse_runs(status, created_at);
                 CREATE INDEX IF NOT EXISTS blocks_run_page ON blocks(run_id, page);
+                CREATE TABLE IF NOT EXISTS version_families (
+                    id TEXT PRIMARY KEY, current_document_id TEXT, created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS version_relations (
+                    id TEXT PRIMARY KEY, family_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL, other_id TEXT NOT NULL,
+                    action TEXT NOT NULL, created_at TEXT NOT NULL
+                );
                 """
             )
+            db.execute("BEGIN IMMEDIATE")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(documents)")}
+            for name, definition in {
+                "authors": "TEXT NOT NULL DEFAULT '[]'",
+                "archived_at": "TEXT",
+                "version_family_id": "TEXT",
+            }.items():
+                if name not in columns:
+                    db.execute(f"ALTER TABLE documents ADD COLUMN {name} {definition}")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -108,6 +127,10 @@ class Library:
         if row is None:
             raise KeyError(document_id)
         result = dict(row)
+        result["authors"] = json.loads(result["authors"])
+        family = db.execute("SELECT current_document_id FROM version_families WHERE id=?",
+                            (result["version_family_id"],)).fetchone()
+        result["is_current_version"] = not family or family[0] is None or family[0] == document_id
         result.pop("storage_name")
         current_id = result.pop("current_run_id")
         result["current_run"] = self._run(db, current_id) if current_id else None
@@ -183,10 +206,152 @@ class Library:
             self._new_run(db, document_id, page_count)
             return {"document": self._document(db, document_id), "duplicate": False}
 
-    def list_documents(self) -> list[dict]:
+    def list_documents(self, include_archived: bool = False) -> list[dict]:
         with self._connection() as db:
-            ids = db.execute("SELECT id FROM documents ORDER BY created_at DESC").fetchall()
+            clause = "" if include_archived else " WHERE archived_at IS NULL"
+            ids = db.execute("SELECT id FROM documents" + clause + " ORDER BY created_at DESC").fetchall()
             return [self._document(db, row[0]) for row in ids]
+
+    def update_metadata(self, document_id: str, *, title: str | None = None,
+                        authors: list[str] | None = None) -> dict:
+        if title is not None and (not isinstance(title, str) or not title.strip() or len(title) > 1000):
+            raise LibraryError("标题必须为1至1000个字符。")
+        if authors is not None and (not isinstance(authors, list) or len(authors) > 200 or
+                any(not isinstance(name, str) or not name.strip() or len(name) > 200 for name in authors)):
+            raise LibraryError("作者必须为非空姓名列表，每个姓名最多200个字符。")
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._document(db, document_id)
+            if title is not None:
+                db.execute("UPDATE documents SET title=? WHERE id=?", (title.strip(), document_id))
+            if authors is not None:
+                db.execute("UPDATE documents SET authors=? WHERE id=?",
+                           (json.dumps([name.strip() for name in authors], ensure_ascii=False), document_id))
+            return self._document(db, document_id)
+
+    def archive_document(self, document_id: str) -> dict:
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._document(db, document_id)
+            db.execute("UPDATE documents SET archived_at=COALESCE(archived_at,?) WHERE id=?", (_now(), document_id))
+            return self._document(db, document_id)
+
+    def restore_document(self, document_id: str) -> dict:
+        with self._connection() as db:
+            self._document(db, document_id)
+            db.execute("UPDATE documents SET archived_at=NULL WHERE id=?", (document_id,))
+            return self._document(db, document_id)
+
+    def _evidence_blocks(self, document_id: str) -> list[dict]:
+        with self._connection() as db:
+            doc = self._document(db, document_id)
+            run = doc["available_run"] or doc["current_run"]
+            return [dict(row) | {"document_id": document_id, "bbox": json.loads(row["bbox"])}
+                    for row in db.execute(
+                        "SELECT id AS block_id,run_id,page,text,bbox FROM blocks WHERE run_id=? ORDER BY page,ordinal",
+                        (run["id"],),
+                    )]
+
+    def _version_signature(self, document_id: str) -> dict:
+        doc = self.get_document(document_id)
+        blocks = self._evidence_blocks(document_id)
+        body = _normalize(" ".join(block["text"] for block in blocks))
+        identity = None
+        arxiv_pattern = r"(\d{4}\.\d{4,5}|[a-z][a-z.\-]+/\d{7})(?:v(\d+))?"
+        # Filename ids are only accepted as the complete stem; body ids require
+        # the explicit arXiv label, avoiding ordinary numeric text matches.
+        match = re.fullmatch(arxiv_pattern, Path(doc["filename"]).stem, re.I)
+        source = "filename"
+        if not match:
+            match = re.search(r"\barxiv\s*:\s*" + arxiv_pattern, body[:12000], re.I)
+            source = "first_pages_text"
+        if match:
+            identity = {"id": match[1].lower(), "version": int(match[2]) if match[2] else None,
+                        "source": source}
+        tokens = re.findall(r"\w+", body)
+        # Five-word shingle overlap is a content fingerprint, not an assertion
+        # that thematic similarity establishes paper identity.
+        shingles = {hashlib.blake2b(" ".join(tokens[i:i + 5]).encode(), digest_size=8).hexdigest()
+                    for i in range(max(0, len(tokens) - 4))}
+        return {"document": doc, "arxiv": identity, "shingles": shingles,
+                "token_count": len(tokens), "body_sha256": hashlib.sha256(body.encode()).hexdigest() if body else None}
+
+    def find_version_candidates(self, document_id: str) -> list[dict]:
+        source = self._version_signature(document_id)
+        candidates = []
+        for document in self.list_documents():
+            if document["id"] == document_id:
+                continue
+            other = self._version_signature(document["id"])
+            same_id = bool(source["arxiv"] and other["arxiv"] and source["arxiv"]["id"] == other["arxiv"]["id"])
+            union = source["shingles"] | other["shingles"]
+            similarity = len(source["shingles"] & other["shingles"]) / len(union) if union else 0
+            exact_body = bool(source["body_sha256"] and source["body_sha256"] == other["body_sha256"])
+            enough_body = min(source["token_count"], other["token_count"]) >= 60
+            if not (same_id or (enough_body and (similarity >= 0.8 or exact_body))):
+                continue
+            conflicting_ids = bool(source["arxiv"] and other["arxiv"] and not same_id)
+            candidates.append({"document": document, "arxiv": other["arxiv"],
+                               "source_arxiv": source["arxiv"], "body_similarity": round(similarity, 4),
+                               "body_fingerprint_equal": exact_body, "conflicting_identifiers": conflicting_ids,
+                               "reason": "same_arxiv_id" if same_id else "high_body_overlap",
+                               "requires_confirmation": True,
+                               "limitations": "正文重合和标识均为候选依据，不能自动证明同一论文。"})
+        return sorted(candidates, key=lambda item: (item["reason"] == "same_arxiv_id", item["body_similarity"]), reverse=True)
+
+    def confirm_version_relation(self, document_id: str, other_id: str, *, action: str = "keep_both") -> dict:
+        if document_id == other_id or action not in {"keep_both", "use_document", "use_other"}:
+            raise LibraryError("请选择不同文档及有效的版本保留方式。")
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            left, right = self._document(db, document_id), self._document(db, other_id)
+            selected = document_id if action == "use_document" else other_id if action == "use_other" else None
+            if selected and (left if selected == document_id else right)["archived_at"]:
+                raise LibraryError("请先恢复归档文档，再将其设为当前版本。")
+            family_id = left["version_family_id"] or right["version_family_id"] or uuid4().hex
+            db.execute("INSERT OR IGNORE INTO version_families(id,created_at) VALUES (?,?)", (family_id, _now()))
+            for document in (left, right):
+                previous_family = document["version_family_id"]
+                if previous_family and previous_family != family_id:
+                    db.execute("UPDATE documents SET version_family_id=? WHERE version_family_id=?", (family_id, previous_family))
+                    db.execute("UPDATE version_relations SET family_id=? WHERE family_id=?", (family_id, previous_family))
+                db.execute("UPDATE documents SET version_family_id=? WHERE id=?", (family_id, document["id"]))
+            if selected:
+                db.execute("UPDATE version_families SET current_document_id=? WHERE id=?", (selected, family_id))
+            relation = {"id": uuid4().hex, "family_id": family_id, "document_id": document_id,
+                        "other_id": other_id, "action": action, "created_at": _now()}
+            db.execute("INSERT INTO version_relations(id,family_id,document_id,other_id,action,created_at) VALUES (?,?,?,?,?,?)",
+                       tuple(relation.values()))
+            return relation
+
+    def get_version_family(self, document_id: str) -> dict:
+        with self._connection() as db:
+            doc = self._document(db, document_id)
+            family_id = doc["version_family_id"]
+            if not family_id:
+                return {"family_id": None, "current_document_id": document_id, "documents": [doc], "relations": []}
+            current = db.execute("SELECT current_document_id FROM version_families WHERE id=?", (family_id,)).fetchone()[0]
+            ids = db.execute("SELECT id FROM documents WHERE version_family_id=? ORDER BY created_at", (family_id,)).fetchall()
+            relations = [dict(row) for row in db.execute("SELECT * FROM version_relations WHERE family_id=? ORDER BY created_at", (family_id,))]
+            return {"family_id": family_id, "current_document_id": current,
+                    "documents": [self._document(db, row[0]) for row in ids], "relations": relations}
+
+    def compare_versions(self, document_id: str, other_id: str) -> dict:
+        before, after = self._evidence_blocks(document_id), self._evidence_blocks(other_id)
+        if not before or not after:
+            raise LibraryError("两个版本都需要有可提取正文后才能比较。")
+        matcher = SequenceMatcher(a=[_normalize(block["text"]) for block in before],
+                                  b=[_normalize(block["text"]) for block in after], autojunk=False)
+        changes = []
+        for kind, i, j, x, y in matcher.get_opcodes():
+            if kind == "equal":
+                continue
+            for offset in range(max(j - i, y - x)):
+                changes.append({"kind": kind, "before": before[i + offset] if i + offset < j else None,
+                                "after": after[x + offset] if x + offset < y else None})
+        return {"document_id": document_id, "other_id": other_id,
+                "method": "normalized_text_block_diff", "changes": changes,
+                "limitations": ["这是正文块差异，不是语义修订判定。", "换栏、断行和分块变化仍可能形成差异，需核对两侧原文。"]}
 
     def get_document(self, document_id: str) -> dict:
         with self._connection() as db:
@@ -289,6 +454,11 @@ class Library:
             if document_id:
                 filters.append("d.id=?")
                 parameters.append(document_id)
+            elif not run_id:
+                filters.append("d.archived_at IS NULL")
+                filters.append("""NOT EXISTS (SELECT 1 FROM version_families vf
+                    WHERE vf.id=d.version_family_id AND vf.current_document_id IS NOT NULL
+                    AND vf.current_document_id!=d.id)""")
             if run_id:
                 filters.append("r.id=?")
                 parameters.append(run_id)

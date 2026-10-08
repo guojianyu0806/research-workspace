@@ -299,3 +299,80 @@ def test_worker_os_lock_and_cli(library: Library):
     completed = subprocess.run(command, capture_output=True, timeout=20)
     assert completed.returncode == 0, completed.stderr.decode(errors="replace")
     assert library.get_document(doc["id"])["current_run"]["status"] == "completed"
+
+
+def test_metadata_and_reversible_archive_preserve_evidence(library: Library):
+    content = pdf_bytes(["Preserved archive evidence"])
+    doc = library.import_document(content, "archive.pdf")["document"]
+    library.process_next_job()
+    old_page = library.get_page(doc["id"], 1)
+    updated = library.update_metadata(doc["id"], title="A verified title", authors=["Alice", "张三"])
+    assert updated["title"] == "A verified title"
+    assert updated["authors"] == ["Alice", "张三"]
+    assert library.archive_document(doc["id"])["archived_at"]
+    assert library.list_documents() == []
+    assert len(library.list_documents(include_archived=True)) == 1
+    assert library.search("Preserved") == []
+    assert library.search("Preserved", document_id=doc["id"])
+    assert library.get_page(doc["id"], 1) == old_page
+    assert library._source_path(doc["id"]).read_bytes() == content
+    assert library.restore_document(doc["id"])["archived_at"] is None
+    assert len(library.search("Preserved")) == 1
+    with pytest.raises(LibraryError):
+        library.update_metadata(doc["id"], title=" ")
+
+
+def test_arxiv_candidates_require_confirmation_and_current_choice_is_reversible(library: Library):
+    first = library.import_document(pdf_bytes(["Shared experiment result 1"]), "1706.03762v1.pdf")["document"]
+    newer = library.import_document(pdf_bytes(["Shared experiment result 7"]), "1706.03762v7.pdf")["document"]
+    other = library.import_document(pdf_bytes(["Shared subject but an unrelated paper"]), "9999.12345v1.pdf")["document"]
+    while library.process_next_job():
+        pass
+    candidates = library.find_version_candidates(first["id"])
+    assert [candidate["document"]["id"] for candidate in candidates] == [newer["id"]]
+    assert candidates[0]["requires_confirmation"]
+    assert candidates[0]["arxiv"]["version"] == 7
+    assert library.get_document(first["id"])["version_family_id"] is None
+    assert len(library.search("Shared")) == 3
+    relation = library.confirm_version_relation(first["id"], newer["id"], action="keep_both")
+    assert relation["action"] == "keep_both"
+    assert library.get_document(first["id"])["is_current_version"]
+    assert library.get_document(newer["id"])["is_current_version"]
+    assert len(library.search("Shared")) == 3
+    library.confirm_version_relation(first["id"], newer["id"], action="use_other")
+    assert {hit["document_id"] for hit in library.search("Shared")} == {newer["id"], other["id"]}
+    assert library.get_version_family(first["id"])["current_document_id"] == newer["id"]
+    assert library.search("result 1", document_id=first["id"])
+    library.confirm_version_relation(first["id"], newer["id"], action="use_document")
+    assert library.get_document(first["id"])["is_current_version"]
+    assert len(library.get_version_family(first["id"])["relations"]) == 3
+    assert len(list(library.files_dir.glob("*.pdf"))) == 3
+
+
+def test_content_fingerprint_can_find_renamed_versions_without_merging(library: Library):
+    lines = [f"Detailed method {i} measures gradient evidence under fixed conditions." for i in range(12)]
+    first = library.import_document(pdf_bytes(["\n".join(lines)]), "renamed-one.pdf")["document"]
+    second = library.import_document(pdf_bytes(["\n".join(lines) + "\nAdditional measured result."]), "renamed-two.pdf")["document"]
+    unrelated = library.import_document(pdf_bytes(["Another gradient method uses a different training setup."]), "gradient-topic.pdf")["document"]
+    while library.process_next_job():
+        pass
+    found = library.find_version_candidates(first["id"])
+    assert [item["document"]["id"] for item in found] == [second["id"]]
+    assert found[0]["reason"] == "high_body_overlap"
+    assert found[0]["body_similarity"] > 0.8
+    assert library.get_document(unrelated["id"])["version_family_id"] is None
+
+
+def test_version_diff_has_both_original_locations(library: Library):
+    first = library.import_document(pdf_bytes(["Result value is 10."]), "a.pdf")["document"]
+    second = library.import_document(pdf_bytes(["Result value is 20."]), "b.pdf")["document"]
+    while library.process_next_job():
+        pass
+    diff = library.compare_versions(first["id"], second["id"])
+    change = diff["changes"][0]
+    assert "10" in change["before"]["text"]
+    assert "20" in change["after"]["text"]
+    for side in ("before", "after"):
+        evidence = change[side]
+        page = library.get_page(evidence["document_id"], evidence["page"], evidence["run_id"])
+        assert page["blocks"][0]["bbox"] == evidence["bbox"]
