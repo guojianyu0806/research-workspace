@@ -79,6 +79,18 @@ def test_adapter_exact_endpoint_and_schema():
     assert result.status == "insufficient_evidence" and len(seen) == 1
 
 
+def test_deepseek_uses_documented_non_thinking_json_mode():
+    def handler(request):
+        body = json.loads(request.content)
+        assert str(request.url) == 'https://api.deepseek.com/chat/completions'
+        assert body['thinking'] == {'type':'disabled'}
+        assert body['response_format'] == {'type':'json_object'}
+        return envelope({'status':'insufficient_evidence','claims':[],'message':'fixture'})
+    adapter = ChatCompletionProvider(ModelConfig('https://api.deepseek.com','deepseek-flash','fixture-not-real'),
+                                     transport=httpx.MockTransport(handler))
+    assert run(adapter.generate('test',{},AnswerPayload)).status == 'insufficient_evidence'
+
+
 @pytest.mark.parametrize("status", [429, 503])
 def test_rate_or_server_retry_is_bounded(status):
     calls = []

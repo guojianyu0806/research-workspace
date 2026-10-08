@@ -214,12 +214,17 @@ class ChatCompletionProvider:
                                     timeout=httpx.Timeout(self.config.timeout_seconds),
                                     follow_redirects=False, trust_env=False) as client:
             for attempt in range(self.config.max_attempts):
+                request_body = {"model": self.config.model, "messages": messages,
+                                "temperature": 0, "max_tokens": MAX_OUTPUT_TOKENS,
+                                "response_format": {"type": "json_object"}}
+                # The official endpoint enables thinking by default. These bounded
+                # structured tasks use the documented non-thinking mode explicitly.
+                if urlsplit(endpoint).hostname == 'api.deepseek.com':
+                    request_body['thinking'] = {'type': 'disabled'}
                 try:
                     response = await client.post(
                         endpoint, headers={"Authorization": f"Bearer {self.config.api_key}"},
-                        json={"model": self.config.model, "messages": messages,
-                              "temperature": 0, "max_tokens": MAX_OUTPUT_TOKENS,
-                              "response_format": {"type": "json_object"}},
+                        json=request_body,
                     )
                 except (httpx.ConnectTimeout, httpx.ConnectError):
                     if attempt + 1 == self.config.max_attempts:

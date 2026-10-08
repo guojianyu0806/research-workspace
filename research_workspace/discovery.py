@@ -263,6 +263,8 @@ class DiscoveryService:
 
     def _with_import(self, record: dict, db: sqlite3.Connection) -> dict:
         result = dict(record)
+        preference = db.execute('SELECT value FROM preferences WHERE paper_id=?',(record['id'],)).fetchone()
+        result['feedback'] = preference[0] if preference else 0
         imported = db.execute("SELECT * FROM imports WHERE paper_id=?", (record["id"],)).fetchone()
         result["fulltext_status"] = "metadata_only"
         result["document_id"] = None
