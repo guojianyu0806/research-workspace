@@ -246,6 +246,21 @@ class JobStore:
                 result = await self._text_step(service,job)
                 if result is None:
                     return True
+            elif kind=='future_work':
+                from .future_verification import verify_future_work
+                saved = {item.get('stage'):item.get('result') for item in job['completed_items']}
+                if saved.get('future_synthesis') is None:
+                    synthesis = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''))
+                    self.save_item(job_id,'future_synthesis',{'stage':'future_synthesis','result':synthesis},2)
+                    self.event(job_id,'synthesis_saved','已保存原文支持的候选方向；下一轮核验最新公开研究。')
+                    self._yield_step(job_id)
+                    return True
+                if saved.get('future_verification') is not None:
+                    result = saved['future_verification']
+                else:
+                    result = await verify_future_work(self.library,service.provider,saved['future_synthesis'],
+                                                     check_cancel=lambda:self.check_cancel(job_id))
+                    self.save_item(job_id,'future_verification',{'stage':'future_verification','result':result},2)
             else:
                 result = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''))
             # finish atomically observes cancellation but retains a completed response.

@@ -124,7 +124,7 @@ def test_foreign_task_mutations_streams_and_exports_are_rejected(tmp_path):
         assert store.get(job['id'])['status'] == 'failed'
 
 
-@pytest.mark.parametrize('kind', ['qa', 'future_work'])
+@pytest.mark.parametrize('kind', ['qa', 'review'])
 def test_cancel_racing_single_call_retains_result_and_retry_reuses_it(tmp_path, kind):
     store = JobStore(Library(tmp_path))
     job = store.create(kind, {'question': 'fixture', 'document_ids': ['fixture']})

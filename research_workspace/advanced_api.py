@@ -98,12 +98,105 @@ class DiagramInput(StrictInput):
 
 
 def task_markdown(job):
-    result = job['result'] or {'blocks':job['completed_items']}
+    from .discovery import arxiv_identifier
+
+    def plain(value):
+        value = ' '.join(str(value).split())
+        for character in '\\`*_{}[]<>#!|':
+            value = value.replace(character,'\\'+character)
+        return value
+
+    def official_source(source):
+        source_id = source.get('source_id','')
+        identifier = arxiv_identifier(source_id) if isinstance(source_id,str) else None
+        url = source.get('url')
+        label = plain(str(source_id)+' · '+str(source.get('title') or '官方论文页面'))
+        if (identifier and source_id=='arxiv:'+identifier
+                and url in ('https://arxiv.org/abs/'+identifier,'http://arxiv.org/abs/'+identifier)):
+            return f'[{label}]({url})'
+        return plain(source_id)+' · 官方论文链接未通过校验'
+
+    def section_index(direction):
+        index = direction.get('section_index')
+        if isinstance(index,int) and not isinstance(index,bool) and index>=0:
+            return index
+        value = str(direction.get('direction_id',''))
+        if value.startswith('direction-') and value[10:].isdigit():
+            return int(value[10:])-1
+        return -1
+
+    saved = {item.get('stage'):item.get('result') for item in job.get('completed_items',[]) if isinstance(item,dict)}
+    result = (job['result'] or saved.get('future_verification') or saved.get('future_synthesis') or {}) if job['kind']=='future_work' else (job['result'] or {'blocks':job.get('completed_items',[])})
     lines = [f'# {job["kind"]}',f'任务编号：{job["id"]}',f'状态：{job["status"]}','']
+    audit = result.get('future_verification')
+    all_directions = audit.get('directions',[]) if isinstance(audit,dict) else []
+    retained = result.get('retained_directions',[item for item in all_directions if not item.get('excluded')])
+    excluded = result.get('excluded_directions',[item for item in all_directions if item.get('excluded')])
+    excluded_sections = {section_index(item) for item in excluded}
+    if job['kind']=='future_work' and not job['result'] and result:
+        lines.append('以下展示已保存的阶段结果；任务的完成或中断状态以上方记录为准。')
+    if job['kind']=='future_work' and not isinstance(audit,dict):
+        lines.append('**公开摘要核验尚未完成；以下研究设想不能据此认定为未解决方向。**')
     if result.get('answer'):
         lines.append(result['answer'])
-    for section in result.get('sections',[]):
+    if isinstance(audit,dict):
+        status_labels = {'completed':'本次有限核验已完成','partial':'部分方向已形成判定','evidence_insufficient':'证据不足'}
+        direction_labels = {'potentially_addressed':'摘要可能已覆盖','not_found_in_search':'本次检索未发现明确覆盖','evidence_insufficient':'证据不足'}
+        query_labels = {'completed':'检索完成','failed':'检索失败','not_attempted':'未执行','pending':'尚未执行'}
+        sources = {source['source_id']:source for source in audit.get('sources',[])}
+        status = audit.get('status','unknown')
+        lines.extend(['## 公开研究摘要核验',f'核验状态：{status_labels.get(status,"状态未知")}（{plain(status)}）',
+                      plain(audit.get('notice') or '仅对本次返回的公开摘要进行有限判定。'),
+                      '暂移出的方向仍需全文确认；保留方向也不构成研究空白或新颖性证明。',
+                      '### 实际查询与检索记录'])
+        if not audit.get('queries'):
+            lines.append('本次没有可展示的外部查询记录。')
+        for query in audit.get('queries',[]):
+            cache = '使用缓存' if query.get('cached') is True else '非缓存返回' if query.get('cached') is False else '缓存状态未记录'
+            lines.extend([f'#### {plain(query.get("query_id") or "查询")} · {query_labels.get(query.get("status"),"状态未知")}',
+                          '查询词：'+plain(query.get('query') or '未记录'),
+                          '检索记录时间：'+plain(query.get('retrieved_at') or '未取得返回记录')+'；'+cache])
+            if query.get('attempted_at'):
+                lines.append('本次尝试时间：'+plain(query['attempted_at']))
+            lines.append('字段：'+plain(query.get('field') or '未记录')+'；排序：'+plain(query.get('sort_by') or '未记录')
+                         +'；返回上限：'+plain(query.get('limit','未记录')))
+            if query.get('strategy')=='topic_only':
+                lines.append('本条只使用文献题名中的主题词，尚未覆盖方向的全部表达。')
+            if query.get('reason') or query.get('error'):
+                lines.append(plain(query.get('reason') or '本次查询失败，未形成可靠证据。'))
+            for source_id in query.get('source_ids',[]):
+                source = sources.get(source_id)
+                lines.append('- '+(official_source(source) if source else plain(source_id)+' · 来源记录缺失'))
+        for title,directions in [('保留为待验证方向',retained),('暂移出重点候选（需全文确认）',excluded)]:
+            lines.append(f'### {title} · {len(directions)}')
+            if not directions:
+                lines.append('本次没有列入此组的方向；这不构成已解决或研究空白的证明。')
+            for direction in directions:
+                lines.extend(['#### '+plain(direction.get('heading') or direction.get('direction_id') or '研究方向'),
+                              '方向编号：'+plain(direction.get('direction_id',''))+'；判定：'
+                              +direction_labels.get(direction.get('status'),'状态未知'),
+                              '说明：'+plain(direction.get('reason') or '未返回判定说明。')])
+                if direction.get('proposed_work'):
+                    lines.append('原始设想：'+plain(direction['proposed_work']))
+                if direction in excluded:
+                    lines.append('**暂移出重点候选，需阅读全文确认；不等于已解决。**')
+                if not direction.get('citations'):
+                    lines.append('本方向没有可展示的公开摘要引句。')
+                for citation in direction.get('citations',[]):
+                    source = sources.get(citation.get('source_id'))
+                    lines.append('摘要来源：'+(official_source(source) if source else
+                                 plain(citation.get('source_id') or '未知来源')+' · 不在本次核验来源清单中'))
+                    if source:
+                        lines.append('发表时间：'+plain(source.get('published') or '未记录')
+                                     +'；来源记录时间：'+plain(source.get('retrieved_at') or '未记录'))
+                    lines.append('> '+plain(citation.get('quote') or '未返回引句'))
+        for error in audit.get('errors',[]):
+            lines.append('核验提示：'+plain(error.get('code') or '未知状态')+'；'+plain(error.get('message') or '本次核验存在未完成步骤。'))
+        lines.append('## 原始分节内容（保留供核对）')
+    for index,section in enumerate(result.get('sections',[])):
         lines.append('## '+section.get('heading',''))
+        if index in excluded_sections:
+            lines.append('**此方向暂移出重点候选，需全文确认。以下保留原章节供核对，不作为当前推荐方向。**')
         for claim in section.get('claims',[]):
             lines.append(claim.get('text','')+' '+ ' '.join('['+c['evidence_id']+']' for c in claim.get('citations',[])))
         if section.get('proposed_work'):
@@ -115,8 +208,6 @@ def task_markdown(job):
         lines.append(result['translated_text'])
     if result.get('limitations'):
         lines.append('## 使用范围与限制\n\n'+'\n'.join('- '+str(value) for value in result['limitations']))
-    if result.get('future_work_verification')=='evidence_insufficient':
-        lines.append('未来方向核验状态：证据不足；本结果未完成外部最新研究查新，不能据此宣称某方向尚未解决。')
     lines.append('\n## 来源与任务记录\n')
     lines.append('```json\n'+json.dumps(result,ensure_ascii=False,indent=2)+'\n```')
     return '\n\n'.join(lines)
