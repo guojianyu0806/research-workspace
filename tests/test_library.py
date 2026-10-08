@@ -376,3 +376,90 @@ def test_version_diff_has_both_original_locations(library: Library):
         evidence = change[side]
         page = library.get_page(evidence["document_id"], evidence["page"], evidence["run_id"])
         assert page["blocks"][0]["bbox"] == evidence["bbox"]
+
+
+def test_cancel_queued_and_running_jobs_retains_saved_pages(library: Library, monkeypatch):
+    doc = library.import_document(pdf_bytes(["First page", "Second page"]), "cancel.pdf")["document"]
+    queued = library.cancel_run(doc["current_run"]["id"])
+    assert queued["status"] == "cancelled"
+    assert not library.process_next_job()
+    run = library.create_run(doc["id"])
+    original_save = library._save_page
+
+    def save_then_cancel(*args, **kwargs):
+        original_save(*args, **kwargs)
+        library.cancel_run(run["id"])
+
+    monkeypatch.setattr(library, "_save_page", save_then_cancel)
+    library.process_next_job()
+    cancelled = library.get_run(run["id"])
+    assert cancelled["status"] == "cancelled"
+    assert cancelled["pages_done"] == 1
+    assert library.get_page(doc["id"], 1)["text"] == "First page"
+    assert library.get_page(doc["id"], 2)["status"] == "pending"
+    assert library.search("First page")
+    assert library.recover_interrupted_runs() == 0
+
+
+def test_single_page_retry_only_extracts_target_and_preserves_old_run(library: Library, monkeypatch):
+    doc = library.import_document(pdf_bytes(["Page one", "Page two", "Page three"]), "retry.pdf")["document"]
+    original_extract = library._page_blocks
+
+    def fail_second(source_page):
+        if source_page.number == 1:
+            raise ValueError("temporary second-page failure")
+        return original_extract(source_page)
+
+    monkeypatch.setattr(library, "_page_blocks", fail_second)
+    library.process_next_job()
+    source_run = library.get_document(doc["id"])["current_run"]
+    old_pages = [library.get_page(doc["id"], page, source_run["id"]) for page in (1, 2, 3)]
+    seen = []
+
+    def record_target(source_page):
+        seen.append(source_page.number + 1)
+        return original_extract(source_page)
+
+    monkeypatch.setattr(library, "_page_blocks", record_target)
+    retry = library.retry_page(doc["id"], 2, source_run["id"])
+    assert retry["parent_run_id"] == source_run["id"]
+    assert retry["target_pages"] == [2]
+    assert library.get_page(doc["id"], 1, retry["id"])["text"] == "Page one"
+    library.process_next_job()
+    assert seen == [2]
+    assert library.get_run(retry["id"])["status"] == "completed"
+    assert library.search("Page two")[0]["run_id"] == retry["id"]
+    assert [library.get_page(doc["id"], page, source_run["id"]) for page in (1, 2, 3)] == old_pages
+
+
+def test_structure_result_uses_actual_pdf_blocks(library: Library):
+    content = pdf_bytes(["Abstract\nAn evidence based method.\n1 Introduction\nWe build on [1].",
+                         "References\n[1] Alice. Prior method. 2020."])
+    doc = library.import_document(content, "structure.pdf")["document"]
+    library.process_next_job()
+    result = library.get_structure(doc["id"])
+    assert result["references"][0]["citation_ids"]
+    assert result["headings"][1]["title"] == "1 Introduction"
+    evidence = result["citations"][0]["evidence"]
+    source = library.get_page(doc["id"], evidence["page"], evidence["run_id"])
+    assert any(block["id"] == evidence["block_id"] for block in source["blocks"])
+    assert result["processing_status"] == "completed"
+
+
+def test_missing_ocr_configuration_is_explicit_and_does_not_expose_paths(library: Library, monkeypatch, tmp_path):
+    private_path = str(tmp_path / "private-ocr-models")
+    monkeypatch.setenv("RESEARCH_OCR_ENABLED", "1")
+    monkeypatch.setenv("RESEARCH_OCR_TESSDATA", private_path)
+    monkeypatch.setenv("RESEARCH_OCR_LANG", "eng")
+    status = library.ocr_status()
+    assert status["configured"]
+    assert not status["available"]
+    assert private_path not in str(status)
+    assert "path" not in status
+    doc = library.import_document(pdf_bytes([None]), "scan.pdf")["document"]
+    library.process_next_job()
+    page = library.get_page(doc["id"], 1)
+    assert page["status"] == "no_extractable_text"
+    assert "OCR" in page["notice"]
+    assert page["extraction_method"] == "native"
+    assert not page["blocks"]

@@ -8,7 +8,9 @@ from difflib import SequenceMatcher
 import hashlib
 import json
 import math
+import os
 import re
+import shutil
 from pathlib import Path
 import sqlite3
 import threading
@@ -17,11 +19,13 @@ from uuid import uuid4
 
 import pymupdf
 
+from .structure import extract_structure
+
 
 # PyMuPDF objects must never be used concurrently by API threads. The parser runs
 # in a separate process; its lock therefore does not block API rendering.
 MUPDF_LOCK = threading.RLock()
-PARSER_VERSION = f"pymupdf-{pymupdf.VersionBind}/text-blocks-v1"
+PARSER_VERSION = f"pymupdf-{pymupdf.VersionBind}/text-blocks-v2"
 
 
 class LibraryError(ValueError):
@@ -97,6 +101,15 @@ class Library:
             }.items():
                 if name not in columns:
                     db.execute(f"ALTER TABLE documents ADD COLUMN {name} {definition}")
+            for table, additions in {
+                "parse_runs": {"cancel_requested": "INTEGER NOT NULL DEFAULT 0",
+                               "parent_run_id": "TEXT", "target_pages": "TEXT"},
+                "pages": {"extraction_method": "TEXT NOT NULL DEFAULT 'native'", "notice": "TEXT"},
+            }.items():
+                existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+                for name, definition in additions.items():
+                    if name not in existing:
+                        db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -120,7 +133,10 @@ class Library:
         row = db.execute("SELECT * FROM parse_runs WHERE id=?", (run_id,)).fetchone()
         if row is None:
             raise KeyError(run_id)
-        return dict(row)
+        result = dict(row)
+        result["cancel_requested"] = bool(result["cancel_requested"])
+        result["target_pages"] = json.loads(result["target_pages"]) if result["target_pages"] else None
+        return result
 
     def _document(self, db: sqlite3.Connection, document_id: str) -> dict:
         row = db.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
@@ -242,10 +258,12 @@ class Library:
             db.execute("UPDATE documents SET archived_at=NULL WHERE id=?", (document_id,))
             return self._document(db, document_id)
 
-    def _evidence_blocks(self, document_id: str) -> list[dict]:
+    def _evidence_blocks(self, document_id: str, run_id: str | None = None) -> list[dict]:
         with self._connection() as db:
             doc = self._document(db, document_id)
-            run = doc["available_run"] or doc["current_run"]
+            run = self._run(db, run_id) if run_id else doc["available_run"] or doc["current_run"]
+            if run["document_id"] != document_id:
+                raise LibraryError("解析版本不属于指定文档。")
             return [dict(row) | {"document_id": document_id, "bbox": json.loads(row["bbox"])}
                     for row in db.execute(
                         "SELECT id AS block_id,run_id,page,text,bbox FROM blocks WHERE run_id=? ORDER BY page,ordinal",
@@ -361,12 +379,97 @@ class Library:
         with self._connection() as db:
             return self._run(db, run_id)
 
+    def get_structure(self, document_id: str, run_id: str | None = None) -> dict:
+        document = self.get_document(document_id)
+        run_id = run_id or (document["available_run"] or document["current_run"])["id"]
+        result = extract_structure(self._evidence_blocks(document_id, run_id), document_id, run_id)
+        result["processing_status"] = self.get_run(run_id)["status"]
+        return result
+
     def list_runs(self, document_id: str) -> list[dict]:
         with self._connection() as db:
             self._document(db, document_id)
-            return [dict(row) for row in db.execute(
-                "SELECT * FROM parse_runs WHERE document_id=? ORDER BY version DESC", (document_id,)
+            return [self._run(db, row[0]) for row in db.execute(
+                "SELECT id FROM parse_runs WHERE document_id=? ORDER BY version DESC", (document_id,)
             )]
+
+    def cancel_run(self, run_id: str) -> dict:
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            run = self._run(db, run_id)
+            if run["status"] == "queued":
+                db.execute("UPDATE parse_runs SET status='cancelled',cancel_requested=1,completed_at=? WHERE id=?",
+                           (_now(), run_id))
+            elif run["status"] == "running":
+                db.execute("UPDATE parse_runs SET cancel_requested=1 WHERE id=?", (run_id,))
+            return self._run(db, run_id)
+
+    def retry_page(self, document_id: str, page: int, run_id: str | None = None) -> dict:
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            document = self._document(db, document_id)
+            self._validate_page(page, document["page_count"])
+            source_id = run_id or (document["available_run"] or document["current_run"])["id"]
+            source = self._run(db, source_id)
+            if source["document_id"] != document_id:
+                raise LibraryError("解析版本不属于指定文档。")
+            if db.execute("SELECT 1 FROM parse_runs WHERE document_id=? AND status IN ('queued','running')",
+                          (document_id,)).fetchone():
+                raise LibraryError("请等待或取消当前任务后再创建单页重试。")
+            new_id = self._new_run(db, document_id, document["page_count"])
+            db.execute("UPDATE parse_runs SET parent_run_id=?,target_pages=? WHERE id=?",
+                       (source_id, json.dumps([page]), new_id))
+            # Copy-on-write: retained pages get new evidence ids in the new run,
+            # while all source page/block records remain unchanged.
+            db.execute("""INSERT INTO pages(run_id,page,width,height,rotation,status,text,error,extraction_method,notice)
+                          SELECT ?,page,width,height,rotation,status,text,error,extraction_method,notice
+                          FROM pages WHERE run_id=? AND page!=?""", (new_id, source_id, page))
+            old_blocks = db.execute("SELECT * FROM blocks WHERE run_id=? AND page!=?", (source_id, page)).fetchall()
+            db.executemany("INSERT INTO blocks(id,run_id,page,ordinal,text,search_text,bbox) VALUES (?,?,?,?,?,?,?)",
+                           [(uuid4().hex, new_id, item["page"], item["ordinal"], item["text"], item["search_text"], item["bbox"])
+                            for item in old_blocks])
+            self._update_counts(db, new_id)
+            return self._run(db, new_id)
+
+    @staticmethod
+    def _ocr_configuration() -> dict:
+        enabled = os.getenv("RESEARCH_OCR_ENABLED", "auto").lower() not in {"0", "false", "off", "no"}
+        language = os.getenv("RESEARCH_OCR_LANG", "eng")
+        explicit = os.getenv("RESEARCH_OCR_TESSDATA") or os.getenv("TESSDATA_PREFIX")
+        result = {"enabled": enabled, "available": False, "configured": bool(explicit),
+                  "languages": language, "backend": "pymupdf_tesseract", "path": None}
+        if not enabled:
+            return result | {"reason": "OCR已在运行配置中关闭。"}
+        if not re.fullmatch(r"[A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*", language):
+            return result | {"reason": "OCR语言配置无效。"}
+        executable = shutil.which("tesseract")
+        candidates = [Path(explicit)] if explicit else []
+        if not explicit:
+            if executable:
+                candidates.append(Path(executable).parent / "tessdata")
+            candidates.extend([Path("C:/Program Files/Tesseract-OCR/tessdata"),
+                               Path("/usr/share/tesseract-ocr/5/tessdata"), Path("/usr/share/tessdata")])
+        for candidate in candidates:
+            if candidate.is_dir() and all((candidate / f"{name}.traineddata").is_file() for name in language.split("+")):
+                path = str(candidate.resolve())
+                # Tesseract's Windows C file APIs may reject non-ASCII absolute
+                # paths. A relative ASCII path resolves to the same existing data
+                # without moving files or changing the process working directory.
+                if os.name == 'nt' and not path.isascii():
+                    try:
+                        relative = os.path.relpath(candidate.resolve(), Path.cwd())
+                        if relative.isascii():
+                            path = relative
+                    except ValueError:
+                        pass
+                return result | {"available": True, "configured": True, "path": path,
+                                 "reason": "语言数据可读取，实际OCR效果以逐页任务结果为准。"}
+        return result | {"reason": "未找到所需OCR语言数据；请配置已有的Tesseract语言数据目录。未安装或下载任何组件。"}
+
+    def ocr_status(self) -> dict:
+        settings = self._ocr_configuration()
+        settings.pop("path")
+        return settings
 
     def create_run(self, document_id: str) -> dict:
         with self._connection() as db:
@@ -412,7 +515,7 @@ class Library:
                 ]
             else:
                 result = {"run_id": run_id, "page": page, "status": "pending", "blocks": [],
-                          "text": "", "error": None}
+                          "text": "", "error": None, "extraction_method": None, "notice": None}
         if row is None:
             with MUPDF_LOCK, pymupdf.open(self._source_path(document_id)) as pdf:
                 source_page = pdf.load_page(page - 1)
@@ -488,25 +591,26 @@ class Library:
     def recover_interrupted_runs(self) -> int:
         """Only the OS-lock-owning worker may call this startup recovery method."""
         with self._connection() as db:
+            db.execute("UPDATE parse_runs SET status='cancelled',completed_at=? WHERE status='running' AND cancel_requested=1", (_now(),))
             cursor = db.execute(
-                "UPDATE parse_runs SET status='queued', completed_at=NULL WHERE status='running'"
+                "UPDATE parse_runs SET status='queued', completed_at=NULL WHERE status='running' AND cancel_requested=0"
             )
             return cursor.rowcount
 
     def _claim_run(self) -> dict | None:
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT id FROM parse_runs WHERE status='queued' ORDER BY created_at LIMIT 1").fetchone()
+            row = db.execute("SELECT id FROM parse_runs WHERE status='queued' AND cancel_requested=0 ORDER BY created_at LIMIT 1").fetchone()
             if row is None:
                 return None
             db.execute("UPDATE parse_runs SET status='running',started_at=?,error=NULL WHERE id=?", (_now(), row[0]))
             return self._run(db, row[0])
 
     @staticmethod
-    def _page_blocks(source_page: pymupdf.Page) -> list[dict]:
+    def _page_blocks(source_page: pymupdf.Page, textpage=None) -> list[dict]:
         width, height = source_page.rect.width, source_page.rect.height
         result = []
-        for raw in source_page.get_text("blocks", sort=True):
+        for raw in source_page.get_text("blocks", sort=True, textpage=textpage):
             if raw[6] != 0 or not raw[4].strip():
                 continue
             # get_text coordinates are unrotated and crop-relative. Applying the
@@ -520,7 +624,8 @@ class Library:
         return result
 
     def _save_page(self, run_id: str, page: int, width: float, height: float,
-                   rotation: int, blocks: list[dict], error: str | None = None) -> None:
+                   rotation: int, blocks: list[dict], error: str | None = None,
+                   *, extraction_method: str = "native", notice: str | None = None) -> None:
         status = "failed" if error else ("parsed" if blocks else "no_extractable_text")
         text = "\n\n".join(block["text"] for block in blocks)
         with self._connection() as db:
@@ -532,11 +637,12 @@ class Library:
                 return
             db.execute("DELETE FROM blocks WHERE run_id=? AND page=?", (run_id, page))
             db.execute(
-                """INSERT INTO pages(run_id,page,width,height,rotation,status,text,error)
-                   VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(run_id,page) DO UPDATE SET
+                """INSERT INTO pages(run_id,page,width,height,rotation,status,text,error,extraction_method,notice)
+                   VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(run_id,page) DO UPDATE SET
                    width=excluded.width,height=excluded.height,rotation=excluded.rotation,
-                   status=excluded.status,text=excluded.text,error=excluded.error""",
-                (run_id, page, width, height, rotation, status, text, error),
+                   status=excluded.status,text=excluded.text,error=excluded.error,
+                   extraction_method=excluded.extraction_method,notice=excluded.notice""",
+                (run_id, page, width, height, rotation, status, text, error, extraction_method, notice),
             )
             db.executemany(
                 "INSERT INTO blocks(id,run_id,page,ordinal,text,search_text,bbox) VALUES (?,?,?,?,?,?,?)",
@@ -554,35 +660,71 @@ class Library:
              counts.get("failed", 0), run_id),
         )
 
+    def _finish_cancellation(self, run_id: str) -> bool:
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            run = self._run(db, run_id)
+            if not run["cancel_requested"]:
+                return False
+            db.execute("UPDATE parse_runs SET status='cancelled',completed_at=? WHERE id=?", (_now(), run_id))
+            return True
+
     def process_next_job(self) -> bool:
         run = self._claim_run()
         if run is None:
             return False
         run_id = run["id"]
         try:
+            ocr = self._ocr_configuration()
             with self._connection() as db:
                 done = {row[0] for row in db.execute(
                     "SELECT page FROM pages WHERE run_id=? AND status!='failed'", (run_id,)
                 )}
             with MUPDF_LOCK, pymupdf.open(self._source_path(run["document_id"])) as pdf:
                 for page_number in range(1, run["total_pages"] + 1):
+                    if self._finish_cancellation(run_id):
+                        return True
                     if page_number in done:
+                        continue
+                    if run["target_pages"] is not None and page_number not in run["target_pages"]:
                         continue
                     width = height = 0.0
                     rotation = 0
+                    extraction_method = "native"
                     try:
                         source_page = pdf.load_page(page_number - 1)
                         width, height, rotation = source_page.rect.width, source_page.rect.height, source_page.rotation
                         blocks = self._page_blocks(source_page)
-                        self._save_page(run_id, page_number, width, height, rotation, blocks)
+                        notice = None
+                        if not blocks and ocr["available"]:
+                            extraction_method = "ocr"
+                            if width * height * 4 > 16_000_000:
+                                raise LibraryError("页面过大，OCR渲染超过资源限制。")
+                            textpage = source_page.get_textpage_ocr(
+                                language=ocr["languages"], dpi=144, full=True, tessdata=ocr["path"],
+                            )
+                            blocks = self._page_blocks(source_page, textpage=textpage)
+                            notice = "本页文字由OCR识别，请核对原页；公式和复杂版式仍可能不准确。"
+                        elif not blocks:
+                            notice = ocr["reason"]
+                        self._save_page(run_id, page_number, width, height, rotation, blocks,
+                                        extraction_method=extraction_method, notice=notice)
                     except Exception as exc:
+                        error = (f"第{page_number}页OCR失败（{type(exc).__name__}），请检查语言数据与OCR配置。"
+                                 if extraction_method == "ocr" else
+                                 f"第{page_number}页解析失败：{type(exc).__name__}: {exc}"[:1000])
                         self._save_page(run_id, page_number, width, height, rotation, [],
-                                        error=f"第{page_number}页解析失败：{type(exc).__name__}: {exc}"[:1000])
+                                        error=error,
+                                        extraction_method=extraction_method)
             with self._connection() as db:
                 db.execute("BEGIN IMMEDIATE")
                 self._update_counts(db, run_id)
                 current = self._run(db, run_id)
-                if current["failed_pages"] == current["total_pages"]:
+                if current["cancel_requested"]:
+                    status = "cancelled"
+                elif current["pages_done"] < current["total_pages"]:
+                    status = "partial"
+                elif current["failed_pages"] == current["total_pages"]:
                     status = "failed"
                 elif current["no_text_pages"] == current["total_pages"]:
                     status = "needs_ocr"
