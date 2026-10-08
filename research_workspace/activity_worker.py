@@ -17,7 +17,7 @@ from .worker import WorkerLock
 
 def workspace_tick(library, *, parse_documents=False):
     """One research step per workspace before subscriptions and the next account."""
-    worked = library.process_next_job() if parse_documents else False
+    worked = library.process_next_job(page_budget=1) if parse_documents else False
     worked = asyncio.run(JobStore(library).process_next()) or worked
     checked = DiscoveryService(library).due_checks(limit=1)
     return bool(checked) or worked

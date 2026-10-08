@@ -26,8 +26,11 @@ def library_for(request: Request) -> Library:
     key = user['id'] or 'default'
     cache = request.app.state.libraries
     if key not in cache:
-        cache[key] = Library(accounts.directory(user))
-        cache[key].network_rate_path = accounts.root / '.arxiv-network.sqlite3'
+        with request.app.state.libraries_lock:
+            if key not in cache:
+                library = Library(accounts.directory(user))
+                library.network_rate_path = accounts.root / '.arxiv-network.sqlite3'
+                cache[key] = library
     return cache[key]
 
 

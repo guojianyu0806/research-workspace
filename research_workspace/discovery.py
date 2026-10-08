@@ -24,7 +24,7 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
-from .library import Library
+from .library import Library, _schema_lock
 
 ARXIV_API = "https://export.arxiv.org/api/query"
 ATOM = {"a": "http://www.w3.org/2005/Atom", "ar": "http://arxiv.org/schemas/atom",
@@ -95,8 +95,9 @@ class DiscoveryService:
         self.request_interval = max(3.0, float(request_interval)) if client is None else max(0.0, float(request_interval))
         self.max_pdf_bytes = max_pdf_bytes
         self.client = client
-        with self._db() as db:
-            db.execute("PRAGMA journal_mode=WAL")
+        with _schema_lock(self.database_path), self._db() as db:
+            if db.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
+                db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS papers (
                     id TEXT PRIMARY KEY, canonical_id TEXT NOT NULL, version INTEGER NOT NULL,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+import errno
 import hashlib
 import json
 import math
@@ -14,6 +15,7 @@ import shutil
 from pathlib import Path
 import sqlite3
 import threading
+import time
 from typing import Iterator
 from uuid import uuid4
 
@@ -32,6 +34,46 @@ class LibraryError(ValueError):
     """An invalid file or an invalid library operation."""
 
 
+@contextmanager
+def _schema_lock(database_path: Path, *, timeout: float = 30.0):
+    """Serialize first-open/WAL/migrations across threads and worker processes.
+
+    This is independent of the long-lived parsing worker lock. The OS releases
+    the lock when the handle/process closes, so a crashed initializer cannot
+    leave a stale ownership record that blocks later startup.
+    """
+    lock_path = database_path.with_name('.'+database_path.name+'.schema.lock')
+    with lock_path.open('a+b') as handle:
+        if lock_path.stat().st_size == 0:
+            handle.write(b'\0')
+            handle.flush()
+        deadline = time.monotonic()+timeout
+        while True:
+            handle.seek(0)
+            try:
+                if os.name == 'nt':
+                    import msvcrt
+                    msvcrt.locking(handle.fileno(),msvcrt.LK_NBLCK,1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(),fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in {errno.EACCES,errno.EAGAIN,errno.EDEADLK}:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise LibraryError('工作空间正在初始化，请稍后重试。') from None
+                time.sleep(.025)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == 'nt':
+                msvcrt.locking(handle.fileno(),msvcrt.LK_UNLCK,1)
+            else:
+                fcntl.flock(handle.fileno(),fcntl.LOCK_UN)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
@@ -46,8 +88,9 @@ class Library:
         self.files_dir = self.data_dir / "originals"
         self.files_dir.mkdir(parents=True, exist_ok=True)
         self.database_path = self.data_dir / "library.sqlite3"
-        with self._connection() as db:
-            db.execute("PRAGMA journal_mode=WAL")
+        with _schema_lock(self.database_path), self._connection() as db:
+            if db.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
+                db.execute("PRAGMA journal_mode=WAL")
             db.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS documents (
@@ -103,7 +146,8 @@ class Library:
                     db.execute(f"ALTER TABLE documents ADD COLUMN {name} {definition}")
             for table, additions in {
                 "parse_runs": {"cancel_requested": "INTEGER NOT NULL DEFAULT 0",
-                               "parent_run_id": "TEXT", "target_pages": "TEXT"},
+                               "parent_run_id": "TEXT", "target_pages": "TEXT",
+                               "cursor_page": "INTEGER NOT NULL DEFAULT 0", "scheduled_at": "TEXT"},
                 "pages": {"extraction_method": "TEXT NOT NULL DEFAULT 'native'", "notice": "TEXT"},
             }.items():
                 existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
@@ -593,17 +637,18 @@ class Library:
         with self._connection() as db:
             db.execute("UPDATE parse_runs SET status='cancelled',completed_at=? WHERE status='running' AND cancel_requested=1", (_now(),))
             cursor = db.execute(
-                "UPDATE parse_runs SET status='queued', completed_at=NULL WHERE status='running' AND cancel_requested=0"
+                "UPDATE parse_runs SET status='queued', completed_at=NULL,cursor_page=0,scheduled_at=? WHERE status='running' AND cancel_requested=0",
+                (_now(),),
             )
             return cursor.rowcount
 
     def _claim_run(self) -> dict | None:
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT id FROM parse_runs WHERE status='queued' AND cancel_requested=0 ORDER BY created_at LIMIT 1").fetchone()
+            row = db.execute("SELECT id FROM parse_runs WHERE status='queued' AND cancel_requested=0 ORDER BY COALESCE(scheduled_at,created_at),created_at LIMIT 1").fetchone()
             if row is None:
                 return None
-            db.execute("UPDATE parse_runs SET status='running',started_at=?,error=NULL WHERE id=?", (_now(), row[0]))
+            db.execute("UPDATE parse_runs SET status='running',started_at=COALESCE(started_at,?),error=NULL WHERE id=?", (_now(), row[0]))
             return self._run(db, row[0])
 
     @staticmethod
@@ -650,6 +695,9 @@ class Library:
                  for index, b in enumerate(blocks)],
             )
             self._update_counts(db, run_id)
+            # Attempted failures count toward the current pass as well. Otherwise
+            # a one-page budget would keep retrying the first failed page forever.
+            db.execute('UPDATE parse_runs SET cursor_page=MAX(cursor_page,?) WHERE id=?',(page,run_id))
 
     @staticmethod
     def _update_counts(db: sqlite3.Connection, run_id: str) -> None:
@@ -669,7 +717,15 @@ class Library:
             db.execute("UPDATE parse_runs SET status='cancelled',completed_at=? WHERE id=?", (_now(), run_id))
             return True
 
-    def process_next_job(self) -> bool:
+    def process_next_job(self, *, page_budget: int | None = None) -> bool:
+        """Process a full parse by default, or persist at most page_budget pages.
+
+        Budgeted calls requeue unfinished work without changing saved evidence.
+        Startup recovery resets the pass cursor and may retry failed pages, while
+        already successful page/block records stay immutable.
+        """
+        if page_budget is not None and (isinstance(page_budget,bool) or not isinstance(page_budget,int) or page_budget<1):
+            raise LibraryError('解析页预算必须为正整数。')
         run = self._claim_run()
         if run is None:
             return False
@@ -680,14 +736,14 @@ class Library:
                 done = {row[0] for row in db.execute(
                     "SELECT page FROM pages WHERE run_id=? AND status!='failed'", (run_id,)
                 )}
+            pending = [page for page in range(1,run['total_pages']+1)
+                       if page not in done and page>run['cursor_page']
+                       and (run['target_pages'] is None or page in run['target_pages'])]
+            selected = pending if page_budget is None else pending[:page_budget]
             with MUPDF_LOCK, pymupdf.open(self._source_path(run["document_id"])) as pdf:
-                for page_number in range(1, run["total_pages"] + 1):
+                for page_number in selected:
                     if self._finish_cancellation(run_id):
                         return True
-                    if page_number in done:
-                        continue
-                    if run["target_pages"] is not None and page_number not in run["target_pages"]:
-                        continue
                     width = height = 0.0
                     rotation = 0
                     extraction_method = "native"
@@ -716,6 +772,14 @@ class Library:
                         self._save_page(run_id, page_number, width, height, rotation, [],
                                         error=error,
                                         extraction_method=extraction_method)
+            if len(selected)<len(pending):
+                with self._connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    current = self._run(db,run_id)
+                    cancelled = current['cancel_requested']
+                    db.execute('UPDATE parse_runs SET status=?,scheduled_at=?,completed_at=? WHERE id=?',
+                               ('cancelled' if cancelled else 'queued',_now(),_now() if cancelled else None,run_id))
+                return True
             with self._connection() as db:
                 db.execute("BEGIN IMMEDIATE")
                 self._update_counts(db, run_id)

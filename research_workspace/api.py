@@ -150,6 +150,7 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
     app.state.library = library
     app.state.accounts = Accounts(directory)
     app.state.libraries = {'default':library}
+    app.state.libraries_lock = threading.Lock()
     # Research enqueue/retry and configuration replacement form one critical
     # section, so a job cannot slip between the idle check and worker restart.
     app.state.model_settings_lock = model_settings_lock
