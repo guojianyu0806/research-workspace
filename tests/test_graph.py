@@ -62,6 +62,24 @@ def test_body_similarity_or_title_mention_is_not_a_citation(library):
     assert result["unresolved_count"] == 2
 
 
+def test_reference_continued_in_separate_pdf_block_keeps_both_anchors(library):
+    target = import_paper(library, 'Foundations of Reliable Evidence Retrieval')
+    with pymupdf.open() as pdf:
+        first = pdf.new_page()
+        first.insert_text((35,60),'Research with a split reference entry')
+        page = pdf.new_page()
+        page.insert_text((35,60),'References')
+        page.insert_text((35,100),'[1] Example Author. Foundations of Reliable')
+        page.insert_text((35,150),'Evidence Retrieval. 2024.')
+        imported = library.import_document(pdf.tobytes(),'split-reference.pdf')['document']
+    library.process_next_job()
+    result = GraphService(library).build([imported['id'],target['id']])
+    assert len(result['edges']) == 1
+    edge = result['edges'][0]
+    assert edge['target'] == target['id']
+    assert len({entry['block_id'] for entry in edge['evidence']}) == 2
+
+
 def test_ambiguous_same_title_does_not_create_edges(library):
     title = "Foundations of Reliable Evidence Retrieval"
     first = import_paper(library, title, body="Version one.")

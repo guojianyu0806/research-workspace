@@ -116,14 +116,18 @@ class GraphService:
         raw = reference.get("evidence", [])
         if isinstance(raw, dict):
             raw = [raw]
+        raw = [*raw, *reference.get('continuation_evidence', [])]
         evidence = []
+        retained_blocks = set()
         for item in raw:
             if item.get("document_id", document["id"]) != document["id"] or item.get("run_id", run_id) != run_id:
                 return None
             block = blocks_by_id.get(item.get("block_id"))
             if not block or item.get("page", block["page"]) != block["page"]:
                 return None
-            evidence.append(_evidence(block, document["id"], run_id))
+            if block['id'] not in retained_blocks:
+                evidence.append(_evidence(block, document["id"], run_id))
+                retained_blocks.add(block['id'])
         text = str(reference.get("text", ""))
         if not text or not evidence:
             return None
