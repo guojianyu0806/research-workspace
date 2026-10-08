@@ -8,7 +8,19 @@
   <title>研序 · Research Workspace</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/shell.css">
+  <link rel="stylesheet" href="/static/manage.css">
+  <link rel="stylesheet" href="/static/bilingual.css">
+  <link rel="stylesheet" href="/static/explore.css">
+  <link rel="stylesheet" href="/static/research.css">
+  <link rel="stylesheet" href="/static/model-settings.css">
   <script defer src="/static/app.js"></script>
+  <script defer src="/static/bilingual.js"></script>
+  <script defer src="/static/explore.js"></script>
+  <script defer src="/static/manage.js"></script>
+  <script defer src="/static/research.js"></script>
+  <script defer src="/static/model-settings.js"></script>
+  <script defer src="/static/shell.js"></script>
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -31,6 +43,8 @@
     </a>
     <div class="header-caption">论文在这里，证据有出处。</div>
     <div class="header-actions">
+      <button class="button button-secondary" id="modelSettingsButton" type="button">模型设置</button>
+      <button class="button button-secondary" id="accountButton" type="button">工作空间</button>
       <span class="connection-state" id="connectionState"><span class="connection-dot"></span><span id="connectionText">连接中</span></span>
       <button class="button button-primary" id="uploadButton" type="button"><svg class="icon"><use href="#i-upload"></use></svg><span>导入 PDF</span></button>
     </div>
@@ -38,6 +52,15 @@
   </header>
 
   <div class="app-notice" id="appNotice" role="status" hidden><span id="noticeText"></span><button class="icon-button" id="dismissNotice" type="button" aria-label="关闭提示"><svg class="icon"><use href="#i-close"></use></svg></button></div>
+
+  <nav class="module-navigation" aria-label="研究功能">
+    <button type="button" data-module="reader" aria-pressed="true">原文阅读</button>
+    <button type="button" data-module="manage" aria-pressed="false">文献管理</button>
+    <button type="button" data-module="research" aria-pressed="false">问答与写作</button>
+    <button type="button" data-module="discovery" aria-pressed="false">发现与追踪</button>
+    <button type="button" data-module="graph" aria-pressed="false">引用图谱</button>
+    <button type="button" data-module="data" aria-pressed="false">数据与图表</button>
+  </nav>
 
   <nav class="mobile-navigation" aria-label="工作区视图">
     <button type="button" data-view="library" aria-pressed="true"><svg class="icon"><use href="#i-file"></use></svg>文献</button>
@@ -67,7 +90,7 @@
           <label><span class="visually-hidden">页码</span><input id="pageNumber" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="跳转到页码"></label><span class="page-total" id="pageTotal">/ —</span>
           <button class="icon-button" id="nextPage" type="button" disabled aria-label="下一页"><svg class="icon"><use href="#i-right"></use></svg></button>
         </form>
-        <span class="page-fit-label">适合宽度</span>
+        <label class="page-fit-label">缩放 <select id="pageZoom" aria-label="页面缩放"><option value="1">适合宽度</option><option value="1.5">150%</option><option value="2">200%</option></select></label>
       </div>
       <div class="reader-message" id="readerMessage" role="status" hidden></div>
       <div class="reader-viewport" id="readerViewport">
@@ -101,5 +124,17 @@
       <div class="evidence-footer"><span class="source-mark" aria-hidden="true"></span><span>来源片段 · 页码定位 · 原文核对</span></div>
     </aside>
   </main>
+  <section class="module-root" id="moduleRoot" hidden aria-live="polite"></section>
+  <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountHeading">
+    <div class="account-heading"><h2 id="accountHeading">独立工作空间</h2><button class="icon-button" id="closeAccount" aria-label="关闭" type="button">×</button></div>
+    <p id="accountDescription">本机默认空间与各账号的文献、任务和偏好分别保存。</p>
+    <form id="accountForm">
+      <label>用户名<input name="name" required minlength="2" maxlength="40" autocomplete="username"></label>
+      <label>密码<input name="password" type="password" required minlength="10" maxlength="200" autocomplete="current-password"></label>
+      <div class="account-actions"><button class="button button-primary" name="action" value="login">登录</button><button class="button button-secondary" name="action" value="register">注册新空间</button></div>
+    </form>
+    <button id="logoutButton" class="button button-secondary" hidden type="button">退出账号，返回本机默认空间</button>
+    <p class="account-status" id="accountStatus" role="status"></p>
+  </dialog>
 </body>
 </html>

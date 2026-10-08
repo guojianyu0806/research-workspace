@@ -30,7 +30,7 @@
   const readableRun = (doc) => doc?.available_run || doc?.current_run;
   const statusLabels = {
     queued: "等待处理", running: "正在提取文字", completed: "文本已提取",
-    partial: "部分页面待识别", needs_ocr: "需要文字识别", failed: "处理失败",
+    partial: "部分页面待识别", needs_ocr: "需要文字识别", failed: "处理失败", cancelled: "已取消",
   };
 
   function element(tag, className, text) {
@@ -183,11 +183,16 @@
       const result = await api("/api/documents");
       if (request !== listRequest) return;
       state.documents = Array.isArray(result.documents) ? result.documents : [];
+      if (state.selectedId && !currentDocument()) {
+        state.selectedId = null;
+        state.pinnedRun = false;
+        state.selectedRunId = null;
+      }
       setConnection(true);
       renderLibrary();
       if (!state.selectedId && state.documents.length) {
         selectDocument(state.documents[0].id, { keepView: true });
-      } else {
+      } else if (state.selectedId) {
         const selected = currentDocument();
         if (selected && !state.pinnedRun) {
           state.selectedRunId = readableRun(selected)?.id || null;
@@ -196,6 +201,13 @@
           if (readableRun(selected)?.id !== previousReadableId || firstRunFinished) loadPage();
         }
         renderReaderHeading();
+      } else {
+        ui.readerTitle.textContent = "原文阅读";
+        ui.readerSubtitle.textContent = "导入论文后阅读原文与证据。";
+        ui.readerEmpty.hidden = false;
+        ui.paperPage.hidden = true;
+        ui.readerToolbar.hidden = true;
+        ui.reparseButton.disabled = true;
       }
       schedulePolling();
     } catch (error) {
@@ -541,9 +553,7 @@
     const capabilities = api("/api/capabilities").then((result) => {
       state.capabilities = result;
       if (Number(result.max_upload_mb) > 0) ui.uploadLimit.textContent = `每个文件不超过 ${result.max_upload_mb} MB`;
-      ui.searchExplanation.textContent = result.llm === false
-        ? "当前为关键词原文检索，尚未启用生成式回答。点击结果核对原文出处。"
-        : "按关键词查找原文片段，点击结果核对出处。";
+      ui.searchExplanation.textContent = "按关键词查找原文片段，点击结果核对出处。文献问答可在“问答与写作”中创建。";
       if (state.connected) setConnection(true);
       renderReaderHeading();
     }).catch(() => { ui.uploadLimit.textContent = "或点击选择文件"; });
@@ -594,5 +604,25 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && state.documents.some((doc) => isPending(doc.current_run))) refreshDocuments({ quiet: true });
   });
+  byId("pageZoom").addEventListener("change", (event) => {
+    const zoom = Number(event.target.value);
+    ui.paperPage.style.width = `${zoom * 100}%`;
+    ui.paperPage.style.maxWidth = zoom === 1 ? "" : "none";
+  });
+  window.ResearchWorkspace = {
+    api,
+    refreshLibrary: () => refreshDocuments(),
+    currentDocument: () => currentDocument(),
+    selectedIds: () => state.documents.filter(doc => doc.is_current_version !== false && !doc.archived_at).map(doc => doc.id),
+    async onEvidence(evidence) {
+      if (!evidence?.document_id) return;
+      if (!state.documents.some(doc => doc.id === evidence.document_id)) {
+        const result = await api(`/api/documents/${encodeURIComponent(evidence.document_id)}`);
+        state.documents.push(result.document);
+      }
+      selectDocument(evidence.document_id, {runId:evidence.run_id, page:evidence.page || 1, bbox:evidence.bbox, hitKey:evidence.block_id});
+      window.dispatchEvent(new CustomEvent("research:reader"));
+    },
+  };
   initialize();
 })();
