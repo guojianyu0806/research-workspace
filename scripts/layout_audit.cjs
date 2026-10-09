@@ -27,7 +27,7 @@ const report = {startedAt:new Date().toISOString(),output,mode:live?'read-only l
   'Whitespace is a heuristic advisory; intentional empty states and reading canvases are not failures.'
 ]};
 if(shellOnly){report.mode='offline shell consistency fixture';report.limitations.push('Shell mode checks shared frame geometry and styling across modules; it does not repeat the complete module content, reader interaction, or model quality suite.');}
-const assets=new Map(fs.readdirSync(path.join(root,'research_workspace/static')).map(name=>[name,fs.readFileSync(path.join(root,'research_workspace/static',name))]));
+const assets=new Map(fs.readdirSync(path.join(root,'research_workspace/static'),{withFileTypes:true}).filter(entry=>entry.isFile()).map(entry=>[entry.name,fs.readFileSync(path.join(root,'research_workspace/static',entry.name))]));
 for(const [name,content] of assets) if(/\.(css|html|js)$/.test(name)) report.source.sha256[name]=crypto.createHash('sha256').update(content).digest('hex');
 report.source.sha256['scripts/layout_audit.cjs']=crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
 let filled=false,accountMode=false,jobsPresent=true,datasetsPresent=true;

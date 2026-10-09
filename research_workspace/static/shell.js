@@ -13,7 +13,7 @@
     element.textContent = message;
     root.replaceChildren(element);
   }
-  async function activate(name) {
+  async function activate(name, intent) {
     bridge.invalidateEvidenceNavigation?.();
     activeModule = name;
     document.body.classList.toggle('reader-active', name === 'reader');
@@ -28,7 +28,7 @@
     reader.hidden = name !== 'reader';
     mobileNavigation.hidden = name !== 'reader';
     root.hidden = name === 'reader';
-    if (name === 'reader') return;
+    if (name === 'reader') return true;
     const options = {...bridge, async onTranslate(selection) {
       try {
         const response = await bridge.api('/api/research/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'translate',target_language:'zh',...selection})});
@@ -36,6 +36,7 @@
         await activate('research');
       } catch (problem) { window.alert(problem.message); }
     }};
+    if (name === 'graph' && Array.isArray(intent?.documentIds)) options.selectedIds = () => [...intent.documentIds];
     try {
       if(name==='manage') controller=window.ResearchManage.mount(root,options);
       if(name==='research') controller=window.ResearchTasks.mount(root,options);
@@ -43,11 +44,23 @@
       if(name==='graph') controller=window.ResearchExplore.mountGraph(root,options);
       if(name==='data') controller=window.ResearchData.mount(root,options);
       await controller?.ready;
-    } catch(problem) { if(request===revision) error(problem.message); }
+      if (request !== revision) return false;
+      if (intent?.example) {
+        if (!controller?.prepareExample) throw new Error('当前页面无法准备此示例，请刷新后重试。');
+        await controller.prepareExample(intent.example);
+      }
+      return request === revision;
+    } catch(problem) {
+      if (intent) throw problem;
+      if(request===revision) error(problem.message);
+      return false;
+    }
   }
+  window.ResearchShell = Object.freeze({activate});
   document.querySelectorAll('[data-module]').forEach(button => button.addEventListener('click',()=>activate(button.dataset.module)));
   window.addEventListener('research:reader',()=>activate('reader'));
   document.getElementById('modelSettingsButton').addEventListener('click',()=>window.ResearchModelSettings.open({api:bridge.api}));
+  window.ResearchExamples?.mount({api:bridge.api, activate, onEvidence:bridge.onEvidence});
   window.addEventListener('research:model-configured',()=>{if(activeModule==='research') activate('research');});
   const dialog = document.getElementById('accountDialog');
   const form = document.getElementById('accountForm');

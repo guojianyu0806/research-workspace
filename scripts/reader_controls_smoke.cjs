@@ -13,7 +13,7 @@ const root = path.resolve(__dirname, '..');
 const origin = 'http://127.0.0.1:8765';
 const output = path.join(root, 'artifacts/browser', `reader-controls-${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`);
 fs.mkdirSync(output, {recursive:true});
-const assets = new Map(fs.readdirSync(path.join(root, 'research_workspace/static')).map(name => [name, fs.readFileSync(path.join(root, 'research_workspace/static', name))]));
+const assets = new Map(fs.readdirSync(path.join(root, 'research_workspace/static'), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => [entry.name, fs.readFileSync(path.join(root, 'research_workspace/static', entry.name))]));
 const report = {startedAt:new Date().toISOString(), output, checks:[], screenshots:[], pageErrors:[], consoleErrors:[], blockedRequests:[], source:{gitHead:execFileSync('git', ['rev-parse','HEAD'], {cwd:root, encoding:'utf8', windowsHide:true}).trim(), sha256:{}}, limitations:[
   'Synthetic paper images verify controls and geometry, not PDF rendering fidelity or research/model quality.',
   'The native fullscreen case records the actual browser outcome; fallback cases explicitly disable or reject that API.',

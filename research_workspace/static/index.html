@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="/static/research.css?v=20261009-sidebar">
   <link rel="stylesheet" href="/static/model-settings.css">
   <link rel="stylesheet" href="/static/reader.css?v=20261009-frame1">
+  <link rel="stylesheet" href="/static/examples.css?v=20261009-demo1">
   <script defer src="/static/app.js?v=20261009-reader3"></script>
   <script defer src="/static/reader-controls.js?v=20261009-sizing3"></script>
   <script defer src="/static/reader-layout.js?v=20261009-sizing3"></script>
@@ -23,9 +24,10 @@
   <script defer src="/static/layout.js"></script>
   <script defer src="/static/references.js"></script>
   <script defer src="/static/manage.js"></script>
-  <script defer src="/static/research.js?v=20261009-sidebar"></script>
+  <script defer src="/static/research.js?v=20261009-demo1"></script>
   <script defer src="/static/model-settings.js"></script>
-  <script defer src="/static/shell.js?v=20261009-reader3"></script>
+  <script defer src="/static/examples.js?v=20261009-demo1"></script>
+  <script defer src="/static/shell.js?v=20261009-demo1"></script>
 </head>
 <body class="reader-active">
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -51,6 +53,7 @@
     </a>
     <div class="header-caption">论文在这里，证据有出处。</div>
     <div class="header-actions">
+      <button class="button button-secondary" id="examplesButton" type="button" aria-haspopup="dialog">演示示例</button>
       <button class="button button-secondary" id="modelSettingsButton" type="button">模型设置</button>
       <button class="button button-secondary" id="accountButton" type="button">工作空间</button>
       <span class="connection-state" id="connectionState"><span class="connection-dot"></span><span id="connectionText">连接中</span></span>

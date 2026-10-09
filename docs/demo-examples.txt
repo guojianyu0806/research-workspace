@@ -1,0 +1,48 @@
+真实示例演示指南
+日期：2026-10-09
+
+入口与准备
+打开 http://127.0.0.1:8765/，点击共用页头的“演示示例”。默认工作空间已准备下列三篇论文和一个实验数据集；其他账号的空间独立，卡片会显示该空间资料是否就绪。
+新环境先启动服务，再在项目目录执行：
+.\.venv\Scripts\python.exe scripts\prepare_demo.py
+若已缓存原文，可加 --no-download。脚本使用现有 API，仅导入默认空间，不读取账户凭据、不创建研究任务、不重启服务。重复执行会按 SHA256 复用同一资料；用户编辑过的标题作者保留，已归档的资料不自动恢复。报告另存到 artifacts/demo/ 下的新时间戳目录。
+
+建议演示顺序
+1. 真实原文：在 Transformer 卡片点击“阅读第 3 页”，展示架构图、翻页缩放、拖拽、侧栏宽度调整及专注阅读。通过“文献信息”进入资料、版面结构和参考文献工具；所有物理页码从 1 开始。
+2. 原文问答：选择“为什么需要位置编码？”准备输入，再在任务页点击“创建研究任务”。结果产生后核对引句、来源和原文定位。BERT、RAG 也分别提供预训练目标、两种生成方式的示例问题。
+3. 多篇研究：选择“BERT 如何参与 RAG？”准备比较；选择“三篇论文的技术联系”准备综述；“可追溯科研问答方案”准备论文框架。后两者是生成草稿，需审阅证据和待验证设计。
+4. 双语阅读：选择“BERT 首页双语对照”，仅准备物理第 1 页翻译，避免在短演示中提交整篇翻译。实际模型执行后再展示双语结果。
+5. 引用图谱：点击“查看示例引用图谱”，只使用三篇固定示例，不混入已有 Transformer v1。本次实际解析只自动匹配出 RAG → Transformer 一条本地边；BERT 相关边尚未匹配。页面显示当前算法实际识别的关系，不以手工连线代替解析结果，也不是完整引文网络。
+6. 实验绘图：点击“展示图表”，使用真实 CSV 与绘图 API 生成六个模型的柱状图，可下载 SVG、数据规范和 Python 复现脚本。重复使用同内容 CSV 会复用数据集，每次明确生成会保存独立图表。这里只复现绘图，不复现论文训练实验。
+7. 公开发现：进入“发现与追踪”，可搜索 retrieval augmented generation 等主题；实时检索及订阅由使用者主动操作。已导入论文不冒充当前实时检索结果。
+
+来源清单
+A. Attention Is All You Need，Vaswani 等，2017。
+固定版本：1706.03762v7；15 页。
+论文来源：https://arxiv.org/abs/1706.03762v7
+原始 PDF：https://arxiv.org/pdf/1706.03762v7
+阅读定位：第 3 页架构、第 4 页多头注意力、第 5 页位置编码、第 8 页表 2。
+
+B. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding，Devlin、Chang、Lee、Toutanova。
+2018 年预印本、2019 年 NAACL 正式发表；固定版本 1810.04805v2，16 页。
+论文来源：https://arxiv.org/abs/1810.04805v2
+正式发表：https://aclanthology.org/N19-1423/
+原始 PDF：https://arxiv.org/pdf/1810.04805v2
+阅读定位：第 3 页架构和流程、第 4 页预训练任务。
+
+C. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks，Lewis 等，2020 年 NeurIPS。
+示例采用 2021 年修订的 2005.11401v4，19 页。
+论文来源：https://arxiv.org/abs/2005.11401v4
+原始 PDF：https://arxiv.org/pdf/2005.11401v4
+阅读定位：第 3 页两种生成方式、检索器和生成器。
+
+真实数据集
+源文件：research_workspace/static/examples/transformer-wmt14.csv
+工作区文件名：transformer-wmt14-en-de-v7.csv
+来源：Attention Is All You Need v7，第 8 页表 2，WMT 2014 英译德 BLEU 单模型结果节选。
+ByteNet 23.75；GNMT + RL 24.6；ConvS2S 25.16；MoE 26.03；Transformer (base model) 27.3；Transformer (big) 28.4。
+不同论文的训练配置不完全相同。图中数值为论文自报结果，不是本系统独立测量或复现实验；无缺失值填补或归一化。
+
+真实性和费用边界
+论文与 CSV 为真实来源资料；七个问题和写作指令为本项目编写的演示输入，不是原论文结论或已经运行的模型输出。示例按钮不会自动创建问答、翻译或写作任务。使用者点击创建后才会通过当前配置的真实模型服务执行并可能消耗额度；应逐项核验输出。
+PDF 原始字节、数据库及截图保存在项目忽略目录，不加入 Git。来源目录记录固定版本和 SHA256，下载内容不匹配时停止导入，不覆盖已有缓存。旧 PDF、既有开发文档和历史证据保持原样；本指南为新增文件。

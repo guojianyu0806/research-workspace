@@ -555,14 +555,35 @@
       finally { if (life.alive) control.disabled = action === "retry" ? !state.configured : Boolean(state.selectedJob?.cancel_requested); }
     });
     life.own(() => state.bilingual?.destroy());
+    async function prepareExample(example) {
+      if (!life.alive) throw new Error("页面已切换，请重新打开示例。");
+      const ids = [...new Set(example.documentIds || [])];
+      if (!Object.hasOwn(kindLabels, example.kind) || example.kind === "translate_text") throw new Error("此示例任务类型不可用。");
+      const documents = (await life.api("/api/documents")).documents || [];
+      if (!life.alive) throw new Error("页面已切换，请重新打开示例。");
+      const valid = ids.map(id => documents.find(doc => doc.id === id && !doc.archived_at && doc.is_current_version !== false && doc.available_run));
+      if (!ids.length || valid.some(doc => !doc) || (example.kind === "compare" && ids.length < 2)) {
+        throw new Error("示例所需文献尚未就绪或已变更，请重新打开演示示例检查导入状态。");
+      }
+      if (example.kind === "translate" && (ids.length !== 1 || !Number.isInteger(example.page) || example.page < 1 || example.page > valid[0].page_count)) {
+        throw new Error("示例翻译页码与当前文献不匹配，请核对论文版本。");
+      }
+      state.documents = documents; older.checked = false; state.selectedDocuments = new Set(ids);
+      renderDocuments(); kind.value = example.kind; single.value = ids[0];
+      prompt.value = example.question || example.instruction || "";
+      scope.value = "page"; page.value = String(example.page || 1); target.value = "zh";
+      changeKind(); updatePageLimit();
+      life.show(`已准备“${example.title || kindLabels[example.kind]}”。尚未创建任务；点击“创建研究任务”后才会调用模型并消耗服务额度。`);
+      revealSection(form); kind.focus({preventScroll: true});
+    }
     changeKind();
     const ready = refresh();
-    return { ready, refresh, destroy: () => life.destroy() };
+    return { ready, refresh, prepareExample, destroy: () => life.destroy() };
   }
 
   function mountData(container, options = {}) {
     const life = lifecycle(container, options);
-    const state = { datasets: [], selected: null, generation: 0, chartUrl: null, diagramUrl: null, diagramSpecUrl: null, units: {} };
+    const state = { datasets: [], selected: null, generation: 0, chartUrl: null, diagramUrl: null, diagramSpecUrl: null, units: {}, chartPosting: false };
     const heading = node("header", "rs-heading");
     const text = node("div", ""); text.append(node("span", "rs-eyebrow", "DATA & FIGURES"), node("h2", "", "数据与图表"),
       node("p", "rs-muted", "从实际CSV生成图表、图注和复现脚本；结构图使用明确的节点与连接。"));
@@ -621,6 +642,7 @@
       chartForm.hidden = false; chartEmpty.hidden = true;
       if (state.selected?.id !== data.id) {
         chartOutput.hidden = true;
+        previewCard.querySelector(".rs-example-source")?.remove();
         if (state.chartUrl) { life.revoke(state.chartUrl); state.chartUrl = null; }
       }
       state.selected = data; state.units = {}; create.disabled = false;
@@ -659,6 +681,7 @@
         if (selected) { dataSelect.value = selected.id; await chooseDataset(selected.id); }
         else {
           state.selected = null; create.disabled = true; previewTitle.textContent = "数据预览";
+          previewCard.querySelector(".rs-example-source")?.remove();
           chartForm.hidden = true; chartEmpty.hidden = false;
           preview.replaceChildren(node("p", "rs-empty", "导入CSV后，可在这里检查字段、缺失值和原始记录。"));
           datasetInfo.textContent = ""; columnsInfo.replaceChildren(); x.replaceChildren(); yChoices.replaceChildren(); unitsArea.replaceChildren();
@@ -677,11 +700,11 @@
       catch (error) { life.show(error.message, true); }
       finally { if (life.alive) upload.disabled = false; }
     });
-    life.on(chartForm, "submit", async (event) => {
-      event.preventDefault(); if (!state.selected) return;
+    async function generateChart(propagate = false) {
+      if (!state.selected || state.chartPosting) return;
       const y = selectedY(); if (y.length < 1 || y.length > 6) { life.show("请选择1至6个数值字段。", true); return; }
       const datasetId = state.selected.id;
-      create.disabled = true;
+      state.chartPosting = true; create.disabled = true;
       try {
         const response = await life.api(`/api/datasets/${encodeURIComponent(datasetId)}/charts`, jsonOptions({ kind: chartKind.value,
           x: x.value, y, missing: missing.value, normalize: normalize.checked, title: title.value.trim(),
@@ -698,9 +721,10 @@
         chartOutput.replaceChildren(node("h3", "rs-card-title", chart.spec.title), image, node("p", "rs-caption", chart.caption),
           node("p", "rs-muted rs-small", `忽略无效行：${dropped.length}${dropped.length ? `（CSV行号 ${dropped.join("、")}）` : ""}；归一化：${chart.transformations?.minmax_normalized ? "已执行" : "未执行"}。`), downloads);
         chartOutput.hidden = false; life.show("图表已按实际数据生成，转换记录与脚本可下载。");
-      } catch (error) { life.show(error.message, true); }
-      finally { if (life.alive) create.disabled = !state.selected; }
-    });
+      } catch (error) { life.show(error.message, true); if (propagate) throw error; }
+      finally { state.chartPosting = false; if (life.alive) create.disabled = !state.selected; }
+    }
+    life.on(chartForm, "submit", (event) => { event.preventDefault(); generateChart(); });
     life.on(diagramForm, "submit", async (event) => {
       event.preventDefault(); makeDiagram.disabled = true;
       try {
@@ -716,8 +740,28 @@
       } catch (error) { life.show(error.message, true); }
       finally { if (life.alive) makeDiagram.disabled = false; }
     });
+    async function prepareExample(example) {
+      if (!life.alive) throw new Error("页面已切换，请重新打开示例。");
+      await refresh(example.datasetId);
+      if (!life.alive || state.selected?.id !== example.datasetId) throw new Error("示例数据集未能加载，请重试。");
+      const spec = example.chart || {}, headers = state.selected.headers || [];
+      if (!["line", "bar", "radar3d"].includes(spec.kind) || !headers.includes(spec.x) || !Array.isArray(spec.y) || !spec.y.length || spec.y.length > 6 || spec.y.some(name => !state.selected.columns.some(col => col.name === name && col.numeric_count > 0))) {
+        throw new Error("示例图表字段与导入的数据不一致，请检查示例文件。");
+      }
+      chartKind.value = spec.kind; chartKind.dispatchEvent(new Event("change")); x.value = spec.x;
+      for (const check of yChoices.querySelectorAll('input[type="checkbox"]')) check.checked = spec.y.includes(check.value);
+      state.units = {...spec.units}; renderUnits(); title.value = spec.title || "";
+      missing.value = ["reject", "drop"].includes(spec.missing) ? spec.missing : "reject"; normalize.checked = Boolean(spec.normalize);
+      let source = previewCard.querySelector(".rs-example-source");
+      if (!source) { source = node("p", "rs-example-source rs-muted rs-small"); previewCard.append(source); }
+      source.replaceChildren(node("span", "", "数据来源："));
+      const sourceLink = link(example.sourceLabel || "论文原始表格", example.sourceUrl); sourceLink.target = "_blank"; sourceLink.rel = "noopener noreferrer";
+      source.append(sourceLink, node("span", "", "。数值为论文报告结果，本项目用于真实数据绘图演示，未重新训练或复现实验。"));
+      life.show("真实示例数据与图表设置已加载。");
+      if (example.generate) { await generateChart(true); if (life.alive) chartOutput.scrollIntoView({block: "start", behavior: "auto"}); }
+    }
     const ready = refresh();
-    return { ready, refresh, destroy: () => life.destroy() };
+    return { ready, refresh, prepareExample, destroy: () => life.destroy() };
   }
 
   window.ResearchTasks = Object.freeze({ mount: mountTasks });
