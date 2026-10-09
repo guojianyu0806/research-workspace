@@ -1,0 +1,7 @@
+Model,BLEU_EN_DE
+ByteNet,23.75
+GNMT + RL,24.6
+ConvS2S,25.16
+MoE,26.03
+Transformer (base model),27.3
+Transformer (big),28.4

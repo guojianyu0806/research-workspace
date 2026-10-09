@@ -1,0 +1,121 @@
+{
+  "version": "2026-10-09-v1",
+  "title": "从 Transformer 到 RAG",
+  "description": "用三篇真实论文演示原文阅读、引用定位、研究任务与数据绘图。论文保留固定版本，所有来源均可核对。",
+  "papers": [
+    {
+      "key": "attention",
+      "arxiv_id": "1706.03762v7",
+      "title": "Attention Is All You Need",
+      "authors": ["Ashish Vaswani", "Noam Shazeer", "Niki Parmar", "Jakob Uszkoreit", "Llion Jones", "Aidan N. Gomez", "Łukasz Kaiser", "Illia Polosukhin"],
+      "year": 2017,
+      "source_url": "https://arxiv.org/abs/1706.03762v7",
+      "pdf_url": "https://arxiv.org/pdf/1706.03762v7",
+      "filename": "1706.03762v7.pdf",
+      "summary": "Transformer 原始论文。第3页看架构，第4页看多头注意力，第8页核对机器翻译结果。",
+      "read_page": 3
+    },
+    {
+      "key": "bert",
+      "arxiv_id": "1810.04805v2",
+      "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+      "authors": ["Jacob Devlin", "Ming-Wei Chang", "Kenton Lee", "Kristina Toutanova"],
+      "year": 2019,
+      "publication_note": "2018年预印本，2019年NAACL正式发表；示例使用arXiv v2。",
+      "doi": "10.18653/v1/N19-1423",
+      "source_url": "https://arxiv.org/abs/1810.04805v2",
+      "pdf_url": "https://arxiv.org/pdf/1810.04805v2",
+      "filename": "1810.04805v2.pdf",
+      "summary": "双向 Transformer 预训练。第3页查看模型架构与流程图，第4页阅读 MLM、NSP 训练目标。",
+      "read_page": 3
+    },
+    {
+      "key": "rag",
+      "arxiv_id": "2005.11401v4",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "authors": ["Patrick Lewis", "Ethan Perez", "Aleksandra Piktus", "Fabio Petroni", "Vladimir Karpukhin", "Naman Goyal", "Heinrich Küttler", "Mike Lewis", "Wen-tau Yih", "Tim Rocktäschel", "Sebastian Riedel", "Douwe Kiela"],
+      "year": 2020,
+      "publication_note": "2020年NeurIPS论文；示例使用2021年修订的arXiv v4。",
+      "source_url": "https://arxiv.org/abs/2005.11401v4",
+      "pdf_url": "https://arxiv.org/pdf/2005.11401v4",
+      "filename": "2005.11401v4.pdf",
+      "summary": "检索增强生成。第3页比较 RAG-Sequence 与 RAG-Token，查看 BERT 编码器及生成器的作用。",
+      "read_page": 3
+    }
+  ],
+  "dataset": {
+    "key": "transformer-wmt14",
+    "filename": "transformer-wmt14-en-de-v7.csv",
+    "csv_path": "/static/examples/transformer-wmt14.csv",
+    "source_url": "https://arxiv.org/pdf/1706.03762v7#page=8",
+    "source_label": "Attention Is All You Need · v7 · 第8页表2",
+    "description": "原论文报告的 WMT 2014 英译德 BLEU，节选六个单模型结果。数值越高表示该评价中的翻译表现越好；训练配置各不相同。这是论文数据转录，非本项目复现实验。",
+    "chart": {
+      "kind": "bar",
+      "x": "Model",
+      "y": ["BLEU_EN_DE"],
+      "missing": "reject",
+      "normalize": false,
+      "title": "WMT 2014 英译德：论文报告的 BLEU（表2节选）",
+      "units": {"BLEU_EN_DE": "BLEU"}
+    }
+  },
+  "scenarios": [
+    {
+      "id": "attention-qa",
+      "title": "问答 · 为什么需要位置编码？",
+      "kind": "qa",
+      "document_keys": ["attention"],
+      "description": "演示有原文依据的单篇问答。",
+      "question": "Transformer 为什么需要位置编码？请说明位置编码如何加入模型，以及论文采用正弦、余弦函数的理由。逐项给出原文出处；若原文没有说明，请明确指出。"
+    },
+    {
+      "id": "bert-qa",
+      "title": "问答 · BERT 的两个预训练目标",
+      "kind": "qa",
+      "document_keys": ["bert"],
+      "description": "查看模型能否区分 MLM 与 NSP 的目的和方法。",
+      "question": "BERT 的 Masked Language Model（MLM）和 Next Sentence Prediction（NSP）分别如何构造训练样本、解决什么问题？请依据论文说明，并给出原文出处。"
+    },
+    {
+      "id": "rag-qa",
+      "title": "问答 · RAG 的两种生成方式",
+      "kind": "qa",
+      "document_keys": ["rag"],
+      "description": "围绕第3页的方法定义进行可追溯问答。",
+      "question": "RAG-Sequence 与 RAG-Token 在生成答案时如何使用检索文档？请比较两者对潜在文档的处理方式，并说明检索器和生成器分别承担什么角色。请附原文依据。"
+    },
+    {
+      "id": "bert-rag-compare",
+      "title": "比较 · BERT 如何参与 RAG？",
+      "kind": "compare",
+      "document_keys": ["bert", "rag"],
+      "description": "两篇原文联合检索，比较表示学习与检索增强。",
+      "question": "结合 BERT 和 RAG 两篇论文，比较它们的模型目标、输入输出和知识使用方式，并解释 BERT 在 RAG 的检索器中承担的角色。每项结论注明来自哪篇论文；避免把架构依赖误写成相同训练目标。"
+    },
+    {
+      "id": "bert-translate",
+      "title": "翻译 · BERT 首页双语对照",
+      "kind": "translate",
+      "document_keys": ["bert"],
+      "page": 1,
+      "description": "仅翻译物理第1页，便于展示双语对照与原文定位。"
+    },
+    {
+      "id": "related-work",
+      "title": "综述 · 三篇论文的技术联系",
+      "kind": "review",
+      "document_keys": ["attention", "bert", "rag"],
+      "description": "用真实文献生成带来源的相关工作草稿。",
+      "instruction": "围绕 Transformer、BERT 与 RAG，按注意力架构、预训练表示、检索增强生成三个层次撰写中文相关工作草稿。明确三者的联系与差异，每个主要论断附来源；仅依据所选论文，不虚构实验或将三篇论文描述为完整的研究史。"
+    },
+    {
+      "id": "research-outline",
+      "title": "写作 · 可追溯科研问答方案",
+      "kind": "draft",
+      "document_keys": ["attention", "bert", "rag"],
+      "description": "形成研究方案框架，区分已有证据与待验证设计。",
+      "instruction": "参考所选三篇论文，为“面向科研文献的可追溯问答系统”生成论文框架，包含问题定义、相关工作、系统方法和评价计划。将文献支持的事实与拟议方案分开标注，不编造数据、实验结果或创新性结论。"
+    }
+  ]
+}
