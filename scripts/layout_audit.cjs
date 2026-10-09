@@ -2,6 +2,7 @@
  * --live-baseline reads a local service and blocks all writes/external requests.
  * The default audit supplies synthetic data through browser routes and never
  * contacts the service or reads browser credentials/storage.
+ * --shell-only reuses those routes for six-module frame consistency checks.
  * Every run preserves fresh screenshots and JSON under artifacts/browser.
  */
 'use strict';
@@ -13,9 +14,11 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/g2806/.cac
 
 const root = path.resolve(__dirname, '..');
 const live = process.argv.includes('--live-baseline');
+const shellOnly = process.argv.includes('--shell-only');
+if (live && shellOnly) throw new Error('--shell-only uses offline fixtures; it cannot be combined with --live-baseline.');
 const origin = new URL(process.env.BASE_URL || 'http://127.0.0.1:8765').origin;
 if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(origin).hostname)) throw new Error('Only local origins are supported.');
-const output = path.join(root, 'artifacts/browser', `layout-${live ? 'baseline' : 'fixture'}-${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`);
+const output = path.join(root, 'artifacts/browser', `layout-${shellOnly ? 'shell' : live ? 'baseline' : 'fixture'}-${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`);
 fs.mkdirSync(output, {recursive:true});
 const report = {startedAt:new Date().toISOString(),output,mode:live?'read-only live baseline':'offline synthetic fixture',snapshots:[],behaviorChecks:[],pageErrors:[],consoleErrors:[],blockedRequests:[],source:{gitHead:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}).trim(),sha256:{}},limitations:[
   'Automated layout checks do not verify model/research quality or replace visual inspection.',
@@ -23,6 +26,7 @@ const report = {startedAt:new Date().toISOString(),output,mode:live?'read-only l
   'Contrast checks use computable flat CSS backgrounds; images/gradients and native select menus require visual inspection.',
   'Whitespace is a heuristic advisory; intentional empty states and reading canvases are not failures.'
 ]};
+if(shellOnly){report.mode='offline shell consistency fixture';report.limitations.push('Shell mode checks shared frame geometry and styling across modules; it does not repeat the complete module content, reader interaction, or model quality suite.');}
 const assets=new Map(fs.readdirSync(path.join(root,'research_workspace/static')).map(name=>[name,fs.readFileSync(path.join(root,'research_workspace/static',name))]));
 for(const [name,content] of assets) if(/\.(css|html|js)$/.test(name)) report.source.sha256[name]=crypto.createHash('sha256').update(content).digest('hex');
 report.source.sha256['scripts/layout_audit.cjs']=crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
@@ -157,6 +161,83 @@ async function datasetVisibility(page,name,expected) {
   behaviorCheck(name,visible===expected&&emptyVisible!==expected,{chartFormVisible:visible,emptyHintVisible:emptyVisible,expectedChartFormVisible:expected});
 }
 
+function measureShell(){
+  const rect=el=>{const b=el.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height};};
+  const style=el=>{const s=getComputedStyle(el);return {fontSize:s.fontSize,lineHeight:s.lineHeight,fontFamily:s.fontFamily,fontWeight:s.fontWeight,padding:s.padding,background:s.backgroundColor,color:s.color,borderBottomWidth:s.borderBottomWidth};};
+  const header=document.querySelector('.app-header'),nav=document.querySelector('.module-navigation');
+  const content=document.querySelector('#workspace:not([hidden]),#moduleRoot:not([hidden])');
+  const moduleShell=content.id==='moduleRoot'?content.firstElementChild:null;
+  const moduleHeading=moduleShell?.querySelector(':scope > header h2');
+  return {viewport:{width:innerWidth,height:innerHeight},header:rect(header),headerStyle:style(header),navigation:rect(nav),navigationStyle:style(nav),navigationScrollLeft:nav.scrollLeft,buttons:[...nav.querySelectorAll('[data-module]')].map(el=>({module:el.dataset.module,...rect(el),x:el.getBoundingClientRect().x+nav.scrollLeft,style:style(el)})),content:rect(content),moduleShell:moduleShell?{...rect(moduleShell),padding:getComputedStyle(moduleShell).padding}:null,moduleHeading:moduleHeading?{...rect(moduleHeading),style:style(moduleHeading)}:null,headerControls:[...header.querySelectorAll('button')].map(el=>({id:el.id,...rect(el),style:style(el),scrollWidth:el.scrollWidth,clientWidth:el.clientWidth})),documentWidth:document.documentElement.scrollWidth,bodyWidth:document.body.scrollWidth,bodyScrollTop:document.scrollingElement.scrollTop,focus:document.body.classList.contains('reader-focus')};
+}
+
+async function shellAudit(page,ready,module){
+  const modules=['reader','manage','research','discovery','graph','data'];
+  const near=(a,b)=>Math.abs(a-b)<=1;
+  const matchingRect=(a,b,keys=['x','y','width','height'])=>keys.every(key=>near(a[key],b[key]));
+  function moduleHeadingCheck(name,actual,baseline){
+    if(!actual.moduleHeading||!baseline?.moduleHeading)return;
+    const shellMatches=actual.moduleShell.padding===baseline.moduleShell.padding&&matchingRect(actual.moduleShell,baseline.moduleShell,['x','y','width']);
+    const headingMatches=matchingRect(actual.moduleHeading,baseline.moduleHeading,['x','y'])&&['fontSize','fontWeight','fontFamily','lineHeight','color'].every(key=>actual.moduleHeading.style[key]===baseline.moduleHeading.style[key]);
+    behaviorCheck(name+'-module-heading-consistent',shellMatches&&headingMatches,{shellMatches,headingMatches,baseline:{shell:baseline.moduleShell,heading:baseline.moduleHeading},actual:{shell:actual.moduleShell,heading:actual.moduleHeading}});
+  }
+  async function sample(name,baseline){
+    await page.waitForTimeout(160);
+    const metrics=await page.evaluate(measureShell),filename=name+'.png';
+    await page.screenshot({path:path.join(output,filename),fullPage:false});
+    const controlsFit=metrics.headerControls.every(button=>button.x>=-1&&button.x+button.width<=metrics.viewport.width+1&&button.y>=metrics.header.y-1&&button.y+button.height<=metrics.header.y+metrics.header.height+1);
+    const noOverflow=metrics.documentWidth<=metrics.viewport.width+1&&metrics.bodyWidth<=metrics.viewport.width+1&&metrics.bodyScrollTop===0;
+    behaviorCheck(name+'-frame-within-viewport',noOverflow&&controlsFit,{documentWidth:metrics.documentWidth,bodyWidth:metrics.bodyWidth,bodyScrollTop:metrics.bodyScrollTop,viewport:metrics.viewport,headerControls:metrics.headerControls});
+    let consistent=true;
+    if(baseline){
+      const headerMatches=matchingRect(metrics.header,baseline.header)&&JSON.stringify(metrics.headerStyle)===JSON.stringify(baseline.headerStyle);
+      const navMatches=matchingRect(metrics.navigation,baseline.navigation)&&JSON.stringify(metrics.navigationStyle)===JSON.stringify(baseline.navigationStyle);
+      const contentMatches=matchingRect(metrics.content,baseline.content,['x','y','width']);
+      const controlsMatch=metrics.headerControls.every((control,index)=>matchingRect(control,baseline.headerControls[index])&&JSON.stringify(control.style)===JSON.stringify(baseline.headerControls[index].style));
+      const buttonsMatch=metrics.buttons.every((button,index)=>matchingRect(button,baseline.buttons[index])&&['fontSize','lineHeight','fontFamily','fontWeight','padding','borderBottomWidth'].every(key=>button.style[key]===baseline.buttons[index].style[key]));
+      consistent=headerMatches&&navMatches&&contentMatches&&buttonsMatch&&controlsMatch;
+      behaviorCheck(name+'-shared-frame-consistent',consistent,{headerMatches,navMatches,contentMatches,buttonsMatch,controlsMatch,baseline,actual:metrics});
+    }
+    report.snapshots.push({name,screenshot:filename,shell:metrics,passed:noOverflow&&controlsFit&&consistent});
+    console.log('SNAPSHOT '+name);
+    return metrics;
+  }
+  for(const width of [1440,1024,602,390,320]){
+    await page.setViewportSize({width,height:width>=1024?900:844});
+    for(const content of (width===1440||width===320?[false,true]:[true])){
+      filled=content;accountMode=false;await ready();
+      if(filled)await page.locator('#pageImage:visible').waitFor();
+      const prefix=width+'-'+(filled?'content':'empty');
+      let baseline,headingBaseline;
+      for(const name of modules){await module(name);const actual=await sample(prefix+'-'+name,baseline);baseline ||= actual;moduleHeadingCheck(prefix+'-'+name,actual,headingBaseline);if(actual.moduleHeading)headingBaseline ||= actual;}
+      // Compare against reader again after every module has mounted once.
+      await module('reader');const beforeFocus=await page.evaluate(measureShell);
+      await page.locator('#readerFocusButton').click();
+      await page.waitForFunction(()=>document.body.classList.contains('reader-focus'));
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(()=>!document.body.classList.contains('reader-focus'));
+      await sample(prefix+'-focus-exit',beforeFocus);
+      await module('manage');await sample(prefix+'-focus-exit-manage',beforeFocus);
+      if(width<1000){
+        await page.locator('[data-module="data"]').click();
+        const before=await page.locator('.module-navigation').evaluate(el=>el.scrollLeft);
+        await page.locator('[data-module="graph"]').click();
+        const afterGraph=await page.locator('.module-navigation').evaluate(el=>el.scrollLeft);
+        await page.locator('[data-module="data"]').click();
+        const afterData=await page.locator('.module-navigation').evaluate(el=>el.scrollLeft);
+        behaviorCheck(prefix+'-navigation-preserves-horizontal-position',near(before,afterGraph)&&near(before,afterData),{before,afterGraph,afterData});
+      }
+    }
+  }
+  accountMode=true;filled=true;
+  for(const width of [602,320]){
+    await page.setViewportSize({width,height:844});await ready();
+    await page.waitForFunction(()=>document.querySelector('#accountButton').textContent.startsWith('LongAccount_'));
+    let baseline,headingBaseline;
+    for(const name of modules){await module(name);const actual=await sample(width+'-long-account-'+name,baseline);baseline ||= actual;moduleHeadingCheck(width+'-long-account-'+name,actual,headingBaseline);if(actual.moduleHeading)headingBaseline ||= actual;}
+  }
+}
+
 async function main(){
   const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_EXECUTABLE||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
@@ -186,6 +267,12 @@ async function main(){
         const position=await page.locator('#moduleRoot').evaluate(el=>({scrollTop:el.scrollTop,scrollLeft:el.scrollLeft,viewportWidth:innerWidth}));
         behaviorCheck('module-entry-'+(++moduleEntries)+'-'+name,position.scrollTop===0&&position.scrollLeft===0,position);
       }
+    }
+    if(shellOnly){
+      await shellAudit(page,ready,module);
+      report.passed=report.pageErrors.length===0&&report.consoleErrors.length===0&&report.blockedRequests.length===0&&report.snapshots.every(snapshot=>snapshot.passed)&&report.behaviorChecks.every(check=>check.passed);
+      if(!report.passed)process.exitCode=1;
+      return;
     }
     const sizes=live?[{width:1440,height:1000}]:[{width:1440,height:1000},{width:1280,height:600},{width:1024,height:768},{width:602,height:884},{width:390,height:844},{width:320,height:720}];
     for(const size of sizes){
