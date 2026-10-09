@@ -21,7 +21,7 @@ A. Attention Is All You Need，Vaswani 等，2017。
 固定版本：1706.03762v7；15 页。
 论文来源：https://arxiv.org/abs/1706.03762v7
 原始 PDF：https://arxiv.org/pdf/1706.03762v7
-阅读定位：第 3 页架构、第 4 页多头注意力、第 5 页位置编码、第 8 页表 2。
+阅读定位：第 3 页架构、第 4 页多头注意力、第 6 页位置编码、第 8 页表 2。
 
 B. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding，Devlin、Chang、Lee、Toutanova。
 2018 年预印本、2019 年 NAACL 正式发表；固定版本 1810.04805v2，16 页。
