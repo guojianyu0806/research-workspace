@@ -1,4 +1,4 @@
-:root{--workspace:#edf2f5;--paper:#fff;--ink:#203440;--muted:#536874;--primary:#165f63;--primary-soft:#e8f1f0;--evidence:#8f501a;--evidence-soft:#fff3e3;--line:#cbd7de;--error:#9e3039;--warning:#80521b;--surface:#f7fafb;--input-line:#9caeb9;--body:"Segoe UI","Microsoft YaHei",sans-serif;--utility:"Consolas","Cascadia Mono",monospace;font-family:var(--body);font-size:16px;line-height:1.6;color-scheme:light;color:var(--ink);background:var(--workspace);font-synthesis:none}
+:root{--workspace:#e6edf2;--paper:#fff;--ink:#18343f;--muted:#49616e;--primary:#165f63;--primary-soft:#e3f0ee;--evidence:#8f501a;--evidence-soft:#fff3e3;--line:#b9cbd5;--error:#9e3039;--warning:#80521b;--surface:#f3f6f8;--input-line:#8cabb9;--section-tint:#e9f0f4;--section-line:#c1d0d9;--panel-shadow:0 2px 6px #18343f0a;--panel-radius:10px;--navigation:#193f4d;--navigation-text:#edf5f7;--body:"Segoe UI","Microsoft YaHei",sans-serif;--utility:"Consolas","Cascadia Mono",monospace;font-family:var(--body);font-size:16px;line-height:1.6;color-scheme:light;color:var(--ink);background:var(--workspace);font-synthesis:none}
 
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;width:100%}

@@ -3,32 +3,35 @@
 #workspace{--library-size:240px;--evidence-size:300px;--library-width:var(--library-size);--evidence-width:var(--evidence-size);display:grid;grid-template-columns:var(--library-width) minmax(0,1fr) var(--evidence-width);position:relative;overflow:hidden;min-height:0;gap:0;transition:grid-template-columns .24s cubic-bezier(.2,.7,.2,1)}
 #workspace.library-collapsed{--library-width:0px}
 #workspace.evidence-collapsed{--evidence-width:0px}
-#workspace>#libraryPanel,#workspace>#evidencePanel{display:flex;flex-direction:column;position:relative;height:100%;width:auto;min-width:0;padding:0;gap:0;overflow:hidden;opacity:1;visibility:visible;background:var(--paper);transition:opacity .18s ease,visibility 0s linear}
+#workspace>#libraryPanel,#workspace>#evidencePanel{display:flex;flex-direction:column;position:relative;height:100%;width:auto;min-width:0;padding:0;gap:0;overflow:hidden;opacity:1;visibility:visible;background:var(--surface);transition:opacity .18s ease,visibility 0s linear}
 #workspace>#libraryPanel{grid-column:1;border-right:1px solid var(--line)}
 #workspace>#evidencePanel{grid-column:3;border-left:1px solid var(--line)}
 #workspace.library-collapsed>#libraryPanel,#workspace.evidence-collapsed>#evidencePanel{opacity:0;visibility:hidden;pointer-events:none;border:0;transition:opacity .14s ease,visibility 0s linear .24s}
-#workspace .panel-heading{padding:12px;gap:4px;min-width:0;flex-wrap:nowrap}
+#workspace .panel-heading{padding:12px;gap:4px;min-width:0;flex-wrap:nowrap;background:var(--section-tint);box-shadow:inset 3px 0 var(--primary);border-bottom:1px solid var(--section-line);margin-bottom:10px}
+#workspace #evidencePanel .panel-heading{background:var(--evidence-soft);box-shadow:inset 3px 0 var(--evidence)}
 #workspace .panel-heading h1,#workspace .panel-heading h2{font-size:18px}
 #workspace .panel-heading .eyebrow{display:none}
 #workspace .panel-heading .icon-button{width:32px;height:32px}
 #workspace .library-search{margin:0 12px 10px}
-#workspace .drop-zone{display:flex;margin:0 12px 10px;min-height:52px;font-size:14px;flex-shrink:0}
+#workspace .drop-zone{display:flex;margin:0 12px 10px;min-height:52px;font-size:14px;flex-shrink:0;border-color:var(--input-line);background:var(--paper)}
 #workspace .drop-zone .icon{display:none}
 #workspace .drop-zone span span{margin:0}
 #workspace .document-list{display:block;flex:1;min-height:0;max-height:none;overflow-y:auto;padding:0 8px 8px}
-#workspace .document-row{padding:10px 8px;margin-bottom:4px;gap:8px}
+#workspace .document-row{padding:10px 8px;margin-bottom:6px;gap:8px;background:var(--paper);border-color:var(--section-line)}
+#workspace .document-row:hover{background:var(--section-tint);border-color:var(--input-line)}
+#workspace .document-row.is-selected{background:var(--primary-soft);border-color:#7da8a5;box-shadow:var(--panel-shadow)}
 #workspace .document-file-icon{width:27px;height:34px}
 #workspace .document-name{font-size:14px}
 #workspace .document-meta{font-size:14px;gap:4px;margin-top:4px}
-#workspace .library-footer{display:flex;padding:8px 12px;min-height:0;border-top:1px solid var(--line);font-size:14px}
+#workspace .library-footer{display:flex;padding:8px 12px;min-height:0;border-top:1px solid var(--line);font-size:14px;background:var(--section-tint)}
 #workspace .upload-status{margin:0 12px 8px}
-#workspace .evidence-form{padding:0 12px 12px}
+#workspace .evidence-form{padding:0 12px 12px;background:var(--surface)}
 #workspace .search-results{padding:12px;min-height:0}
 #workspace .search-empty{padding:12px 0;margin:0 auto}
 #workspace .evidence-empty-icon{display:none}
 #workspace .search-tip{margin-top:16px}
 #workspace .results-heading{padding:12px 12px 0}
-#workspace .evidence-footer{padding:8px 12px;min-height:0}
+#workspace .evidence-footer{padding:8px 12px;min-height:0;background:var(--section-tint)}
 
 #workspace>#readerPanel{display:flex;flex-direction:column;grid-column:2;grid-row:1;height:100%;width:100%;min-width:0;min-height:0;flex:none;overflow:hidden;border:0;background:var(--workspace);position:relative;container-type:inline-size;container-name:reading-area}
 #readerPanel #readerHeading{display:flex;align-items:center;gap:6px;padding:6px 10px;min-height:44px;flex-shrink:0;border-bottom:1px solid var(--line);background:var(--paper)}
@@ -46,16 +49,16 @@
 .reader-info:not(.is-collapsed) .reader-info-inner{padding-top:6px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 #readerInfo .reader-subtitle{margin:0;font-size:14px;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
 #readerInfo .reparse-button{flex-shrink:0}
-#readerPanel #readerToolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;min-height:42px;padding:4px 10px;background:var(--paper)}
+#readerPanel #readerToolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;min-height:42px;padding:4px 10px;background:var(--section-tint);border-bottom-color:var(--line)}
 #readerToolbar .icon-button{width:32px;height:32px;min-width:32px}
-#readerToolbar .page-navigation input{height:32px;width:42px;background:var(--surface);border-color:var(--line)}
+#readerToolbar .page-navigation input{height:32px;width:42px;background:var(--paper);border-color:var(--input-line)}
 #readerToolbar .page-total{min-width:32px;text-align:center}
 .reader-zoom{display:flex;align-items:center;gap:4px;min-width:0}
 #readerToolbar .page-fit-label{min-width:0;display:flex}
 #readerToolbar #pageZoom{max-width:144px;min-height:32px;height:32px;padding:4px 6px;font-size:14px}
 .reader-zoom-step{font-size:18px;width:32px;padding:0}
-#readerPanel #readerViewport{flex:1;min-height:0;min-width:0;padding:10px 12px;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;align-items:stretch}
-#readerPanel #paperPage{max-width:none;margin:0 auto;flex-shrink:0}
+#readerPanel #readerViewport{flex:1;min-height:0;min-width:0;padding:10px 12px;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;align-items:stretch;background:#dce5ec}
+#readerPanel #paperPage{max-width:none;margin:0 auto;flex-shrink:0;border-color:#a9bdc9;box-shadow:0 3px 14px #18343f24}
 #readerPanel #readerFooter{min-height:0;padding:4px 12px;font-size:14px;line-height:1.5}
 #readerPanel #readerMessage{padding:6px 12px;font-size:14px;line-height:1.5}
 #readerPanel .reader-empty{min-height:0;padding:20px 12px}

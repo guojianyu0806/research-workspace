@@ -1,24 +1,26 @@
 /* Shared frame: module selection must not change header, navigation or gutters. */
 :root{--shell-gutter:24px}
-.app-header{min-height:64px;padding:8px var(--shell-gutter)}
-.module-navigation{display:flex;gap:4px;flex-shrink:0;padding:0 var(--shell-gutter);border-bottom:1px solid var(--line);background:var(--paper);overflow-x:auto;min-height:44px;scrollbar-width:thin}
-.module-navigation button{font-size:16px;font-weight:600;line-height:1.5;padding:8px 20px;min-height:42px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--muted);white-space:nowrap}
+.app-header{min-height:64px;padding:8px var(--shell-gutter);border-bottom-color:#a8bec9}
+.module-navigation{display:flex;gap:4px;flex-shrink:0;padding:0 var(--shell-gutter);border-bottom:1px solid #91aab7;background:var(--navigation);overflow-x:auto;min-height:44px;scrollbar-width:thin;scrollbar-color:#799ca9 var(--navigation)}
+.module-navigation button{font-size:16px;font-weight:600;line-height:1.5;padding:8px 20px;min-height:42px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--navigation-text);white-space:nowrap;border-radius:6px 6px 0 0;transition:background .15s,color .15s}
 .module-navigation button[aria-pressed=true]{color:var(--primary);border-color:var(--primary);background:var(--primary-soft)}
 .module-navigation button:hover{background:var(--primary-soft);color:var(--primary)}
+.module-navigation button:focus-visible{outline:2px solid #fff;outline-offset:-4px}
+.module-navigation button[aria-pressed=true]:focus-visible{outline-color:var(--primary)}
 .module-root{flex:1;min-width:0;min-height:0;overflow:auto;background:var(--workspace);padding:0;scrollbar-width:thin;scrollbar-gutter:stable}
 /* Only page-level shells/headings are shared; each module owns its work area. */
 #moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell){width:100%;max-width:none;margin:0;padding:var(--shell-gutter);background:var(--workspace)}
-#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading){display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;margin:0 0 20px}
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading){display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;margin:0 0 18px;padding-bottom:14px;border-bottom:1px solid var(--section-line)}
 #moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading)>div{flex:1 1 240px;min-width:0}
 #moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading)>button{flex:0 0 auto;margin:0}
 #moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading) h2{font-family:var(--body);font-size:24px;font-weight:600;line-height:1.4;letter-spacing:.4px;margin:0 0 8px}
-#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading) :is(.rm-kicker,.rs-eyebrow,.ex-kicker){display:block;font:400 14px/1.5 var(--body);letter-spacing:1.6px;color:var(--muted);margin:0 0 6px}
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading) :is(.rm-kicker,.rs-eyebrow,.ex-kicker){display:block;font:600 14px/1.5 var(--body);letter-spacing:1.6px;color:var(--primary);margin:0 0 6px}
 #moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading) p{font-size:14px;line-height:1.8;color:var(--muted);margin:0;max-width:none}
 #accountButton{display:block;max-width:200px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .module-error{margin:24px;padding:20px;border:1px solid #d6aaa7;background:#fff0ed;color:var(--error);border-radius:8px;font-size:16px;line-height:1.7;overflow-wrap:anywhere}
 .account-dialog{width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:0 20px 80px #1233;scrollbar-width:thin}
 .account-dialog::backdrop{background:#1c303d70}
-.account-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
+.account-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--section-line)}
 .account-heading h2{font-size:22px;line-height:1.4}
 .account-dialog p{font-size:16px;line-height:1.7;color:var(--muted);overflow-wrap:anywhere}
 .account-dialog form{margin-top:20px}
@@ -41,3 +43,4 @@
   .account-dialog{padding:20px;width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
   .module-error{margin:16px;padding:16px}
 }
+@media(prefers-reduced-motion:reduce){.module-navigation button{transition:none}}
