@@ -12,6 +12,7 @@
       "source_url": "https://arxiv.org/abs/1706.03762v7",
       "pdf_url": "https://arxiv.org/pdf/1706.03762v7",
       "filename": "1706.03762v7.pdf",
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
       "summary": "Transformer 原始论文。第3页看架构，第4页看多头注意力，第8页核对机器翻译结果。",
       "read_page": 3
     },
@@ -26,6 +27,7 @@
       "source_url": "https://arxiv.org/abs/1810.04805v2",
       "pdf_url": "https://arxiv.org/pdf/1810.04805v2",
       "filename": "1810.04805v2.pdf",
+      "sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
       "summary": "双向 Transformer 预训练。第3页查看模型架构与流程图，第4页阅读 MLM、NSP 训练目标。",
       "read_page": 3
     },
@@ -39,6 +41,7 @@
       "source_url": "https://arxiv.org/abs/2005.11401v4",
       "pdf_url": "https://arxiv.org/pdf/2005.11401v4",
       "filename": "2005.11401v4.pdf",
+      "sha256": "23e3249e9a1e75418d82efecab0ea8c4d033b89c93742f63208d47ce01f21233",
       "summary": "检索增强生成。第3页比较 RAG-Sequence 与 RAG-Token，查看 BERT 编码器及生成器的作用。",
       "read_page": 3
     }
