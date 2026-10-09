@@ -335,6 +335,7 @@
       return;
     }
     if (page === state.page) return;
+    navigationRequest += 1;
     state.page = page;
     state.highlight = null;
     state.selectedHit = null;
@@ -614,10 +615,13 @@
     refreshLibrary: () => refreshDocuments(),
     currentDocument: () => currentDocument(),
     selectedIds: () => state.documents.filter(doc => doc.is_current_version !== false && !doc.archived_at).map(doc => doc.id),
+    invalidateEvidenceNavigation() { navigationRequest += 1; },
     async onEvidence(evidence) {
       if (!evidence?.document_id) return;
+      const navigation = ++navigationRequest;
       if (!state.documents.some(doc => doc.id === evidence.document_id)) {
         const result = await api(`/api/documents/${encodeURIComponent(evidence.document_id)}`);
+        if (navigation !== navigationRequest) return;
         state.documents.push(result.document);
       }
       selectDocument(evidence.document_id, {runId:evidence.run_id, page:evidence.page || 1, bbox:evidence.bbox, hitKey:evidence.block_id});

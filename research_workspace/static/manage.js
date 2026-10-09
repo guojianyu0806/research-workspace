@@ -48,6 +48,7 @@
     let selection = null;
     let invalidSelection = false;
     let activeTab = "metadata";
+    const extensions = {};
     const pageCache = new Map();
     const referenceElements = new Map();
     const textElements = new Map();
@@ -73,7 +74,7 @@
     tabs.setAttribute("aria-label", "文献管理工作区");
     const panes = {};
     const tabButtons = {};
-    for (const [key, title] of [["metadata", "资料与版本"], ["structure", "标题与引用"], ["text", "本页文字"]]) {
+    for (const [key, title] of [["metadata", "资料与版本"], ["structure", "标题与引用"], ["text", "本页文字"], ["layout", "版面结构"], ["references", "参考文献筛选"]]) {
       const tab = btn(title, () => switchTab(key), "rm-tab");
       tab.id = `${prefix}-tab-${key}`;
       tab.setAttribute("role", "tab");
@@ -132,6 +133,7 @@
       return typeof value === "string" ? value : value?.id;
     }
     function switchTab(key) {
+      options.invalidateEvidenceNavigation?.();
       activeTab = key;
       for (const name of Object.keys(panes)) {
         panes[name].hidden = name !== key;
@@ -140,6 +142,15 @@
         tabButtons[name].tabIndex = name === key ? 0 : -1;
       }
       if (key === "text" && selectedDocument && !currentPage && !pageLoading) loadPage(1);
+      mountExtension(key);
+    }
+    function clearExtensions() {
+      for (const key of Object.keys(extensions)) { extensions[key]?.destroy(); delete extensions[key]; }
+    }
+    function mountExtension(key) {
+      if (!selectedDocument || extensions[key]) return;
+      const module = key === "layout" ? window.ResearchLayout : key === "references" ? window.ResearchReferences : null;
+      if (module) extensions[key] = module.mount(panes[key], { api, document: selectedDocument, onEvidence });
     }
     tabs.addEventListener("keydown", (event) => {
       const names = Object.keys(tabButtons);
@@ -165,6 +176,7 @@
         documents = Array.isArray(result.documents) ? result.documents : [];
         select.replaceChildren();
         if (!documents.length) {
+          clearExtensions();
           selectedDocument = null; selectedId = null; currentPage = null; pageLoading = false;
           documentEpoch++; pageEpoch++; diffEpoch++;
           select.append(option("", "尚未导入文献"));
@@ -184,7 +196,9 @@
     }
 
     async function loadDocument(id) {
+      options.invalidateEvidenceNavigation?.();
       const epoch = ++documentEpoch;
+      clearExtensions();
       pageEpoch++; diffEpoch++;
       selectedId = id;
       selectedDocument = documents.find((doc) => doc.id === id) || null;
@@ -197,6 +211,7 @@
       renderMetadata(doc);
       empty(panes.structure, "正在读取标题与引用", "使用已保存的解析结果整理可定位的文献结构。");
       renderTextControls(doc);
+      mountExtension(activeTab);
       const settled = await Promise.allSettled([
         api(`${pathFor(id)}/versions`),
         api(`${pathFor(id)}/structure`),
@@ -549,6 +564,8 @@
       destroy() {
         if (!alive) return;
         alive = false; refreshEpoch++; documentEpoch++; pageEpoch++; diffEpoch++;
+        options.invalidateEvidenceNavigation?.();
+        clearExtensions();
         document.removeEventListener("selectionchange", selectionChanged);
         pageCache.clear(); shell.remove();
         if (instances.get(container) === controller) instances.delete(container);

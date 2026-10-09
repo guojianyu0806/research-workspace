@@ -14,6 +14,7 @@
     root.replaceChildren(element);
   }
   async function activate(name) {
+    bridge.invalidateEvidenceNavigation?.();
     activeModule = name;
     const request = ++revision;
     controller?.destroy?.();

@@ -22,6 +22,7 @@ from .accounts import Accounts
 from .advanced_api import build_router, library_for
 from .intelligence import IntelligenceService
 from .model_settings import router as model_settings_router
+from .enhancements_api import router as enhancements_router
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
@@ -263,6 +264,7 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
 
     app.include_router(build_router())
     app.include_router(model_settings_router)
+    app.include_router(enhancements_router)
 
     @app.get("/")
     def index():

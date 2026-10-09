@@ -82,8 +82,9 @@ def render_radar(spec, colors):
         for ai, (sx,sy) in enumerate(shape):
             label = f'{item["name"]} / {geo["axes"][ai]["label"]}: {item["original_values"][ai]:.6g}; radius={item["values"][ai]:.6g}'
             out.append(f'<circle cx="{sx:.3f}" cy="{sy:.3f}" r="3" fill="{color}"><title>{html.escape(label)}</title></circle>')
-        tx, ty = screen(1.08,0,z)
-        out.append(f'<text x="{tx+8:.3f}" y="{ty:.3f}" fill="{color}" font-size="11">L{si+1}</text>')
+        tx = max(point[0] for point in polygon(1,z)) + 36
+        ty = screen(0,0,z)[1]
+        out.append(f'<text x="{tx:.3f}" y="{ty:.3f}" fill="{color}" font-size="11">L{si+1}</text>')
         lx, ly = 40+(si % 3)*320, 554+(si//3)*28
         out.append(f'<rect x="{lx}" y="{ly-8}" width="14" height="5" fill="{color}"/><text x="{lx+22}" y="{ly}" font-size="13">L{si+1} · {html.escape(item["name"][:28])}</text>')
     mode = 'Per-axis min–max across series; constant axes = 0.5' if geo['normalization'].startswith('per_axis') else 'Input values already in [0,1]; no normalization'
