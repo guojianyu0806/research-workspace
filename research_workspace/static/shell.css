@@ -1,9 +1,19 @@
-/* Module shells own their padding; this is the single main scroll container. */
-.module-navigation{display:flex;gap:4px;flex-shrink:0;padding:0 24px;border-bottom:1px solid var(--line);background:var(--paper);overflow-x:auto;min-height:52px;scrollbar-width:thin}
-.module-navigation button{font-size:16px;line-height:1.5;padding:12px 20px;min-height:48px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--muted);white-space:nowrap}
-.module-navigation button[aria-pressed=true]{color:var(--primary);border-color:var(--primary);font-weight:600;background:var(--primary-soft)}
+/* Shared frame: module selection must not change header, navigation or gutters. */
+:root{--shell-gutter:24px}
+.app-header{min-height:64px;padding:8px var(--shell-gutter)}
+.module-navigation{display:flex;gap:4px;flex-shrink:0;padding:0 var(--shell-gutter);border-bottom:1px solid var(--line);background:var(--paper);overflow-x:auto;min-height:44px;scrollbar-width:thin}
+.module-navigation button{font-size:16px;font-weight:600;line-height:1.5;padding:8px 20px;min-height:42px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--muted);white-space:nowrap}
+.module-navigation button[aria-pressed=true]{color:var(--primary);border-color:var(--primary);background:var(--primary-soft)}
 .module-navigation button:hover{background:var(--primary-soft);color:var(--primary)}
-.module-root{flex:1;min-width:0;min-height:0;overflow:auto;background:var(--workspace);padding:0;scrollbar-width:thin}
+.module-root{flex:1;min-width:0;min-height:0;overflow:auto;background:var(--workspace);padding:0;scrollbar-width:thin;scrollbar-gutter:stable}
+/* Only page-level shells/headings are shared; each module owns its work area. */
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell){width:100%;max-width:none;margin:0;padding:var(--shell-gutter);background:var(--workspace)}
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading){display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;margin:0 0 20px}
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading)>div{flex:1 1 240px;min-width:0}
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading)>button{flex:0 0 auto;margin:0}
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading) h2{font-family:var(--body);font-size:24px;font-weight:600;line-height:1.4;letter-spacing:.4px;margin:0 0 8px}
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading) :is(.rm-kicker,.rs-eyebrow,.ex-kicker){display:block;font:400 14px/1.5 var(--body);letter-spacing:1.6px;color:var(--muted);margin:0 0 6px}
+#moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading) p{font-size:14px;line-height:1.8;color:var(--muted);margin:0;max-width:none}
 #accountButton{display:block;max-width:200px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .module-error{margin:24px;padding:20px;border:1px solid #d6aaa7;background:#fff0ed;color:var(--error);border-radius:8px;font-size:16px;line-height:1.7;overflow-wrap:anywhere}
 .account-dialog{width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:0 20px 80px #1233;scrollbar-width:thin}
@@ -21,9 +31,12 @@
 #logoutButton{margin-top:20px;max-width:100%;white-space:normal;line-height:1.6}
 .page-fit-label{display:flex;align-items:center;gap:6px;min-width:0}
 .page-fit-label select{max-width:136px;min-height:40px;padding:6px;border:1px solid var(--input-line);border-radius:5px;background:var(--paper);color:var(--ink);font-size:14px}
+@media(min-width:1650px){:root{--shell-gutter:30px}}
+@media(max-width:1199px){:root{--shell-gutter:20px}}
 @media(max-width:700px){
-  .module-navigation{padding:0 12px;gap:0;min-height:48px}
-  .module-navigation button{padding:10px 14px;font-size:15px;min-height:46px}
+  :root{--shell-gutter:16px}
+  .module-navigation{gap:0}
+  .module-navigation button{padding:8px 14px;font-size:15px}
   #accountButton{max-width:100%;white-space:nowrap}
   .account-dialog{padding:20px;width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
   .module-error{margin:16px;padding:16px}

@@ -1,7 +1,4 @@
 /* Reading has one canvas. Ancillary panels expand only when requested. */
-body.reader-active .app-header{min-height:64px;padding-top:8px;padding-bottom:8px}
-body.reader-active .module-navigation{min-height:44px}
-body.reader-active .module-navigation button{min-height:42px;padding-top:8px;padding-bottom:8px}
 .mobile-navigation{display:none!important}
 #workspace{--library-size:240px;--evidence-size:300px;--library-width:var(--library-size);--evidence-width:var(--evidence-size);display:grid;grid-template-columns:var(--library-width) minmax(0,1fr) var(--evidence-width);position:relative;overflow:hidden;min-height:0;gap:0;transition:grid-template-columns .24s cubic-bezier(.2,.7,.2,1)}
 #workspace.library-collapsed{--library-width:0px}
