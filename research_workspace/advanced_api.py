@@ -83,13 +83,15 @@ class FeedbackInput(StrictInput):
 
 
 class ChartInput(StrictInput):
-    kind: Literal['line','bar']
+    kind: Literal['line','bar','radar3d']
     x: str
     y: list[str] = Field(min_length=1,max_length=6)
     missing: Literal['reject','drop'] = 'reject'
     normalize: bool = False
     title: str = Field(default='',max_length=150)
     units: dict[str,str] = Field(default_factory=dict)
+    yaw: float = Field(default=35,ge=-180,le=180,allow_inf_nan=False)
+    elevation: float = Field(default=30,ge=15,le=75,allow_inf_nan=False)
 
 
 class DiagramInput(StrictInput):

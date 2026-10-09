@@ -555,15 +555,25 @@
     const columnsInfo = node("div", "rs-column-info"); const preview = node("div", "rs-table-scroll");
     previewCard.append(previewTitle, datasetInfo, columnsInfo, preview); life.shell.append(previewCard);
     const chartForm = node("form", "rs-card rs-chart-form"); chartForm.append(node("h3", "rs-card-title", "生成图表"));
-    const chartKind = select([["line", "折线图"], ["bar", "柱状图"]]), x = select([]), yChoices = node("div", "rs-y-choices");
+    const chartKind = select([["line", "折线图"], ["bar", "柱状图"], ["radar3d", "三维分层雷达图"]]), x = select([]), yChoices = node("div", "rs-y-choices");
     const title = input("text", "可选，留空时根据字段生成标题"); title.maxLength = 150;
     const missing = select([["reject", "遇到缺失或无效值时停止"], ["drop", "明确忽略含无效值的整行"]]);
-    const normalize = input("checkbox"), normalLabel = node("label", "rs-check-label"); normalLabel.append(normalize, node("span", "", "各数值列按Min–Max归一化"));
+    const normalize = input("checkbox"), normalLabel = node("label", "rs-check-label"), normalText = node("span", "", "各数值列按Min–Max归一化"); normalLabel.append(normalize, normalText);
     const row = node("div", "rs-form-row"); row.append(field("图表类型", chartKind), field("横轴字段", x)); chartForm.append(row);
     const yGroup = node("fieldset", "rs-fieldset"); yGroup.append(node("legend", "rs-label", "数值字段 · 选择1至6列"), yChoices); chartForm.append(yGroup);
     const unitsArea = node("div", "rs-unit-fields"); chartForm.append(unitsArea, field("图表标题", title), field("缺失值处理", missing), normalLabel);
     const create = button("生成图表与图注", true); create.type = "submit"; create.disabled = true;
-    chartForm.append(create, node("p", "rs-muted rs-small", "每次绘图需1至500条有效记录，按CSV原行顺序展示。当前提供折线图和柱状图。")); life.shell.append(chartForm);
+    const chartHint = node("p", "rs-muted rs-small", "折线和柱状图需1至500条有效记录，按CSV原行顺序展示。");
+    const camera = node("div", "rs-form-row"); camera.hidden = true;
+    const yaw = input("number"), elevation = input("number"); yaw.min = "-180"; yaw.max = "180"; yaw.value = "35";
+    elevation.min = "15"; elevation.max = "75"; elevation.value = "30";
+    camera.append(field("雷达图方位角（度）", yaw), field("雷达图仰角（度）", elevation));
+    chartForm.append(camera, create, chartHint); life.shell.append(chartForm);
+    life.on(chartKind, "change", () => {
+      const radar = chartKind.value === "radar3d"; camera.hidden = !radar;
+      normalText.textContent = radar ? "每个指标行在所选系列间按Min–Max归一化（常数指标取0.5）" : "各数值列按Min–Max归一化";
+      chartHint.textContent = radar ? "三维雷达图：3至12行分别为指标轴，2至6个数值列分别为高度层；横轴字段提供指标名称。未经归一化的数值必须在0至1之间。高度表示系列类别，半径大小不自动代表性能优劣。修改角度后重新生成可保存独立图表。" : "折线和柱状图需1至500条有效记录，按CSV原行顺序展示。";
+    });
     const chartOutput = node("section", "rs-card rs-chart-output"); chartOutput.hidden = true; life.shell.append(chartOutput);
     const diagramForm = node("form", "rs-card rs-diagram-form"); diagramForm.append(node("h3", "rs-card-title", "结构图"),
       node("p", "rs-muted rs-small", "输入节点与连接，服务端会实际渲染SVG。此图表示输入的结构，不自动证明模型或实验已经实现。"));
@@ -647,7 +657,8 @@
       try {
         const response = await life.api(`/api/datasets/${encodeURIComponent(datasetId)}/charts`, jsonOptions({ kind: chartKind.value,
           x: x.value, y, missing: missing.value, normalize: normalize.checked, title: title.value.trim(),
-          units: Object.fromEntries(y.map((name) => [name, state.units[name] || ""])) }));
+          units: Object.fromEntries(y.map((name) => [name, state.units[name] || ""])),
+          yaw: Number(yaw.value), elevation: Number(elevation.value) }));
         const chart = response.chart; const imageUrl = await life.svgBlob(`/api/charts/${encodeURIComponent(chart.id)}/svg`);
         if (!life.alive) { life.revoke(imageUrl); return; }
         if (state.selected?.id !== datasetId) { life.revoke(imageUrl); life.show("数据集已切换，本次结果未替换当前视图。"); return; }

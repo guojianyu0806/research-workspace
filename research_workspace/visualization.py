@@ -25,6 +25,9 @@ def number(value):
 
 def render_chart(spec: dict) -> str:
     """Render a validated, numeric specification as an inert standalone SVG."""
+    if spec['kind'] == 'radar3d':
+        from .radar import render_radar
+        return render_radar(spec, COLORS)
     labels, series = spec['labels'], spec['series']
     width, height = 1000, 600
     left, top, bottom, right = 90, 80, 480, 930
@@ -167,10 +170,10 @@ class DataStudio:
             rows = db.execute('SELECT id,filename,sha256,created_at FROM datasets ORDER BY created_at DESC').fetchall()
         return [dict(r) for r in rows]
 
-    def create_chart(self, dataset_id, *, kind, x, y, missing='reject', normalize=False, title='', units=None):
+    def create_chart(self, dataset_id, *, kind, x, y, missing='reject', normalize=False, title='', units=None, yaw=35.0, elevation=30.0):
         data = self.get_dataset(dataset_id, all_rows=True)
-        if kind not in {'line','bar'} or not 1 <= len(y) <= 6 or len(set(y)) != len(y):
-            raise ValueError('请选择折线或柱状图，以及1至6个不同数值字段。')
+        if kind not in {'line','bar','radar3d'} or not 1 <= len(y) <= 6 or len(set(y)) != len(y):
+            raise ValueError('请选择支持的图表类型，以及1至6个不同数值字段。')
         if x not in data['headers'] or any(name not in data['headers'] for name in y):
             raise ValueError('字段不存在。')
         if missing not in {'reject','drop'}:
@@ -192,18 +195,27 @@ class DataStudio:
         for index, name in enumerate(y):
             values = [r[1][index] for r in valid]
             original_min, original_max = min(values), max(values)
-            if normalize:
+            if normalize and kind != 'radar3d':
                 delta = original_max-original_min
                 values = [(v-original_min)/delta if delta else 0 for v in values]
             series.append({'name':name,'unit':str(units.get(name,''))[:40], 'values':values,
                            'original_min':original_min,'original_max':original_max})
         spec = {'kind':kind, 'title':str(title or f'{x} 与 {", ".join(y)}')[:150], 'x':x,
                 'labels':[r[0] for r in valid], 'series':series}
+        if kind == 'radar3d':
+            from .radar import radar_geometry
+            spec['radar'] = radar_geometry(spec['labels'], series, normalize=normalize, yaw=yaw, elevation=elevation)
         descriptions = [f'{s["name"]}范围为{min(s["values"]):.6g}至{max(s["values"]):.6g}{"（归一化）" if normalize else s["unit"]}' for s in series]
         item = {'id':uuid4().hex,'dataset_id':dataset_id,'dataset_sha256':data['sha256'], 'created_at':_now(), 'spec':spec,
                 'transformations':{'missing':missing,'dropped_csv_rows':dropped,'minmax_normalized':normalize,'aggregation':'none','row_order':'source'},
                 'caption':f'{spec["title"]}。横轴为{x}，保留CSV原行顺序，共{len(valid)}条有效记录。'+ '；'.join(descriptions)+'。该图未进行显著性检验，不表示因果关系。',
                 'template_version':'svg-chart-v1'}
+        if kind == 'radar3d':
+            item['template_version'] = 'svg-radar3d-v1'
+            item['transformations']['normalization_scope'] = spec['radar']['normalization']
+            item['caption'] = (f'{spec["title"]}。{len(valid)}个指标映射为极角轴，半径为0至1，高度层对应{len(series)}个系列的类别顺序。'
+                               + ('每个指标在所选系列间进行Min–Max归一化；常数指标半径设为0.5。' if normalize else '输入数值已在0至1之间，未归一化。')
+                               + '高度不表示独立测量变量，半径大小不自动代表性能优劣；未进行显著性检验。')
         with self.library._connection() as db:
             db.execute('INSERT INTO charts VALUES(?,?,?,?)',(item['id'],dataset_id,item['created_at'],json.dumps(item,ensure_ascii=False)))
         return item
