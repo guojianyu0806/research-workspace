@@ -14,9 +14,10 @@
   <link rel="stylesheet" href="/static/explore.css">
   <link rel="stylesheet" href="/static/research.css?v=20261009-sidebar">
   <link rel="stylesheet" href="/static/model-settings.css">
-  <link rel="stylesheet" href="/static/reader.css?v=20261009-reader3">
+  <link rel="stylesheet" href="/static/reader.css?v=20261009-sizing3">
   <script defer src="/static/app.js?v=20261009-reader3"></script>
-  <script defer src="/static/reader-controls.js?v=20261009-reader3"></script>
+  <script defer src="/static/reader-controls.js?v=20261009-sizing3"></script>
+  <script defer src="/static/reader-layout.js?v=20261009-sizing3"></script>
   <script defer src="/static/bilingual.js"></script>
   <script defer src="/static/explore.js"></script>
   <script defer src="/static/layout.js"></script>
@@ -83,6 +84,7 @@
       <div class="upload-status" id="uploadStatus" role="status" hidden></div>
       <div class="document-list" id="documentList" aria-label="已导入文献" aria-busy="true"></div>
       <div class="library-footer"><span class="small-dot" aria-hidden="true"></span><span id="libraryFooter">正在连接工作区</span></div>
+      <div id="libraryResizeHandle" class="reader-resize-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整文献栏宽度" aria-controls="libraryPanel" aria-valuemin="240" aria-valuemax="600" aria-valuenow="240" title="左右拖动调整宽度；方向键微调，双击恢复默认"><span></span></div>
     </aside>
 
     <section class="reader-panel panel" id="readerPanel" aria-label="原文阅读">
@@ -91,11 +93,20 @@
         <h2 id="readerTitle">原文阅读</h2>
         <button class="reader-control reader-info-toggle" id="readerInfoToggle" type="button" aria-controls="readerInfo" aria-expanded="false" aria-label="展开文献信息" title="文献信息"><svg class="icon"><use href="#i-info"></use></svg><span class="visually-hidden" data-reader-label>文献信息</span></button>
         <div class="reader-window-actions">
+          <button class="reader-control" id="readerAdjustButton" type="button" aria-controls="readerAdjustPopover" aria-expanded="false" title="连续调整原文宽度和左右位置">调整</button>
           <button class="reader-control reader-panel-toggle" id="toggleEvidence" type="button" aria-controls="evidencePanel" aria-expanded="false" title="展开或收起证据栏"><svg class="icon"><use href="#i-search"></use></svg><span data-reader-label>证据</span></button>
           <button class="reader-control" id="readerFocusButton" type="button" aria-pressed="false" title="专注阅读：隐藏页面导航"><svg class="icon"><use href="#i-focus"></use></svg><span data-reader-label>专注</span></button>
           <button class="reader-control" id="readerFullscreenButton" type="button" aria-pressed="false" title="全屏阅读"><svg class="icon"><use href="#i-fullscreen"></use></svg><span data-reader-label>全屏</span></button>
         </div>
       </div>
+      <section class="reader-adjust-popover" id="readerAdjustPopover" aria-label="阅读版面调整" hidden>
+        <div class="reader-adjust-field"><label for="readerWidthRange">原文宽度</label><output id="readerWidthValue" for="readerWidthRange">100%</output></div>
+        <input id="readerWidthRange" type="range" min="50" max="300" step="1" value="100" aria-label="原文宽度，适宽百分比">
+        <div class="reader-adjust-field"><label for="readerPositionRange">左右位置</label><output id="readerPositionValue" for="readerPositionRange">居中</output></div>
+        <input id="readerPositionRange" type="range" min="0" max="100" step="1" value="50" aria-label="原文左右位置">
+        <div class="reader-adjust-ends"><span>左</span><span>右</span></div>
+        <div class="reader-adjust-footer"><span>按住原文拖动；宽度以适宽为基准</span><button id="readerResetView" class="reader-control" type="button">复位</button></div>
+      </section>
       <div class="reader-info is-collapsed" id="readerInfo">
         <div class="reader-info-inner"><span class="reader-subtitle" id="readerSubtitle">从文献到证据，保留每一处原文位置。</span><button class="reader-control reparse-button" id="reparseButton" type="button" disabled title="重新提取文字，保留已有结果" aria-label="重新提取文字"><svg class="icon"><use href="#i-retry"></use></svg><span>重新提取</span></button></div>
       </div>
@@ -105,7 +116,7 @@
           <label><span class="visually-hidden">页码</span><input id="pageNumber" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="跳转到页码"></label><span class="page-total" id="pageTotal">/ —</span>
           <button class="icon-button" id="nextPage" type="button" disabled aria-label="下一页"><svg class="icon"><use href="#i-right"></use></svg></button>
         </form>
-        <div class="reader-zoom" aria-label="阅读缩放"><button class="reader-control reader-zoom-step" id="zoomOutButton" type="button" aria-label="缩小原文" title="缩小原文">−</button><label class="page-fit-label"><span class="visually-hidden">页面缩放</span><select id="pageZoom" aria-label="页面缩放" title="倍率以适合阅读区宽度为基准；按住Ctrl滚轮缩放"><option value="1">适合宽度</option><option value="page">适合整页</option><option value="0.5">适宽 × 50%</option><option value="0.75">适宽 × 75%</option><option value="1.25">适宽 × 125%</option><option value="1.5">适宽 × 150%</option><option value="2">适宽 × 200%</option><option value="3">适宽 × 300%</option></select></label><button class="reader-control reader-zoom-step" id="zoomInButton" type="button" aria-label="放大原文" title="放大原文">＋</button></div>
+        <div class="reader-zoom" aria-label="阅读缩放"><button class="reader-control reader-zoom-step" id="zoomOutButton" type="button" aria-label="缩小原文" title="缩小原文">−</button><label class="page-fit-label"><span class="visually-hidden">页面缩放</span><select id="pageZoom" aria-label="页面缩放" title="倍率以适合阅读区宽度为基准；按住Ctrl滚轮缩放"><option value="1">适合宽度</option><option value="page">适合整页</option><option value="0.5">适宽 × 50%</option><option value="0.75">适宽 × 75%</option><option value="1.25">适宽 × 125%</option><option value="1.5">适宽 × 150%</option><option value="2">适宽 × 200%</option><option value="3">适宽 × 300%</option><option id="readerCustomZoom" value="custom" hidden>自定义宽度</option></select></label><button class="reader-control reader-zoom-step" id="zoomInButton" type="button" aria-label="放大原文" title="放大原文">＋</button></div>
       </div>
       <div class="reader-message" id="readerMessage" role="status" hidden></div>
       <div class="reader-viewport" id="readerViewport">
@@ -137,6 +148,7 @@
         <div class="search-empty"><div class="evidence-empty-icon" aria-hidden="true"><svg class="icon"><use href="#i-search"></use></svg><span></span><span></span></div><h3>让每个发现，都有出处</h3><p>输入论文中出现的关键词。<br>点击匹配片段，回到对应原文。</p><div class="search-tip">想找具体细节？<br>试试方法名称、参数或一句原文。</div></div>
       </div>
       <div class="evidence-footer"><span class="source-mark" aria-hidden="true"></span><span>来源片段 · 页码定位 · 原文核对</span></div>
+      <div id="evidenceResizeHandle" class="reader-resize-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整证据栏宽度" aria-controls="evidencePanel" aria-valuemin="240" aria-valuemax="600" aria-valuenow="300" title="左右拖动调整宽度；方向键微调，双击恢复默认"><span></span></div>
     </aside>
     <button id="readerDrawerBackdrop" type="button" aria-label="关闭侧栏" tabindex="-1"></button>
   </main>

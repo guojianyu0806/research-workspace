@@ -3,7 +3,7 @@ body.reader-active .app-header{min-height:64px;padding-top:8px;padding-bottom:8p
 body.reader-active .module-navigation{min-height:44px}
 body.reader-active .module-navigation button{min-height:42px;padding-top:8px;padding-bottom:8px}
 .mobile-navigation{display:none!important}
-#workspace{--library-width:240px;--evidence-width:300px;display:grid;grid-template-columns:var(--library-width) minmax(0,1fr) var(--evidence-width);position:relative;overflow:hidden;min-height:0;gap:0;transition:grid-template-columns .24s cubic-bezier(.2,.7,.2,1)}
+#workspace{--library-size:240px;--evidence-size:300px;--library-width:var(--library-size);--evidence-width:var(--evidence-size);display:grid;grid-template-columns:var(--library-width) minmax(0,1fr) var(--evidence-width);position:relative;overflow:hidden;min-height:0;gap:0;transition:grid-template-columns .24s cubic-bezier(.2,.7,.2,1)}
 #workspace.library-collapsed{--library-width:0px}
 #workspace.evidence-collapsed{--evidence-width:0px}
 #workspace>#libraryPanel,#workspace>#evidencePanel{display:flex;flex-direction:column;position:relative;height:100%;width:auto;min-width:0;padding:0;gap:0;overflow:hidden;opacity:1;visibility:visible;background:var(--paper);transition:opacity .18s ease,visibility 0s linear}
@@ -33,7 +33,7 @@ body.reader-active .module-navigation button{min-height:42px;padding-top:8px;pad
 #workspace .results-heading{padding:12px 12px 0}
 #workspace .evidence-footer{padding:8px 12px;min-height:0}
 
-#workspace>#readerPanel{display:flex;flex-direction:column;grid-column:2;grid-row:1;height:100%;width:100%;min-width:0;min-height:0;flex:none;overflow:hidden;border:0;background:var(--workspace)}
+#workspace>#readerPanel{display:flex;flex-direction:column;grid-column:2;grid-row:1;height:100%;width:100%;min-width:0;min-height:0;flex:none;overflow:hidden;border:0;background:var(--workspace);position:relative;container-type:inline-size;container-name:reading-area}
 #readerPanel #readerHeading{display:flex;align-items:center;gap:6px;padding:6px 10px;min-height:44px;flex-shrink:0;border-bottom:1px solid var(--line);background:var(--paper)}
 #readerHeading #readerTitle{flex:1;min-width:0;font-size:16px;line-height:1.4;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin:0}
 .reader-window-actions{display:flex;gap:4px;align-items:center;flex-shrink:0}
@@ -75,8 +75,8 @@ body.reader-focus #workspace{height:100dvh;flex:1}
   #workspace{display:grid;grid-template-columns:minmax(0,1fr);transition:none}
   #workspace>#readerPanel{grid-column:1;grid-row:1;min-height:0}
   #workspace>#libraryPanel,#workspace>#evidencePanel{position:absolute;top:0;bottom:0;width:min(340px,calc(100% - 36px));height:100%;z-index:30;grid-column:auto;box-shadow:0 6px 30px #20344030;opacity:1;visibility:visible;transform:translateX(0);transition:transform .24s cubic-bezier(.2,.7,.2,1),visibility 0s linear}
-  #workspace>#libraryPanel{left:0;border-right:1px solid var(--line)}
-  #workspace>#evidencePanel{right:0;border-left:1px solid var(--line)}
+  #workspace>#libraryPanel{left:0;width:min(var(--library-drawer-size,340px),calc(100% - 36px));border-right:1px solid var(--line)}
+  #workspace>#evidencePanel{right:0;width:min(var(--evidence-drawer-size,340px),calc(100% - 36px));border-left:1px solid var(--line)}
   #workspace.library-collapsed>#libraryPanel{transform:translateX(-105%);opacity:1;visibility:hidden;transition:transform .24s cubic-bezier(.2,.7,.2,1),visibility 0s linear .24s}
   #workspace.evidence-collapsed>#evidencePanel{transform:translateX(105%);opacity:1;visibility:hidden;transition:transform .24s cubic-bezier(.2,.7,.2,1),visibility 0s linear .24s}
   #workspace .document-name{font-size:16px}
@@ -102,3 +102,29 @@ body.reader-focus #workspace{height:100dvh;flex:1}
 @media(prefers-reduced-motion:reduce){
   #workspace,#workspace>#libraryPanel,#workspace>#evidencePanel,.reader-info{transition:none!important;scroll-behavior:auto!important}
 }
+
+/* Adjustments stay in an overlay; dragging never adds rows to the reading canvas. */
+.reader-adjust-popover{position:absolute;top:48px;right:8px;z-index:15;width:min(310px,calc(100% - 16px));padding:14px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px #20344024;font-size:14px}
+.reader-adjust-field{display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.5}
+.reader-adjust-field output{font-variant-numeric:tabular-nums;color:var(--primary);font-weight:600}
+.reader-adjust-popover input[type=range]{display:block;width:100%;height:28px;padding:0;margin:5px 0 10px;accent-color:var(--primary);cursor:ew-resize;box-shadow:none;background:transparent}
+.reader-adjust-ends{display:flex;justify-content:space-between;margin-top:-10px;color:var(--muted)}
+.reader-adjust-footer{display:flex;align-items:center;gap:10px;margin-top:12px;line-height:1.5;color:var(--muted)}
+.reader-adjust-footer span{flex:1}
+#readerViewport.is-draggable,#readerViewport .is-draggable{cursor:grab}
+#readerViewport.is-panning,#readerViewport.is-panning *{cursor:grabbing!important;user-select:none!important}
+#pageImage{-webkit-user-drag:none;user-select:none}
+.reader-resize-handle{position:absolute;top:0;bottom:0;width:10px;z-index:35;cursor:col-resize;touch-action:none;display:flex;align-items:center;justify-content:center;outline-offset:-2px}
+#libraryResizeHandle{right:0}
+#evidenceResizeHandle{left:0}
+.reader-resize-handle span{width:3px;height:40px;border-radius:4px;background:#8dadad;pointer-events:none}
+.reader-resize-handle:hover,.reader-resize-handle:focus-visible{background:var(--primary-soft)}
+.reader-resize-handle:hover span,.reader-resize-handle:focus-visible span{background:var(--primary)}
+#workspace.is-resizing{transition:none;cursor:col-resize;user-select:none}
+#workspace.is-resizing *{cursor:col-resize!important;user-select:none!important}
+@media(min-width:1000px){
+  @container reading-area (max-width:620px){
+    #readerHeading .reader-panel-toggle [data-reader-label],#readerFocusButton [data-reader-label],#readerFullscreenButton [data-reader-label]{display:none}
+  }
+}
+@media(max-width:459px){.reader-adjust-popover{top:82px}}

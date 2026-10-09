@@ -21,6 +21,14 @@
   const zoomIn = byId("zoomInButton");
   const info = byId("readerInfo");
   const infoButton = byId("readerInfoToggle");
+  const adjustButton = byId("readerAdjustButton");
+  const adjustPopover = byId("readerAdjustPopover");
+  const widthRange = byId("readerWidthRange");
+  const widthValue = byId("readerWidthValue");
+  const positionRange = byId("readerPositionRange");
+  const positionValue = byId("readerPositionValue");
+  const resetView = byId("readerResetView");
+  const customZoom = byId("readerCustomZoom");
   const steps = [.5, .75, 1, 1.25, 1.5, 2, 3];
   const compact = window.matchMedia("(max-width: 999px)");
   let anchor = null;
@@ -34,6 +42,9 @@
   let nativeEntered = false;
   let leavingReader = false;
   let lastImage = "";
+  let horizontalPosition = .5;
+  let pan = null;
+  let suppressPanClick = false;
   let desktopPanels = { library: false, evidence: true };
   workspace.classList.toggle("library-collapsed", compact.matches);
   workspace.classList.add("evidence-collapsed");
@@ -89,12 +100,76 @@
     return Math.min(1, size.height * ratio / size.width);
   }
 
+  function selectZoom(value) {
+    const text = String(value);
+    const preset = [...zoomSelect.options].find((option) => option !== customZoom && option.value === text);
+    if (preset) zoomSelect.value = text;
+    else if (customZoom && Number.isFinite(Number(value))) {
+      customZoom.value = text;
+      customZoom.textContent = `自定义 ${Math.round(Number(value) * 100)}%`;
+      customZoom.hidden = false;
+      zoomSelect.value = text;
+    }
+  }
+
+  function horizontalSpace() {
+    const width = parseFloat(paper.style.width) || paper.getBoundingClientRect().width;
+    return Math.max(0, availableSize().width - width);
+  }
+
+  function alignPaper(width = parseFloat(paper.style.width) || paper.getBoundingClientRect().width) {
+    // Explicit positive margins let a narrow page move within the canvas;
+    // oversized pages start at the left and use the native scroll range.
+    paper.style.marginLeft = `${Math.max(0, availableSize().width - width) * horizontalPosition}px`;
+    paper.style.marginRight = "0px";
+  }
+
+  function syncAdjustControls() {
+    const ready = !paper.hidden && Boolean(image.getAttribute("src"));
+    const percent = Math.round(currentMultiplier() * 100);
+    if (widthRange) {
+      widthRange.disabled = !ready;
+      widthRange.value = String(Math.min(300, Math.max(50, percent)));
+    }
+    if (widthValue) widthValue.textContent = `${percent}%${zoomSelect.value === "page" ? "（整页）" : ""}`;
+    const availableWidth = ready ? availableSize().width : 0;
+    const paperWidth = parseFloat(paper.style.width) || paper.getBoundingClientRect().width;
+    const space = ready ? Math.max(0, availableWidth - paperWidth) : 0;
+    const overflow = ready ? Math.max(0, paperWidth - availableWidth) : 0;
+    const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    // Retain the requested fraction when native scrolling only rounded it to a
+    // pixel. Otherwise a 1% keyboard step can be lost in a short scroll range.
+    if (maxScroll > 1 && space < 1 && Math.abs(viewport.scrollLeft - horizontalPosition * maxScroll) > .75) {
+      horizontalPosition = Math.min(1, Math.max(0, viewport.scrollLeft / maxScroll));
+    }
+    if (positionRange) {
+      positionRange.disabled = !ready || (overflow <= 1 && space < 1);
+      positionRange.value = String(Math.round(horizontalPosition * 100));
+    }
+    if (positionValue) positionValue.textContent = `${Math.round(horizontalPosition * 100)}%`;
+    if (resetView) resetView.disabled = !ready;
+    paper.classList.toggle("is-draggable", ready);
+    viewport.classList.toggle("is-draggable", ready);
+  }
+
+  function setAdjustOpen(open, returnFocus = false) {
+    if (!adjustPopover || !adjustButton) return;
+    adjustPopover.hidden = !open;
+    adjustPopover.inert = !open;
+    adjustButton.setAttribute("aria-expanded", String(open));
+    if (open) {
+      syncAdjustControls();
+      widthRange?.focus({ preventScroll: true });
+    } else if (returnFocus) adjustButton.focus({ preventScroll: true });
+  }
+
   function syncZoomButtons() {
     const ready = !paper.hidden && Boolean(image.getAttribute("src"));
     const multiplier = currentMultiplier();
     if (zoomOut) zoomOut.disabled = !ready || multiplier <= steps[0];
     if (zoomIn) zoomIn.disabled = !ready || multiplier >= steps.at(-1);
     zoomSelect.disabled = !ready;
+    syncAdjustControls();
   }
 
   function reflow(saved = anchor) {
@@ -107,9 +182,15 @@
       : size.width * (Number(zoomSelect.value) || 1);
     paper.style.width = `${Math.max(1, width)}px`;
     paper.style.maxWidth = "none";
+    alignPaper(width);
     restoreAnchor(saved);
     syncZoomButtons();
-    window.requestAnimationFrame(() => { applying = false; });
+    window.requestAnimationFrame(() => {
+      applying = false;
+      // The rendered scroll range can settle a frame after a width change.
+      // Refresh disabled states even when the viewport itself did not resize.
+      syncZoomButtons();
+    });
   }
 
   function scheduleReflow() {
@@ -144,9 +225,32 @@
     layoutRevision += 1;
     anchorLocked = false;
     anchor = point || currentAnchor();
-    zoomSelect.value = String(value);
+    selectZoom(value);
     reflow(anchor);
     anchor = currentAnchor();
+  }
+
+  function setPosition(value) {
+    if (paper.hidden) return;
+    layoutRevision += 1;
+    anchorLocked = false;
+    horizontalPosition = Math.max(0, Math.min(1, Number(value)));
+    alignPaper();
+    viewport.scrollLeft = (viewport.scrollWidth - viewport.clientWidth) * horizontalPosition;
+    anchor = currentAnchor();
+    syncAdjustControls();
+  }
+
+  function endPan() {
+    if (!pan) return;
+    const pointerId = pan.pointerId;
+    suppressPanClick = pan.moved;
+    pan = null;
+    viewport.classList.remove("is-panning");
+    if (viewport.hasPointerCapture?.(pointerId)) viewport.releasePointerCapture(pointerId);
+    anchor = currentAnchor();
+    syncAdjustControls();
+    window.setTimeout(() => { suppressPanClick = false; }, 0);
   }
 
   function stepZoom(direction, point) {
@@ -184,6 +288,7 @@
     if (focusButton) {
       focusButton.disabled = isFullscreen;
       focusButton.setAttribute("aria-pressed", String(isFocus));
+      focusButton.setAttribute("aria-label", isFocus ? "退出专注阅读" : "专注阅读");
       label(focusButton, isFocus ? "退出专注" : "专注阅读");
     }
     if (fullscreenButton) {
@@ -274,6 +379,7 @@
       evidence: workspace.classList.contains("evidence-collapsed"),
       view: workspace.dataset.mobileView,
       zoom: zoomSelect.value,
+      position: horizontalPosition,
       anchor: currentAnchor(),
       focus: document.body.classList.contains("reader-focus"),
       active: document.activeElement,
@@ -283,6 +389,7 @@
 
   function restore(saved) {
     if (!saved) return;
+    horizontalPosition = saved.position ?? .5;
     holdLayoutAnchor(saved.anchor?.source === image.getAttribute("src") ? saved.anchor : currentAnchor());
     workspace.classList.toggle("library-collapsed", saved.library);
     workspace.classList.toggle("evidence-collapsed", saved.evidence);
@@ -292,7 +399,7 @@
     }
     document.body.classList.toggle("reader-focus", saved.focus);
     setMobileView(saved.view || "reader");
-    zoomSelect.value = saved.zoom;
+    selectZoom(saved.zoom);
     syncPanels();
     reflow(anchor);
     scheduleReflow();
@@ -308,6 +415,7 @@
 
   function toggleFocus() {
     if (fullscreenSnapshot) return;
+    setAdjustOpen(false);
     if (focusSnapshot) {
       const saved = focusSnapshot;
       focusSnapshot = null;
@@ -339,6 +447,7 @@
 
   async function toggleFullscreen() {
     if (nativePending) return;
+    setAdjustOpen(false);
     if (fullscreenSnapshot) { await exitFullscreen(); return; }
     fullscreenSnapshot = snapshot();
     holdLayoutAnchor(fullscreenSnapshot.anchor);
@@ -357,12 +466,67 @@
   zoomSelect.addEventListener("change", () => setZoom(zoomSelect.value));
   zoomOut?.addEventListener("click", () => stepZoom(-1));
   zoomIn?.addEventListener("click", () => stepZoom(1));
+  adjustButton?.addEventListener("click", () => setAdjustOpen(Boolean(adjustPopover?.hidden)));
+  widthRange?.addEventListener("input", () => setZoom(Number(widthRange.value) / 100));
+  positionRange?.addEventListener("input", () => setPosition(Number(positionRange.value) / 100));
+  resetView?.addEventListener("click", () => {
+    horizontalPosition = .5;
+    setZoom(1);
+    setPosition(.5);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!adjustPopover?.hidden && !adjustPopover?.contains(event.target) && !adjustButton?.contains(event.target)) setAdjustOpen(false);
+  });
+  image.draggable = false;
+  viewport.addEventListener("dragstart", (event) => { if (paper.contains(event.target)) event.preventDefault(); });
+  viewport.addEventListener("pointerdown", (event) => {
+    if (event.pointerType !== "mouse" || event.button !== 0 || paper.hidden || !image.getAttribute("src")) return;
+    if (event.target.closest('button,a,input,select,textarea,[contenteditable="true"],[role="button"]')) return;
+    const bounds = viewport.getBoundingClientRect();
+    if (event.clientX >= bounds.left + viewport.clientLeft + viewport.clientWidth
+      || event.clientY >= bounds.top + viewport.clientTop + viewport.clientHeight) return;
+    event.preventDefault();
+    layoutRevision += 1;
+    anchorLocked = false;
+    pan = {
+      pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+      left: viewport.scrollLeft, top: viewport.scrollTop,
+      position: horizontalPosition, space: horizontalSpace(), moved: false,
+    };
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add("is-panning");
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    if (!pan || event.pointerId !== pan.pointerId) return;
+    const dx = event.clientX - pan.x;
+    const dy = event.clientY - pan.y;
+    pan.moved ||= Math.abs(dx) + Math.abs(dy) > 3;
+    if (pan.space > 1) {
+      horizontalPosition = Math.max(0, Math.min(1, pan.position + dx / pan.space));
+      alignPaper();
+    } else viewport.scrollLeft = pan.left - dx;
+    viewport.scrollTop = pan.top - dy;
+    anchor = currentAnchor();
+    syncAdjustControls();
+  });
+  viewport.addEventListener("pointerup", endPan);
+  viewport.addEventListener("pointercancel", endPan);
+  viewport.addEventListener("lostpointercapture", endPan);
+  window.addEventListener("blur", endPan);
+  viewport.addEventListener("click", (event) => {
+    if (!suppressPanClick) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
   viewport.addEventListener("wheel", (event) => {
     if (!event.ctrlKey || event.altKey || event.metaKey || paper.hidden || !event.deltaY) return;
     event.preventDefault();
     stepZoom(event.deltaY < 0 ? 1 : -1, currentAnchor(event.clientX, event.clientY));
   }, { passive: false });
-  viewport.addEventListener("scroll", () => { if (!applying && !anchorLocked) anchor = currentAnchor(); }, { passive: true });
+  viewport.addEventListener("scroll", () => {
+    if (!applying && !anchorLocked) anchor = currentAnchor();
+    syncAdjustControls();
+  }, { passive: true });
   libraryButton?.addEventListener("click", () => togglePanel("library"));
   evidenceButton?.addEventListener("click", () => togglePanel("evidence"));
   byId("closeLibrary")?.addEventListener("click", () => togglePanel("library"));
@@ -384,7 +548,9 @@
     if (event.defaultPrevented || document.querySelector("dialog[open]")) return;
     if (event.key === "Tab") { containTab(event); return; }
     if (event.key !== "Escape") return;
-    if (fullscreenSnapshot) { event.preventDefault(); void exitFullscreen(); }
+    if (!adjustPopover?.hidden && adjustPopover) { event.preventDefault(); setAdjustOpen(false, true); }
+    else if (pan) { event.preventDefault(); endPan(); }
+    else if (fullscreenSnapshot) { event.preventDefault(); void exitFullscreen(); }
     else if (focusSnapshot) { event.preventDefault(); toggleFocus(); }
     else if (!leavingReader && closeDrawers()) event.preventDefault();
   });
@@ -401,9 +567,18 @@
     if (compact.matches && workspace.dataset.mobileView === "reader") workspace.classList.add("library-collapsed", "evidence-collapsed");
     syncPanels(); scheduleReflow();
   });
+  window.addEventListener("research:reader-resize-start", () => {
+    endPan();
+    layoutRevision += 1;
+    anchor = currentAnchor();
+    anchorLocked = true;
+  });
+  window.addEventListener("research:reader-resize-end", () => holdLayoutAnchor(anchor));
   window.addEventListener("research:module-change", (event) => {
     leavingReader = event.detail?.module !== "reader";
     if (leavingReader) {
+      endPan();
+      setAdjustOpen(false);
       if (fullscreenSnapshot) void exitFullscreen().finally(() => { if (focusSnapshot) toggleFocus(); });
       else if (focusSnapshot) toggleFocus();
     } else scheduleReflow();
@@ -440,4 +615,5 @@
   });
   syncPanels();
   syncZoomButtons();
+  setAdjustOpen(false);
 })();
