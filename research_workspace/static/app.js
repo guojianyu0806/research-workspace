@@ -171,7 +171,7 @@
     ui.readerMessage.hidden = !message;
     ui.readerFooterText.textContent = state.highlight
       ? `已定位第 ${state.page} 页的检索证据，请结合上下文核对。`
-      : `第 ${state.page} / ${total || "—"} 页 · 选择右侧片段可定位原文`;
+      : `第 ${state.page} / ${total || "—"} 页 · 选择证据片段可定位原文`;
   }
 
   async function refreshDocuments({ quiet = false } = {}) {

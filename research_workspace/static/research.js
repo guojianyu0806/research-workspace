@@ -222,7 +222,11 @@
     const layout = node("div", "rs-task-layout");
     const sidebar = node("div", "rs-task-sidebar");
     const form = node("form", "rs-card rs-task-form");
-    form.append(node("h3", "rs-card-title", "新建任务"));
+    form.tabIndex = -1;
+    const formHeading = node("div", "rs-task-form-heading");
+    const returnToResult = button("返回任务结果"); returnToResult.classList.add("rs-task-return");
+    formHeading.append(node("h3", "rs-card-title", "新建任务"), returnToResult);
+    form.append(formHeading);
     const kind = select(Object.entries(kindLabels));
     form.append(field("任务类型", kind));
     const documentsGroup = node("fieldset", "rs-fieldset");
@@ -250,9 +254,14 @@
     form.append(submit, node("p", "rs-muted rs-small", "执行任务时，所选原文或输入文本将发送到你配置的模型服务。"));
     sidebar.append(form);
     const history = node("section", "rs-card");
+    history.tabIndex = -1;
     history.append(node("h3", "rs-card-title", "任务历史"));
     const historyList = node("div", "rs-history"); history.append(historyList); sidebar.append(history);
     const detail = node("section", "rs-card rs-task-detail");
+    detail.hidden = true; detail.tabIndex = -1;
+    const shortcuts = node("div", "rs-task-shortcuts");
+    const newTask = button("新建任务"), viewHistory = button("任务历史");
+    shortcuts.append(newTask, viewHistory);
     const detailHeading = node("h3", "rs-card-title", "选择或创建一个任务");
     const meta = node("p", "rs-muted rs-small");
     const status = node("p", "rs-job-status"); status.setAttribute("role", "status");
@@ -266,8 +275,19 @@
     const eventDetails = node("details", "rs-events");
     eventDetails.append(node("summary", "", "执行记录"));
     const eventList = node("ol", "rs-event-list"); eventDetails.append(eventList); eventDetails.hidden = true;
-    detail.append(detailHeading, meta, status, progress, actions, resultArea, eventDetails);
+    detail.append(shortcuts, detailHeading, meta, status, progress, actions, resultArea, eventDetails);
     layout.append(sidebar, detail); life.shell.append(layout);
+
+    function revealSection(section) {
+      section.focus({ preventScroll: true });
+      section.scrollIntoView({ block: "start", behavior: "auto" });
+    }
+    function revealTaskResult() {
+      if (getComputedStyle(shortcuts).display !== "none") revealSection(detail);
+    }
+    life.on(newTask, "click", () => { revealSection(form); kind.focus({ preventScroll: true }); });
+    life.on(viewHistory, "click", () => revealSection(history));
+    life.on(returnToResult, "click", revealTaskResult);
 
     function visibleDocuments() { return state.documents.filter((doc) => !doc.archived_at && (older.checked || doc.is_current_version !== false)); }
     function renderDocuments() {
@@ -321,7 +341,7 @@
         entry.classList.toggle("is-selected", job.id === state.selectedJob?.id);
         entry.append(node("strong", "", kindLabels[job.kind] || job.kind),
           node("span", "", `${statusLabels[job.status] || job.status} · ${dateLabel(job.created_at)}`));
-        entry.addEventListener("click", () => selectJob(job.id)); historyList.append(entry);
+        entry.addEventListener("click", () => selectJob(job.id, true)); historyList.append(entry);
       }
     }
     function openEvidence(source) {
@@ -429,6 +449,7 @@
       if (!life.alive) return;
       if (state.selectedJob?.id !== job.id) { state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = ""; }
       state.selectedJob = job;
+      layout.classList.add("rs-has-task"); detail.hidden = false;
       state.jobs = [job, ...state.jobs.filter((item) => item.id !== job.id)].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       detailHeading.textContent = kindLabels[job.kind] || "研究任务";
       meta.textContent = `${dateLabel(job.created_at)} · 任务 ${job.id.slice(0, 8)}`;
@@ -459,13 +480,14 @@
         } catch (error) { life.show(`任务状态更新中断：${error.message} 可点击刷新继续查看。`, true); }
       }, 1500);
     }
-    async function selectJob(id) {
+    async function selectJob(id, reveal = false) {
       life.stopTimer(state.pollTimer);
       state.selectedJob = state.jobs.find((item) => item.id === id) || { id };
       try {
         const response = await life.api(`/api/research/tasks/${encodeURIComponent(id)}`);
         if (state.selectedJob?.id !== id || !life.alive) return;
         displayJob(response.job); schedulePoll();
+        if (reveal) revealTaskResult();
       } catch (error) { life.show(error.message, true); }
     }
     async function refresh() {
@@ -486,6 +508,7 @@
         if (selected) await selectJob(selected.id);
         else {
           state.selectedJob = null; state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = "";
+          layout.classList.remove("rs-has-task"); detail.hidden = true;
           actions.hidden = true; eventDetails.hidden = true; progress.hidden = true;
           detailHeading.textContent = "选择或创建一个任务"; meta.textContent = ""; status.textContent = "";
           eventList.replaceChildren();
@@ -521,7 +544,7 @@
         payload[["qa", "compare"].includes(kind.value) ? "question" : "instruction"] = prompt.value.trim();
       }
       state.posting = true; submit.disabled = true;
-      try { const response = await life.api("/api/research/tasks", jsonOptions(payload)); if (life.alive) { life.show("任务已创建，可查看进度与已保存结果。"); displayJob(response.job); schedulePoll(); } }
+      try { const response = await life.api("/api/research/tasks", jsonOptions(payload)); if (life.alive) { life.show("任务已创建，可查看进度与已保存结果。"); displayJob(response.job); schedulePoll(); revealTaskResult(); } }
       catch (error) { life.show(error.message, true); }
       finally { state.posting = false; if (life.alive) submit.disabled = !state.configured; }
     });
@@ -555,6 +578,9 @@
     const columnsInfo = node("div", "rs-column-info"); const preview = node("div", "rs-table-scroll");
     previewCard.append(previewTitle, datasetInfo, columnsInfo, preview); life.shell.append(previewCard);
     const chartForm = node("form", "rs-card rs-chart-form"); chartForm.append(node("h3", "rs-card-title", "生成图表"));
+    chartForm.hidden = true;
+    const chartEmpty = node("p", "rs-chart-empty rs-muted", "导入 CSV 后，这里会显示图表类型、字段和绘图设置。");
+    life.shell.append(chartEmpty);
     const chartKind = select([["line", "折线图"], ["bar", "柱状图"], ["radar3d", "三维分层雷达图"]]), x = select([]), yChoices = node("div", "rs-y-choices");
     const title = input("text", "可选，留空时根据字段生成标题"); title.maxLength = 150;
     const missing = select([["reject", "遇到缺失或无效值时停止"], ["drop", "明确忽略含无效值的整行"]]);
@@ -592,6 +618,7 @@
       }
     }
     function renderDataset(data) {
+      chartForm.hidden = false; chartEmpty.hidden = true;
       if (state.selected?.id !== data.id) {
         chartOutput.hidden = true;
         if (state.chartUrl) { life.revoke(state.chartUrl); state.chartUrl = null; }
@@ -632,6 +659,7 @@
         if (selected) { dataSelect.value = selected.id; await chooseDataset(selected.id); }
         else {
           state.selected = null; create.disabled = true; previewTitle.textContent = "数据预览";
+          chartForm.hidden = true; chartEmpty.hidden = false;
           preview.replaceChildren(node("p", "rs-empty", "导入CSV后，可在这里检查字段、缺失值和原始记录。"));
           datasetInfo.textContent = ""; columnsInfo.replaceChildren(); x.replaceChildren(); yChoices.replaceChildren(); unitsArea.replaceChildren();
           chartOutput.hidden = true; chartOutput.replaceChildren();

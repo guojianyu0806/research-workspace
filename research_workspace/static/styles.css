@@ -282,5 +282,34 @@ h1,h2,h3,p{margin:0}
 .reader-heading{min-height:72px;padding-top:12px;padding-bottom:12px}
 }
 
+/* In a side panel, keep the selected paper visible beneath a compact library. */
+@media(max-width:1199px){
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])){display:flex;flex-direction:column;overflow:auto;scrollbar-width:thin}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .library-panel{display:grid;grid-template-columns:minmax(0,1fr);height:auto;flex:none;gap:12px;padding:16px;border-bottom:1px solid var(--line)}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .library-panel .panel-heading{padding:0}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .library-panel .eyebrow{display:none}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .library-search{margin:0}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .drop-zone{display:none}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .document-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,215px),1fr));align-items:start;gap:8px;grid-column:1/-1;padding:0;max-height:176px;overflow-y:auto}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .document-row{margin:0;padding:10px;gap:10px}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .document-meta{margin-top:4px}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .library-footer{grid-column:1/-1;padding:0;border:0;min-height:0}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .upload-status{grid-column:1/-1;margin:0}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .reader-panel{display:flex;flex:1 0 420px;height:auto;min-height:420px;border:0}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .reader-heading{padding:12px 16px;min-height:0}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .reader-heading .eyebrow{display:none}
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .reader-viewport{flex:1 1 220px;padding:12px 16px}
+}
+@media(min-width:560px) and (max-width:1199px){
+  .workspace[data-mobile-view="library"]:has(.reader-toolbar:not([hidden])) .library-panel{grid-template-columns:minmax(150px,.7fr) minmax(0,1.3fr)}
+}
+@media(min-width:560px) and (max-width:700px){
+  .app-header{min-height:68px;flex-wrap:nowrap;gap:12px;padding:10px 16px}
+  .header-actions{display:flex;width:auto;margin-left:auto;gap:8px;align-items:center}
+  .header-actions .button{width:auto;white-space:nowrap;padding:8px}
+  .header-actions .connection-state{position:static;max-width:none;font-size:14px}
+  .header-actions #accountButton{max-width:112px}
+}
+
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }

@@ -20,6 +20,8 @@
     controller?.destroy?.();
     controller = null;
     root.replaceChildren();
+    root.scrollTop = 0;
+    root.scrollLeft = 0;
     document.querySelectorAll('[data-module]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.module===name)));
     reader.hidden = name !== 'reader';
     mobileNavigation.hidden = name !== 'reader';

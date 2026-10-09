@@ -21,6 +21,10 @@
 .rs-task-layout{display:grid;grid-template-columns:minmax(280px,340px) minmax(0,1fr);gap:20px;align-items:start}
 .rs-task-sidebar{min-width:0}
 .rs-task-detail{min-height:0}
+.rs-task-shortcuts,.rs-task-return.rs-button{display:none}
+.rs-task-form-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.rs-task-form-heading>.rs-card-title{margin:0}
+.rs-task-form,.rs-task-detail,.rs-task-sidebar>.rs-card{scroll-margin-top:16px}
 .rs-field{display:flex;flex-direction:column;gap:7px;margin:0 0 15px;min-width:0}
 .rs-label{font-size:14px;line-height:1.6;color:var(--muted,#536874)}
 
@@ -116,6 +120,7 @@
 .rs-diagram-form>.rs-muted{margin-bottom:16px}
 .rs-diagram-form .rs-textarea{font-family:var(--utility,"Consolas",monospace);font-size:14px}
 .rs-image-output{min-width:0}
+.rs-chart-empty{padding:14px 16px;margin:0 0 17px;border:1px solid var(--line,#cbd7de);border-radius:6px;background:var(--paper,#fff)}
 
 @media(max-width:1050px){.rs-task-layout{grid-template-columns:minmax(260px,310px) minmax(0,1fr);gap:14px}
 .rs-shell{padding:19px}
@@ -124,7 +129,9 @@
 }
 
 @media(max-width:760px){.rs-shell{padding:15px}
-.rs-heading{flex-direction:column;gap:12px}
+.rs-heading{flex-direction:row;gap:12px;align-items:center}
+.rs-heading>div{flex:1 1 240px}
+.rs-heading>.rs-button{flex:0 0 auto}
 .rs-heading h2{font-size:22px}
 .rs-task-layout{grid-template-columns:minmax(0,1fr)}
 .rs-history{max-height:180px}
@@ -164,20 +171,18 @@
 .rs-cell-missing{color:var(--warning,#80521b);background:#fffaf1}
 .rs-column-chip{max-width:100%;overflow-wrap:anywhere}
 .rs-form-row,.rs-unit-fields{align-items:start}
-/* Before a task exists, give the input form the main column instead of
-   reserving most of the screen for an empty result. */
-.rs-task-layout:has(.rs-task-detail>.rs-actions[hidden]){display:flex;flex-direction:column;gap:0}
-.rs-task-layout:has(.rs-task-detail>.rs-actions[hidden])>.rs-task-sidebar{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;width:100%;align-items:start}
-.rs-task-layout:has(.rs-task-detail>.rs-actions[hidden])>.rs-task-detail{order:-1;width:100%;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 20px}
-.rs-task-layout:has(.rs-task-detail>.rs-actions[hidden]) .rs-task-detail>.rs-card-title{margin:0}
-.rs-task-layout:has(.rs-task-detail>.rs-actions[hidden]) .rs-task-detail>.rs-result{margin:0}
-.rs-task-layout:has(.rs-task-detail>.rs-actions[hidden]) .rs-task-detail .rs-empty{padding:0;text-align:left}
-.rs-task-layout:has(.rs-task-detail>.rs-actions[hidden]) .rs-document-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:4px 16px}
+/* Empty workspaces lead with the input form; a hidden result card takes no space. */
+.rs-task-layout:not(.rs-has-task){display:flex;flex-direction:column;gap:0}
+.rs-task-layout:not(.rs-has-task)>.rs-task-sidebar{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;width:100%;align-items:start}
+.rs-task-layout:not(.rs-has-task) .rs-document-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:4px 16px}
 @container(max-width:850px){
-  .rs-task-layout:has(.rs-task-detail>.rs-actions[hidden])>.rs-task-sidebar{grid-template-columns:minmax(0,1fr);gap:0}
+  .rs-task-layout:not(.rs-has-task)>.rs-task-sidebar{grid-template-columns:minmax(0,1fr);gap:0}
 }
 @container(max-width:900px){
   .rs-task-layout{grid-template-columns:minmax(0,1fr)}
+  .rs-task-layout.rs-has-task>.rs-task-detail{grid-row:1}
+  .rs-task-shortcuts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--line,#cbd7de)}
+  .rs-has-task .rs-task-return{display:inline-flex}
   .rs-history{max-height:220px}
   .rs-task-sidebar{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.7fr);gap:16px;align-items:start}
 }
@@ -185,7 +190,7 @@
   .rs-task-sidebar,.rs-form-row,.rs-unit-fields{grid-template-columns:minmax(0,1fr)}
   .rs-task-sidebar{gap:0}
   .rs-heading h2{font-size:24px}
-  .rs-heading>.rs-button{width:100%}
+  .rs-heading>.rs-button{width:auto}
   .rs-upload-form .rs-field{min-width:0;flex-basis:100%}
   .rs-upload-form>.rs-button{margin-top:0}
   .rs-card{padding:16px}

@@ -17,7 +17,7 @@ const origin = new URL(process.env.BASE_URL || 'http://127.0.0.1:8765').origin;
 if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(origin).hostname)) throw new Error('Only local origins are supported.');
 const output = path.join(root, 'artifacts/browser', `layout-${live ? 'baseline' : 'fixture'}-${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`);
 fs.mkdirSync(output, {recursive:true});
-const report = {startedAt:new Date().toISOString(),output,mode:live?'read-only live baseline':'offline synthetic fixture',snapshots:[],pageErrors:[],consoleErrors:[],blockedRequests:[],source:{gitHead:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}).trim(),sha256:{}},limitations:[
+const report = {startedAt:new Date().toISOString(),output,mode:live?'read-only live baseline':'offline synthetic fixture',snapshots:[],behaviorChecks:[],pageErrors:[],consoleErrors:[],blockedRequests:[],source:{gitHead:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}).trim(),sha256:{}},limitations:[
   'Automated layout checks do not verify model/research quality or replace visual inspection.',
   'Raster PDF content and SVG labels are excluded from UI text font-size checks.',
   'Contrast checks use computable flat CSS backgrounds; images/gradients and native select menus require visual inspection.',
@@ -26,7 +26,7 @@ const report = {startedAt:new Date().toISOString(),output,mode:live?'read-only l
 const assets=new Map(fs.readdirSync(path.join(root,'research_workspace/static')).map(name=>[name,fs.readFileSync(path.join(root,'research_workspace/static',name))]));
 for(const [name,content] of assets) if(/\.(css|html|js)$/.test(name)) report.source.sha256[name]=crypto.createHash('sha256').update(content).digest('hex');
 report.source.sha256['scripts/layout_audit.cjs']=crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
-let filled=false,accountMode=false,jobsPresent=true;
+let filled=false,accountMode=false,jobsPresent=true,datasetsPresent=true;
 const longTitle='SYNTHETIC 布局测试：跨文献证据核对、长标题换行与研究任务可读性验证 — LongUnbrokenResearchIdentifier_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const prose='这段内容是布局测试数据，不代表真实科研结果。用于检查较长的中文段落、英文术语 Retrieval-Augmented Generation、数值 0.875 与原文证据是否保持清晰，避免按钮、说明与正文发生重叠。';
 const timestamp='2026-10-09T07:00:00Z';
@@ -61,7 +61,7 @@ function responseFor(url,method){
   if(p==='/api/search')return {hits:filled?[{...evidence,score:3,filename:docs[0].filename,snippet:prose,text:prose}]:[]};
   if(p==='/api/research/tasks')return {jobs:filled&&jobsPresent?jobs:[]};
   if(p.startsWith('/api/research/tasks/'))return {job:jobs.find(job=>p.endsWith(job.id))||jobs[0]};
-  if(p==='/api/datasets')return {datasets:filled?[dataset]:[]};
+  if(p==='/api/datasets')return {datasets:filled&&datasetsPresent?[dataset]:[]};
   if(p.endsWith('/charts'))return {chart:{id:'fixture-chart',spec:{title:'SYNTHETIC 数据图表排版结果'},caption:prose,transformations:{dropped_csv_rows:[],minmax_normalized:true}}};
   if(p.startsWith('/api/datasets/'))return {dataset};
   if(p==='/api/subscriptions')return {subscriptions:filled?[{id:'fixture-subscription',query:longTitle,enabled:true,interval_hours:24,field:'all',last_checked_at:timestamp,next_check_at:timestamp,last_error:'合成状态：上次请求没有完成，等待下次检查。'+prose}]:[]};
@@ -121,6 +121,42 @@ async function audit(page,name) {
   console.log('SNAPSHOT '+name);
 }
 
+function behaviorCheck(name, passed, evidence={}) {
+  report.behaviorChecks.push({name,passed,...evidence});
+  console.log('BEHAVIOR '+name+' '+(passed?'PASS':'FAIL'));
+}
+
+async function taskNavigation(page,prefix) {
+  const form=page.locator('.rs-task-form'),detail=page.locator('.rs-task-detail');
+  const compact=await page.locator('.rs-task-shortcuts').isVisible();
+  if(!compact)return;
+  const geometry=await page.evaluate(()=>{
+    const form=document.querySelector('.rs-task-form').getBoundingClientRect(),detail=document.querySelector('.rs-task-detail').getBoundingClientRect();
+    return {resultTop:detail.top,resultBottom:detail.bottom,formTop:form.top};
+  });
+  behaviorCheck(prefix+'-result-before-form',geometry.resultTop<geometry.formTop&&geometry.resultBottom<=geometry.formTop+1,geometry);
+  await page.getByRole('button',{name:'新建任务',exact:true}).click();
+  const formScroll=await form.evaluate(el=>{const r=el.getBoundingClientRect(),root=document.querySelector('#moduleRoot').getBoundingClientRect();return {top:r.top,rootTop:root.top,visible:r.top>=root.top-1&&r.top<innerHeight,focused:el.contains(document.activeElement)};});
+  behaviorCheck(prefix+'-new-task-scroll',formScroll.visible&&formScroll.focused,formScroll);
+  await form.getByLabel('研究问题',{exact:true}).fill('SYNTHETIC 未提交的研究问题：切换结果、输入和历史时必须保留。');
+  await form.locator('.rs-document-choice input').first().check();
+  const readInput=()=>form.evaluate(el=>({kind:el.querySelector('select').value,prompt:el.querySelector('textarea').value,selected:[...el.querySelectorAll('.rs-document-choice input:checked')].map(item=>item.value)}));
+  const before=await readInput();
+  await page.getByRole('button',{name:'返回任务结果',exact:true}).click();
+  const resultScroll=await detail.evaluate(el=>{const r=el.getBoundingClientRect(),root=document.querySelector('#moduleRoot').getBoundingClientRect();return {top:r.top,rootTop:root.top,visible:r.top>=root.top-1&&r.top<innerHeight,focused:document.activeElement===el};});
+  behaviorCheck(prefix+'-return-result-scroll',resultScroll.visible&&resultScroll.focused,resultScroll);
+  await page.getByRole('button',{name:'新建任务',exact:true}).click();
+  const after=await readInput();
+  behaviorCheck(prefix+'-navigation-keeps-input',JSON.stringify(before)===JSON.stringify(after),{before,after});
+  await page.getByRole('button',{name:'返回任务结果',exact:true}).click();
+  await audit(page,prefix+'-research-return-result');
+}
+
+async function datasetVisibility(page,name,expected) {
+  const visible=await page.locator('.rs-chart-form').isVisible(),emptyVisible=await page.locator('.rs-chart-empty').isVisible();
+  behaviorCheck(name,visible===expected&&emptyVisible!==expected,{chartFormVisible:visible,emptyHintVisible:emptyVisible,expectedChartFormVisible:expected});
+}
+
 async function main(){
   const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_EXECUTABLE||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
@@ -142,9 +178,16 @@ async function main(){
     return route.fulfill({status:200,contentType:'application/json; charset=utf-8',body:JSON.stringify(responseFor(url,request.method()))});
   });
   try{
+    let moduleEntries=0;
     async function ready(){await page.goto(origin);await page.locator('#connectionState.is-connected').waitFor();await page.waitForFunction(()=>document.querySelector('#documentList')?.getAttribute('aria-busy')==='false');}
-    async function module(name){await page.locator(`[data-module="${name}"]`).click();if(name!=='reader')await page.locator('#moduleRoot > section').waitFor();await page.waitForTimeout(100);}
-    const sizes=live?[{width:1440,height:1000}]:[{width:1440,height:1000},{width:1280,height:600},{width:1024,height:768},{width:390,height:844},{width:320,height:720}];
+    async function module(name){
+      await page.locator(`[data-module="${name}"]`).click();if(name!=='reader')await page.locator('#moduleRoot > section').waitFor();await page.waitForTimeout(100);
+      if(name!=='reader'){
+        const position=await page.locator('#moduleRoot').evaluate(el=>({scrollTop:el.scrollTop,scrollLeft:el.scrollLeft,viewportWidth:innerWidth}));
+        behaviorCheck('module-entry-'+(++moduleEntries)+'-'+name,position.scrollTop===0&&position.scrollLeft===0,position);
+      }
+    }
+    const sizes=live?[{width:1440,height:1000}]:[{width:1440,height:1000},{width:1280,height:600},{width:1024,height:768},{width:602,height:884},{width:390,height:844},{width:320,height:720}];
     for(const size of sizes){
       await page.setViewportSize(size);
       for(const content of (live?[false]:[false,true])){
@@ -153,10 +196,34 @@ async function main(){
         for(const name of ['reader','manage','research','discovery','graph','data']){
           await module(name);await audit(page,prefix+'-'+name);
           if(live)continue;
+          if(name==='reader'&&filled&&size.width===602){
+            await page.locator('#pageImage:visible').waitFor();
+            const preview=await page.evaluate(()=>{const library=document.querySelector('#libraryPanel').getBoundingClientRect(),list=document.querySelector('#documentList').getBoundingClientRect(),image=document.querySelector('#pageImage').getBoundingClientRect(),workspace=document.querySelector('#workspace').getBoundingClientRect();return {libraryHeight:library.height,listHeight:list.height,workspaceHeight:workspace.height,pdfTop:image.top,viewportHeight:innerHeight,pdfVisible:image.width>0&&image.height>0};});
+            behaviorCheck(prefix+'-compact-library-pdf-first-screen',preview.pdfVisible&&preview.pdfTop<preview.viewportHeight&&preview.listHeight<=190&&preview.libraryHeight<preview.workspaceHeight*.8,preview);
+          }
           if(name==='reader'&&await page.locator('.mobile-navigation').isVisible()){for(const view of ['reader','evidence']){await page.locator(`[data-view="${view}"]`).click();await audit(page,prefix+'-reader-'+view);}}
           if(name==='reader'&&filled){if(await page.locator('.mobile-navigation').isVisible())await page.locator('[data-view="reader"]').click();await page.locator('#paperPage:visible').waitFor();await page.getByLabel('页面缩放').selectOption('2');await audit(page,prefix+'-reader-zoom200');const edge=await page.locator('#readerViewport').evaluate(el=>{el.scrollLeft=0;const box=el.getBoundingClientRect(),paper=document.querySelector('#paperPage').getBoundingClientRect();return {viewportLeft:box.left,paperLeft:paper.left,pass:paper.left>=box.left-1};});report.snapshots.at(-1).zoomLeftEdge=edge;if(!edge.pass)report.snapshots.at(-1).passed=false;await page.getByLabel('页面缩放').selectOption('1');}
           if(name==='manage'&&filled){for(const label of ['标题与引用','本页文字','版面结构','参考文献筛选']){await page.getByRole('tab',{name:label,exact:true}).click();if(label==='版面结构'){await page.getByRole('button',{name:'分析本页结构',exact:true}).click();await page.getByText('标题、作者与机构候选',{exact:true}).waitFor();}await audit(page,prefix+'-manage-'+{'标题与引用':'structure','本页文字':'text','版面结构':'layout','参考文献筛选':'references'}[label]);}}
-          if(name==='research'&&filled){await page.locator('.rs-history').evaluate(el=>el.scrollIntoView({block:'start'}));await audit(page,prefix+'-research-history');for(const label of ['文献翻译','论文框架','未来方向']){await page.locator('.rs-history-item').filter({hasText:label}).click();await page.locator('.rs-task-detail').evaluate(el=>el.scrollIntoView({block:'start'}));await audit(page,prefix+'-research-'+{'文献翻译':'translation','论文框架':'draft','未来方向':'future'}[label]);}}
+          if(name==='research'){
+            if(!filled)behaviorCheck(prefix+'-no-task-hides-result',!await page.locator('.rs-task-detail').isVisible());
+            else {
+              await page.locator('.rs-task-layout.rs-has-task').waitFor();
+              await taskNavigation(page,prefix);
+              const compact=await page.locator('.rs-task-shortcuts').isVisible();
+              if(compact)await page.getByRole('button',{name:'任务历史',exact:true}).click();
+              else await page.locator('.rs-history').evaluate(el=>el.scrollIntoView({block:'start'}));
+              await audit(page,prefix+'-research-history');
+              for(const label of ['文献翻译','论文框架','未来方向']){
+                await page.locator('.rs-history-item').filter({hasText:label}).click();
+                await page.waitForFunction(expected=>document.querySelector('.rs-task-detail>.rs-card-title')?.textContent===expected,label);
+                if(compact){
+                  const selection=await page.locator('.rs-task-detail').evaluate(el=>{const box=el.getBoundingClientRect(),root=document.querySelector('#moduleRoot').getBoundingClientRect();return {heading:el.querySelector('.rs-card-title').textContent,selectedHistory:document.querySelector('.rs-history-item.is-selected strong')?.textContent,top:box.top,rootTop:root.top,visible:box.top>=root.top-1&&box.top<innerHeight,focused:document.activeElement===el};});
+                  behaviorCheck(prefix+'-history-select-'+label,selection.heading===label&&selection.selectedHistory===label&&selection.visible&&selection.focused,selection);
+                }else await page.locator('.rs-task-detail').evaluate(el=>el.scrollIntoView({block:'start'}));
+                await audit(page,prefix+'-research-'+{'文献翻译':'translation','论文框架':'draft','未来方向':'future'}[label]);
+              }
+            }
+          }
           if(name==='discovery'&&filled){await page.getByRole('button',{name:'本地推荐',exact:true}).click();await page.locator('.ex-paper-card').waitFor();await audit(page,prefix+'-discovery-recommendations');}
           if(name==='graph'&&filled){
             const identities=await page.locator('.ex-network-node').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.nodeId,title:node.querySelector('title')?.textContent,aria:node.getAttribute('aria-label')})));
@@ -167,16 +234,27 @@ async function main(){
             for(let step=0;step<3;step++)await page.getByRole('button',{name:'缩小图谱',exact:true}).click();
             await audit(page,prefix+'-graph-zoom-out');await page.getByRole('button',{name:'复位',exact:true}).click();
           }
-          if(name==='data'&&filled){await page.getByLabel(/^图表类型/).selectOption('radar3d');await audit(page,prefix+'-data-radar-controls');await page.locator('.rs-y-choices input[value="score_A"]').check();await page.locator('.rs-y-choices input[value="score_B"]').check();await page.getByRole('button',{name:'生成图表与图注',exact:true}).click();await page.locator('.rs-chart-output img').waitFor();await page.locator('.rs-chart-output').evaluate(el=>el.scrollIntoView({block:'start'}));await audit(page,prefix+'-data-chart-output');}
+          if(name==='data'){
+            await datasetVisibility(page,prefix+'-dataset-controls',filled);
+            if(filled){
+              if(size.width===602){
+                datasetsPresent=false;await page.getByRole('button',{name:'刷新数据集',exact:true}).click();await page.locator('.rs-chart-empty:visible').waitFor();
+                await datasetVisibility(page,prefix+'-dataset-removed',false);await audit(page,prefix+'-data-dataset-removed');
+                datasetsPresent=true;await page.getByRole('button',{name:'刷新数据集',exact:true}).click();await page.locator('.rs-chart-form:visible').waitFor();
+                await datasetVisibility(page,prefix+'-dataset-restored',true);await audit(page,prefix+'-data-dataset-restored');
+              }
+              await page.getByLabel(/^图表类型/).selectOption('radar3d');await audit(page,prefix+'-data-radar-controls');await page.locator('.rs-y-choices input[value="score_A"]').check();await page.locator('.rs-y-choices input[value="score_B"]').check();await page.getByRole('button',{name:'生成图表与图注',exact:true}).click();await page.locator('.rs-chart-output img').waitFor();await page.locator('.rs-chart-output').evaluate(el=>el.scrollIntoView({block:'start'}));await audit(page,prefix+'-data-chart-output');
+            }
+          }
         }
         if(!live){await page.locator('#accountButton').click();await page.locator('#accountDialog[open]').waitFor();await audit(page,prefix+'-account-dialog');await page.locator('#closeAccount').click();await page.locator('#modelSettingsButton').click();await page.locator('.ms-dialog[open]').waitFor();await audit(page,prefix+'-model-dialog');await page.getByRole('button',{name:'关闭模型设置并清空密钥输入'}).click();}
       }
-      if(!live){filled=true;jobsPresent=false;await ready();await module('research');await audit(page,size.width+'-documents-without-jobs-research');jobsPresent=true;}
+      if(!live){filled=true;jobsPresent=false;await ready();await module('research');await audit(page,size.width+'-documents-without-jobs-research');behaviorCheck(size.width+'-documents-without-jobs-hides-result',!await page.locator('.rs-task-detail').isVisible());jobsPresent=true;}
     }
-    if(!live){await page.setViewportSize({width:844,height:390});await ready();await page.locator('#accountButton').click();await audit(page,'844x390-account-dialog');await page.locator('#closeAccount').click();await page.locator('#modelSettingsButton').click();await audit(page,'844x390-model-dialog');await page.getByRole('button',{name:'关闭模型设置并清空密钥输入'}).click();accountMode=true;for(const width of [1440,320]){await page.setViewportSize({width,height:844});await ready();await audit(page,width+'-long-account-header');await page.locator('#accountButton').click();await audit(page,width+'-long-account-dialog');await page.locator('#closeAccount').click();}}
-    report.passed=report.pageErrors.length===0&&report.consoleErrors.length===0&&report.blockedRequests.length===0&&report.snapshots.every(snapshot=>snapshot.passed);
+    if(!live){await page.setViewportSize({width:844,height:390});await ready();await page.locator('#accountButton').click();await audit(page,'844x390-account-dialog');await page.locator('#closeAccount').click();await page.locator('#modelSettingsButton').click();await audit(page,'844x390-model-dialog');await page.getByRole('button',{name:'关闭模型设置并清空密钥输入'}).click();accountMode=true;for(const width of [1440,602,560,320]){await page.setViewportSize({width,height:844});await ready();await audit(page,width+'-long-account-header');await page.locator('#accountButton').click();await audit(page,width+'-long-account-dialog');await page.locator('#closeAccount').click();}}
+    report.passed=report.pageErrors.length===0&&report.consoleErrors.length===0&&report.blockedRequests.length===0&&report.snapshots.every(snapshot=>snapshot.passed)&&report.behaviorChecks.every(check=>check.passed);
     if(!live&&!report.passed)process.exitCode=1;
   }catch(error){report.passed=false;report.failure=String(error.stack||error);await audit(page,'failure').catch(()=>{});process.exitCode=1;}
-  finally{report.finishedAt=new Date().toISOString();report.summary={scenarios:report.snapshots.length,failedScenarios:report.snapshots.filter(item=>!item.passed).map(item=>item.name)};for(const key of ['smallText','contrastFailures','horizontalOverflow','controlTextOverflow','contrastUnmeasured','whitespaceAdvisories','svgLabels','svgLabelFailures','graphLabelOverlaps','graphHiddenLabels'])report.summary[key]=report.snapshots.reduce((sum,item)=>sum+(item[key]?.length||0),0);fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2),{flag:'wx'});await browser.close();console.log(JSON.stringify({output,passed:report.passed,snapshots:report.snapshots.length,failure:report.failure}));}
+  finally{report.finishedAt=new Date().toISOString();report.summary={scenarios:report.snapshots.length,failedScenarios:report.snapshots.filter(item=>!item.passed).map(item=>item.name),behaviorChecks:report.behaviorChecks.length,failedBehaviorChecks:report.behaviorChecks.filter(item=>!item.passed).map(item=>item.name)};for(const key of ['smallText','contrastFailures','horizontalOverflow','controlTextOverflow','contrastUnmeasured','whitespaceAdvisories','svgLabels','svgLabelFailures','graphLabelOverlaps','graphHiddenLabels'])report.summary[key]=report.snapshots.reduce((sum,item)=>sum+(item[key]?.length||0),0);fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2),{flag:'wx'});await browser.close();console.log(JSON.stringify({output,passed:report.passed,snapshots:report.snapshots.length,behaviorChecks:report.behaviorChecks.length,failure:report.failure}));}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
