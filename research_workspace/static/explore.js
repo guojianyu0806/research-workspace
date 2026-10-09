@@ -446,6 +446,9 @@
     container.replaceChildren(shell);
     let svg = null;
     let viewport = null;
+    let graphText = [];
+    let typographyKey = "";
+    let typographyFrame = 0;
     const svgNode = (tag, attributes = {}, text) => {
       const result = document.createElementNS("http://www.w3.org/2000/svg", tag);
       Object.entries(attributes).forEach(([name, value]) => result.setAttribute(name, String(value)));
@@ -453,11 +456,85 @@
       return result;
     };
 
+    function updateTypography() {
+      if (!alive || !svg?.isConnected || !viewport) return;
+      const screenWidth = svg.getBoundingClientRect().width;
+      // Read the stable root viewBox scale and apply our current zoom explicitly.
+      // Some renderers expose the previous frame's group CTM just after setAttribute.
+      const matrix = svg.getScreenCTM();
+      const screenScale = matrix && Math.hypot(matrix.a, matrix.b) * zoom;
+      if (!screenScale || !Number.isFinite(screenScale) || screenWidth <= 0) return;
+      const key = `${screenScale.toFixed(6)}:${Math.round(screenWidth)}`;
+      if (typographyKey === key) return;
+      typographyKey = key;
+      const maximumLabelWidth = Math.max(72, Math.min(240, screenWidth * .3));
+      for (const entry of graphText) {
+        // The viewBox and interactive zoom must not shrink text below readable screen pixels.
+        entry.label.style.fontSize = `${14.25 / screenScale}px`;
+        entry.label.style.strokeWidth = `${3 / screenScale}px`;
+        entry.rank.style.fontSize = `${15.25 / screenScale}px`;
+        const rankBox = entry.rank.getBBox();
+        entry.label.setAttribute("y", String(Math.max(entry.radius, rankBox.y + rankBox.height) + 18 / screenScale));
+        entry.label.textContent = entry.title;
+        if (entry.label.getComputedTextLength() * screenScale <= maximumLabelWidth) continue;
+        const characters = Array.from(entry.title);
+        let low = 0, high = characters.length;
+        while (low < high) {
+          const middle = Math.ceil((low + high) / 2);
+          entry.label.textContent = `${characters.slice(0, middle).join("")}…`;
+          if (entry.label.getComputedTextLength() * screenScale <= maximumLabelWidth) low = middle;
+          else high = middle - 1;
+        }
+        entry.label.textContent = `${characters.slice(0, low).join("")}…`;
+      }
+      // Keep readable type without covering a neighbouring node or another label.
+      // These boxes share viewport coordinates; panning does not change overlap.
+      const prioritized = [...graphText].sort((left, right) => {
+        const priority = (entry) => entry.id === selectedNode ? 2
+          : selectedEdge && [selectedEdge.source, selectedEdge.target].includes(entry.id) ? 1 : 0;
+        return priority(right) - priority(left);
+      });
+      const bounds = (element, entry) => {
+        const box = element.getBBox();
+        return { left: entry.x + box.x, top: entry.y + box.y,
+          right: entry.x + box.x + box.width, bottom: entry.y + box.y + box.height };
+      };
+      const gap = 2 / screenScale;
+      const overlaps = (left, right) => left.left < right.right + gap && left.right > right.left - gap
+        && left.top < right.bottom + gap && left.bottom > right.top - gap;
+      const visibleRanks = [];
+      for (const entry of prioritized) {
+        const box = bounds(entry.rank, entry);
+        const hidden = visibleRanks.some((other) => overlaps(box, other));
+        entry.rank.style.visibility = hidden ? "hidden" : "visible";
+        if (!hidden) visibleRanks.push(box);
+      }
+      const nodeBounds = graphText.map((entry) => ({ left: entry.x - entry.radius, top: entry.y - entry.radius,
+        right: entry.x + entry.radius, bottom: entry.y + entry.radius }));
+      const visibleLabels = [];
+      for (const entry of prioritized) {
+        const box = bounds(entry.label, entry);
+        const hidden = [...nodeBounds, ...visibleRanks, ...visibleLabels].some((other) => overlaps(box, other));
+        entry.label.style.visibility = hidden ? "hidden" : "visible";
+        if (!hidden) visibleLabels.push(box);
+      }
+    }
+    function scheduleTypography() {
+      if (!alive || typographyFrame) return;
+      typographyFrame = requestAnimationFrame(() => { typographyFrame = 0; updateTypography(); });
+    }
+    const graphResizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(scheduleTypography) : null;
+    graphResizeObserver?.observe(graphHost);
+    if (!graphResizeObserver) window.addEventListener("resize", scheduleTypography);
+
     function transform() {
+      if (!alive) return;
       viewport?.setAttribute("transform", `translate(${pan.x} ${pan.y}) scale(${zoom})`);
       zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
       smaller.disabled = !viewport || zoom <= .4;
       larger.disabled = !viewport || zoom >= 4;
+      updateTypography();
+      scheduleTypography();
     }
     function setZoom(next, point = { x: 500, y: 350 }) {
       if (!viewport) return;
@@ -478,6 +555,9 @@
         item.setAttribute("aria-pressed", String(Boolean(active)));
       });
       svg?.querySelectorAll(".ex-network-edge").forEach((item) => item.classList.toggle("is-selected", item.dataset.edgeId === selectedEdge?.id));
+      typographyKey = "";
+      updateTypography();
+      scheduleTypography();
     }
     function openEdge(edge) {
       selectedEdge = edge; selectedNode = null;
@@ -528,6 +608,8 @@
     }
 
     function drawGraph() {
+      graphText = [];
+      typographyKey = "";
       if (!graph.nodes.length) {
         viewport = null; svg = null; transform();
         empty(graphHost, "尚无可构建图谱的文献", "先导入并解析论文，再更新引用图谱。没有依据的关系不会被自动补成连线。");
@@ -575,12 +657,14 @@
       });
       graph.nodes.forEach((paper, index) => {
         const point = positions.get(paper.id);
-        const group = svgNode("g", { class: `ex-network-node${paper.kind === "external_metadata" ? " is-external" : ""}`, transform: `translate(${point.x} ${point.y})`, tabindex: 0, role: "button", "aria-label": `${paper.title}，查看文献与引用依据` });
+        const group = svgNode("g", { class: `ex-network-node${paper.kind === "external_metadata" ? " is-external" : ""}`, transform: `translate(${point.x} ${point.y})`, tabindex: 0, role: "button", "aria-label": `${paper.title}，局域排名 ${paper.rank || index + 1}，查看文献与引用依据` });
         group.dataset.nodeId = paper.id;
-        group.append(svgNode("title", {}, paper.title), svgNode("circle", { r: point.radius, class: "ex-node-circle" }), svgNode("text", { class: "ex-node-rank", "text-anchor": "middle", dy: ".35em" }, paper.rank || index + 1));
+        const rank = svgNode("text", { class: "ex-node-rank", "text-anchor": "middle", dy: ".35em" }, paper.rank || index + 1);
+        group.append(svgNode("title", {}, paper.title), svgNode("circle", { r: point.radius, class: "ex-node-circle" }), rank);
         const title = String(paper.title || "");
-        const short = title.length > 28 ? title.slice(0, 27) + "…" : title;
-        group.append(svgNode("text", { class: "ex-node-label", "text-anchor": "middle", y: point.radius + 19 }, short));
+        const label = svgNode("text", { class: "ex-node-label", "text-anchor": "middle", y: point.radius + 19 }, title);
+        group.append(label);
+        graphText.push({ label, rank, title, id: paper.id, x: point.x, y: point.y, radius: point.radius });
         group.addEventListener("click", () => openNode(paper.id));
         group.addEventListener("keydown", (event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); openNode(paper.id); } });
         viewport.append(group);
@@ -638,7 +722,13 @@
       } finally { if (alive && request === requestSequence) { rebuild.disabled = false; rebuild.textContent = "更新引用图谱"; } }
     }
     empty(graphHost, "正在核对参考书目", "只对有原文依据的引用关系连线。");
-    const controller = { refresh, destroy() { alive = false; requestSequence += 1; drag = null; } };
+    const controller = { refresh, destroy() {
+      alive = false; requestSequence += 1; drag = null;
+      graphResizeObserver?.disconnect();
+      if (!graphResizeObserver) window.removeEventListener("resize", scheduleTypography);
+      cancelAnimationFrame(typographyFrame);
+      typographyFrame = 0; graphText = [];
+    } };
     mounted.set(container, controller);
     controller.ready = refresh();
     return controller;
