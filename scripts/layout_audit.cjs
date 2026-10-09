@@ -198,11 +198,17 @@ async function main(){
           if(live)continue;
           if(name==='reader'&&filled&&size.width===602){
             await page.locator('#pageImage:visible').waitFor();
-            const preview=await page.evaluate(()=>{const library=document.querySelector('#libraryPanel').getBoundingClientRect(),list=document.querySelector('#documentList').getBoundingClientRect(),image=document.querySelector('#pageImage').getBoundingClientRect(),workspace=document.querySelector('#workspace').getBoundingClientRect();return {libraryHeight:library.height,listHeight:list.height,workspaceHeight:workspace.height,pdfTop:image.top,viewportHeight:innerHeight,pdfVisible:image.width>0&&image.height>0};});
-            behaviorCheck(prefix+'-compact-library-pdf-first-screen',preview.pdfVisible&&preview.pdfTop<preview.viewportHeight&&preview.listHeight<=190&&preview.libraryHeight<preview.workspaceHeight*.8,preview);
+            const preview=await page.evaluate(()=>{const reader=document.querySelector('#readerPanel').getBoundingClientRect(),image=document.querySelector('#pageImage').getBoundingClientRect(),workspace=document.querySelector('#workspace').getBoundingClientRect();return {readerWidth:reader.width,workspaceWidth:workspace.width,pdfTop:image.top,viewportHeight:innerHeight,pdfVisible:image.width>0&&image.height>0,libraryExpanded:document.querySelector('#toggleLibrary').getAttribute('aria-expanded'),evidenceExpanded:document.querySelector('#toggleEvidence').getAttribute('aria-expanded')};});
+            behaviorCheck(prefix+'-reading-first-full-width',preview.pdfVisible&&preview.pdfTop<preview.viewportHeight&&Math.abs(preview.readerWidth-preview.workspaceWidth)<3&&preview.libraryExpanded==='false'&&preview.evidenceExpanded==='false',preview);
           }
-          if(name==='reader'&&await page.locator('.mobile-navigation').isVisible()){for(const view of ['reader','evidence']){await page.locator(`[data-view="${view}"]`).click();await audit(page,prefix+'-reader-'+view);}}
-          if(name==='reader'&&filled){if(await page.locator('.mobile-navigation').isVisible())await page.locator('[data-view="reader"]').click();await page.locator('#paperPage:visible').waitFor();await page.getByLabel('页面缩放').selectOption('2');await audit(page,prefix+'-reader-zoom200');const edge=await page.locator('#readerViewport').evaluate(el=>{el.scrollLeft=0;const box=el.getBoundingClientRect(),paper=document.querySelector('#paperPage').getBoundingClientRect();return {viewportLeft:box.left,paperLeft:paper.left,pass:paper.left>=box.left-1};});report.snapshots.at(-1).zoomLeftEdge=edge;if(!edge.pass)report.snapshots.at(-1).passed=false;await page.getByLabel('页面缩放').selectOption('1');}
+          if(name==='reader'){
+            if(await page.locator('#toggleLibrary').getAttribute('aria-expanded')!=='true')await page.locator('#toggleLibrary').click();
+            await audit(page,prefix+'-reader-library');
+            await page.locator('#closeLibrary').click();
+            await page.locator('#toggleEvidence').click();await audit(page,prefix+'-reader-evidence');
+            await page.locator('#closeEvidence').click();
+          }
+          if(name==='reader'&&filled){await page.locator('#paperPage:visible').waitFor();await page.getByLabel('页面缩放').selectOption('2');await audit(page,prefix+'-reader-zoom200');const edge=await page.locator('#readerViewport').evaluate(el=>{el.scrollLeft=0;const box=el.getBoundingClientRect(),paper=document.querySelector('#paperPage').getBoundingClientRect();return {viewportLeft:box.left,paperLeft:paper.left,pass:paper.left>=box.left-1};});report.snapshots.at(-1).zoomLeftEdge=edge;if(!edge.pass)report.snapshots.at(-1).passed=false;await page.getByLabel('页面缩放').selectOption('1');}
           if(name==='manage'&&filled){for(const label of ['标题与引用','本页文字','版面结构','参考文献筛选']){await page.getByRole('tab',{name:label,exact:true}).click();if(label==='版面结构'){await page.getByRole('button',{name:'分析本页结构',exact:true}).click();await page.getByText('标题、作者与机构候选',{exact:true}).waitFor();}await audit(page,prefix+'-manage-'+{'标题与引用':'structure','本页文字':'text','版面结构':'layout','参考文献筛选':'references'}[label]);}}
           if(name==='research'){
             if(!filled)behaviorCheck(prefix+'-no-task-hides-result',!await page.locator('.rs-task-detail').isVisible());
