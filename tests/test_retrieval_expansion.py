@@ -169,6 +169,37 @@ def test_reparse_during_model_call_cannot_mix_versions_in_fusion(library):
     assert_canonical(library, found["evidence"])
 
 
+def test_review_opening_fallback_uses_same_snapshot_when_reparse_finishes_during_expansion(library, monkeypatch):
+    matched = document(library, "LayerNorm normalizes feature activations within each example.", "matched.pdf")
+    fallback = document(library, "Copper sensors record temperatures during a controlled experiment.", "fallback.pdf")
+    old_run = library.get_document(fallback)["available_run"]["id"]
+    old_block = library.get_page(fallback, 1, old_run)["blocks"][0]
+    def reparse():
+        library.create_run(fallback)
+        while library.process_next_job():
+            pass
+    provider = MockProvider([term("层归一化", "LayerNorm")], on_expansion=reparse)
+    service = IntelligenceService(library, provider)
+    reads = []
+    original_blocks = service._blocks
+    def read_snapshot(ids):
+        reads.append(list(ids))
+        return original_blocks(ids)
+    monkeypatch.setattr(service, "_blocks", read_snapshot)
+    result = run(service.synthesize("review", [matched, fallback], instruction="总结层归一化"))
+    assert library.get_document(fallback)["available_run"]["id"] != old_run
+    assert reads == [[matched, fallback]], "Review fallback must not reopen the document/run snapshot"
+    retrieved = [source for source in result["evidence"] if source["document_id"] == fallback]
+    assert len(retrieved) == 1
+    assert retrieved[0]["run_id"] == result["retrieval"]["selected_runs"][fallback] == old_run
+    assert retrieved[0]["block_id"] == old_block["id"]
+    assert retrieved[0]["text"] == old_block["text"]
+    assert retrieved[0]["bbox"] == old_block["bbox"]
+    assert any(source["block_id"] == old_block["id"] for source in provider.calls[-1][1]["evidence"])
+    assert "_opening_candidates" not in result["retrieval"]
+    json.dumps(result)  # Internal Evidence objects must never leak into API/job audit data.
+
+
 @pytest.mark.parametrize("scenario", ["off", "unconfigured", "english", "chinese_source", "no_text"])
 def test_auto_policy_does_not_charge_every_question(library, scenario):
     question = "层归一化有什么作用？"

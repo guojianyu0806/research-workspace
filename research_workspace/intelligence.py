@@ -480,6 +480,9 @@ class IntelligenceService:
         if expansion not in {"auto", "off", "always"}:
             raise LibraryError("查询扩展策略须为auto、off或always。")
         blocks = self._blocks(document_ids)
+        opening_by_document = {}
+        for block in blocks:
+            opening_by_document.setdefault(block.document_id, block)
         index = self._lexical_index(blocks)
         original = self._rank_lexical(question, blocks, index)
         english = self._english_documents(blocks, document_ids)
@@ -549,6 +552,8 @@ class IntelligenceService:
             mode = "bilingual_query_expansion_bm25_rrf" if len(queries) > 1 else "bm25_with_bibliographic_candidates"
             trace.append(self._trace("rank_fusion", f"对{len(rankings)}组候选进行RRF融合并优先覆盖每篇有候选的文献；选出{len(selected)}个真实原文块。"))
         return {"evidence": self._excerpts(selected), "mode": mode, "queries": queries,
+                # Internal snapshot data, excluded from persisted/public audit.
+                "_opening_candidates": self._excerpts(list(opening_by_document.values())),
                 "query_terms": [item["text"] for item in queries[1:]], "expansion": info,
                 "prompt_version": RETRIEVAL_PROMPT_VERSION, "trace": trace,
                 "selected_runs": {document_id: next((block.run_id for block in blocks if block.document_id == document_id), None)
@@ -584,7 +589,7 @@ class IntelligenceService:
         retrieval = await self.retrieve_for_question(question, document_ids, limit=max(12, len(document_ids)),
                                                      check_cancel=check_cancel)
         evidence = retrieval["evidence"]
-        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace"}}
+        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace", "_opening_candidates"}}
         represented = {block.document_id for block in evidence}
         missing = [value for value in document_ids if value not in represented]
         trace = retrieval["trace"]
@@ -754,18 +759,16 @@ class IntelligenceService:
                                                      expansion="auto" if instruction.strip() else "off",
                                                      check_cancel=check_cancel)
         evidence = retrieval["evidence"]
-        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace"}}
+        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace", "_opening_candidates"}}
         # Reviews may include a selected document's opening passage when none of
-        # its blocks matched headings. This is disclosed as a bounded excerpt.
+        # its blocks matched headings. Reuse the same pre-await run snapshot;
+        # a newly completed parse must not enter through the fallback path.
         if kind == "review":
             represented = {block.document_id for block in evidence}
             if represented != set(document_ids):
-                candidates = self._blocks([document_id for document_id in document_ids if document_id not in represented])
-                for document_id in document_ids:
-                    candidate = next((block for block in candidates if block.document_id == document_id), None)
-                    if candidate and len(evidence) < MAX_EVIDENCE:
-                        evidence.append(candidate.model_copy(update={"text": candidate.text[:MAX_EVIDENCE_CHARS],
-                            "truncated": len(candidate.text) > MAX_EVIDENCE_CHARS}))
+                for candidate in retrieval["_opening_candidates"]:
+                    if candidate.document_id not in represented and len(evidence) < MAX_EVIDENCE:
+                        evidence.append(candidate)
         trace = retrieval["trace"] + [self._trace("retrieve_scope", f"本次生成使用{len(evidence)}个选定文献片段，未自动核验外部最新研究。")]
         limitations = ["仅基于所选文献的有限检索片段，未验证覆盖全文。",
                        "引用校验验证来源归属与原文引句，不等于自动证明全部推论正确。"]
