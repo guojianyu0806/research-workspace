@@ -84,6 +84,7 @@
     document.querySelectorAll("[data-view]").forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.view === view));
     });
+    window.dispatchEvent(new CustomEvent("research:reader-layout"));
   }
 
   function documentName(doc) { return doc.title || doc.filename || "未命名文献"; }
@@ -309,11 +310,13 @@
       ui.pageLoading.hidden = true;
       ui.paperPage.hidden = false;
       renderHighlight();
+      window.dispatchEvent(new CustomEvent("research:page-ready"));
       if (state.highlight) {
         window.requestAnimationFrame(() => {
           if (request !== pageRequest || !state.highlight) return;
           const top = ui.paperPage.offsetTop + ui.paperPage.clientHeight * state.highlight[1] - ui.readerViewport.clientHeight * .28;
-          ui.readerViewport.scrollTo({ top: Math.max(0, top), behavior: reducedMotion.matches ? "auto" : "smooth" });
+          const left = ui.paperPage.offsetLeft + ui.paperPage.clientWidth * (state.highlight[0] + state.highlight[2]) / 2 - ui.readerViewport.clientWidth / 2;
+          ui.readerViewport.scrollTo({ top: Math.max(0, top), left: Math.max(0, left), behavior: reducedMotion.matches ? "auto" : "smooth" });
         });
       }
     };
@@ -323,7 +326,7 @@
       ui.pageError.hidden = false;
       ui.pageErrorText.textContent = "这一页暂时无法打开。请确认服务可用后重试。";
     };
-    image.src = `/api/documents/${encodeURIComponent(id)}/pages/${page}/image?scale=1.25`;
+    image.src = `/api/documents/${encodeURIComponent(id)}/pages/${page}/image?scale=2`;
   }
 
   function goToPage(value) {
@@ -604,11 +607,6 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && state.documents.some((doc) => isPending(doc.current_run))) refreshDocuments({ quiet: true });
-  });
-  byId("pageZoom").addEventListener("change", (event) => {
-    const zoom = Number(event.target.value);
-    ui.paperPage.style.width = `${zoom * 100}%`;
-    ui.paperPage.style.maxWidth = zoom === 1 ? "" : "none";
   });
   window.ResearchWorkspace = {
     api,

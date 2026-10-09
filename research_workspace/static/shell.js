@@ -16,6 +16,8 @@
   async function activate(name) {
     bridge.invalidateEvidenceNavigation?.();
     activeModule = name;
+    document.body.classList.toggle('reader-active', name === 'reader');
+    window.dispatchEvent(new CustomEvent('research:module-change', {detail: {module: name}}));
     const request = ++revision;
     controller?.destroy?.();
     controller = null;
