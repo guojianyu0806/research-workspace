@@ -16,6 +16,7 @@ import math
 import os
 from pathlib import Path
 import re
+import unicodedata
 from typing import Any, Awaitable, Callable, Literal, TypeVar
 from urllib.parse import urlsplit
 
@@ -33,6 +34,9 @@ MAX_EVIDENCE_CHARS = 5000
 MAX_BLOCK_CHARS = 16000
 MAX_TRANSLATION_TEXT_CHARS = 200000
 MAX_OUTPUT_TOKENS = 8192
+RETRIEVAL_PROMPT_VERSION = "retrieval-query-v1"
+MAX_EXPANSION_TERMS = 6
+MAX_EXPANSION_TOKENS = 512
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -101,6 +105,15 @@ class ModelConfig:
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class RetrievalTerm(StrictModel):
+    source_phrase: str = Field(min_length=1, max_length=80)
+    term: str = Field(min_length=1, max_length=80)
+
+
+class RetrievalQueryPayload(StrictModel):
+    terms: list[RetrievalTerm] = Field(default_factory=list, max_length=MAX_EXPANSION_TERMS)
 
 
 class Citation(StrictModel):
@@ -205,6 +218,11 @@ class ChatCompletionProvider:
 
     async def generate(self, prompt: str, payload: dict, output_model: type[T]) -> T:
         endpoint = self.config.endpoint()
+        # Query expansion is optional retrieval help, so it never buys a repair
+        # or retry request. All existing answer/translation budgets stay intact.
+        query_expansion = output_model is RetrievalQueryPayload
+        attempts = 1 if query_expansion else self.config.max_attempts
+        max_tokens = MAX_EXPANSION_TOKENS if query_expansion else MAX_OUTPUT_TOKENS
         messages = [
             {"role": "system", "content": prompt + "\nReturn only a JSON object matching this schema:\n"
              + json.dumps(output_model.model_json_schema(), ensure_ascii=False)},
@@ -213,9 +231,9 @@ class ChatCompletionProvider:
         async with httpx.AsyncClient(transport=self._transport,
                                     timeout=httpx.Timeout(self.config.timeout_seconds),
                                     follow_redirects=False, trust_env=False) as client:
-            for attempt in range(self.config.max_attempts):
+            for attempt in range(attempts):
                 request_body = {"model": self.config.model, "messages": messages,
-                                "temperature": 0, "max_tokens": MAX_OUTPUT_TOKENS,
+                                "temperature": 0, "max_tokens": max_tokens,
                                 "response_format": {"type": "json_object"}}
                 # The official endpoint enables thinking by default. These bounded
                 # structured tasks use the documented non-thinking mode explicitly.
@@ -227,7 +245,7 @@ class ChatCompletionProvider:
                         json=request_body,
                     )
                 except (httpx.ConnectTimeout, httpx.ConnectError):
-                    if attempt + 1 == self.config.max_attempts:
+                    if attempt + 1 == attempts:
                         raise ModelProviderError("模型连接失败；未生成回答。", retryable=True) from None
                     await self._sleep(min(0.25 * (2 ** attempt), 2.0))
                     continue
@@ -236,7 +254,7 @@ class ChatCompletionProvider:
                 except httpx.HTTPError:
                     raise ModelProviderError("模型HTTP请求失败；请检查服务配置。") from None
                 if response.status_code == 429 or response.status_code >= 500:
-                    if attempt + 1 == self.config.max_attempts:
+                    if attempt + 1 == attempts:
                         raise ModelProviderError("模型服务限流或暂时不可用；请稍后重试。", retryable=True)
                     try:
                         delay = min(max(float(response.headers.get("Retry-After", "0.5")), 0), 3.0)
@@ -262,7 +280,7 @@ class ChatCompletionProvider:
                         raise ValueError("Expected text content")
                     return output_model.model_validate_json(content)
                 except (ValueError, TypeError, KeyError, IndexError, ValidationError):
-                    if attempt + 1 == self.config.max_attempts:
+                    if attempt + 1 == attempts:
                         raise ModelOutputError("模型输出被截断或未通过结构校验；未将其作为完整有效结果展示。") from None
                     # Do not retain a malformed output or copy its contents into logs.
                     messages = messages[:2] + [{"role": "user", "content":
@@ -301,7 +319,7 @@ class IntelligenceService:
 
     def capabilities(self) -> dict:
         return {"configured": self.provider.configured, "prompt_version": PROMPT_VERSION,
-                "retrieval": "bm25_lexical", "max_documents": MAX_DOCUMENTS,
+                "retrieval": "bilingual_query_expansion_bm25_rrf", "max_documents": MAX_DOCUMENTS,
                 "external_freshness_verification": False}
 
     def _require_model(self) -> None:
@@ -340,19 +358,26 @@ class IntelligenceService:
                         bbox=json.loads(row["bbox"]), text=row["text"]))
         return results
 
-    def retrieve(self, question: str, document_ids: list[str], *, limit: int = 12) -> list[Evidence]:
+    def _retrieval_inputs(self, question: str, document_ids: list[str], limit: int) -> list[str]:
         if not isinstance(question, str) or not question.strip() or len(question) > 4000:
             raise LibraryError("问题不能为空且不得超过4000个字符。")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_EVIDENCE:
             raise LibraryError(f"证据条数须介于1至{MAX_EVIDENCE}之间。")
-        document_ids = self._validate_documents(document_ids)
-        blocks = self._blocks(document_ids)
+        return self._validate_documents(document_ids)
+
+    @staticmethod
+    def _lexical_index(blocks: list[Evidence]) -> tuple:
+        counts = [Counter(tokenize(block.text)) for block in blocks]
+        lengths = [sum(count.values()) for count in counts]
+        average = max(sum(lengths) / len(lengths), 1) if lengths else 1
+        return counts, lengths, average
+
+    @staticmethod
+    def _rank_lexical(question: str, blocks: list[Evidence], index: tuple) -> list[Evidence]:
         terms = set(tokenize(question))
         if not terms or not blocks:
             return []
-        counts = [Counter(tokenize(block.text)) for block in blocks]
-        lengths = [sum(count.values()) for count in counts]
-        average = max(sum(lengths) / len(lengths), 1)
+        counts, lengths, average = index
         document_frequency = Counter(term for count in counts for term in terms if count[term])
         candidates = []
         for block, count, length in zip(blocks, counts, lengths):
@@ -367,6 +392,10 @@ class IntelligenceService:
             if score > 0:
                 candidates.append(block.model_copy(update={"score": round(score, 6)}))
         candidates.sort(key=lambda block: (-block.score, block.document_id, block.page, block.block_id))
+        return candidates
+
+    @staticmethod
+    def _fair_blocks(candidates: list[Evidence], document_ids: list[str], limit: int) -> list[Evidence]:
         selected: list[Evidence] = []
         # Give each selected document a matching block before allocating extras.
         for document_id in document_ids:
@@ -380,8 +409,151 @@ class IntelligenceService:
             if block.block_id not in selected_ids:
                 selected.append(block)
                 selected_ids.add(block.block_id)
+        return selected
+
+    @staticmethod
+    def _excerpts(selected: list[Evidence]) -> list[Evidence]:
         return [block.model_copy(update={"text": block.text[:MAX_EVIDENCE_CHARS],
                      "truncated": len(block.text) > MAX_EVIDENCE_CHARS}) for block in selected]
+
+    def retrieve(self, question: str, document_ids: list[str], *, limit: int = 12) -> list[Evidence]:
+        """Pure synchronous BM25; never invokes a model or adds structural hits."""
+        document_ids = self._retrieval_inputs(question, document_ids, limit)
+        blocks = self._blocks(document_ids)
+        ranked = self._rank_lexical(question, blocks, self._lexical_index(blocks))
+        return self._excerpts(self._fair_blocks(ranked, document_ids, limit))
+
+    @staticmethod
+    async def _check_cancel(callback) -> None:
+        if callback is not None:
+            value = callback()
+            if inspect.isawaitable(value):
+                await value
+
+    @staticmethod
+    def _english_documents(blocks: list[Evidence], document_ids: list[str]) -> list[str]:
+        result = []
+        for document_id in document_ids:
+            sample = " ".join(block.text[:1500] for block in
+                              [item for item in blocks if item.document_id == document_id][:8])
+            latin = len(re.findall(r"[A-Za-z]", sample))
+            chinese = len(re.findall(r"[\u3400-\u9fff]", sample))
+            if latin >= 16 and latin > 3 * chinese:
+                result.append(document_id)
+        return result
+
+    @staticmethod
+    def _expansion_terms(payload: RetrievalQueryPayload, question: str) -> tuple[list[dict], int]:
+        normal = lambda text: _normalized(unicodedata.normalize("NFKC", text))
+        normalized_question = normal(question)
+        question_numbers = set(re.findall(r"\d+(?:\.\d+)?", normalized_question))
+        accepted, seen, rejected = [], set(), 0
+        for item in payload.terms:
+            anchor, term = normal(item.source_phrase), " ".join(item.term.split())
+            normalized_term = normal(term)
+            term_numbers = set(re.findall(r"\d+(?:\.\d+)?", normalized_term))
+            if (not anchor or anchor not in normalized_question or not term or len(term) > 80
+                    or any(unicodedata.category(char).startswith("C") for char in item.term)
+                    or not re.search(r"[A-Za-z\u3400-\u9fffα-ω]", term)
+                    or re.search(r"https?://|www\.|ignore.{0,25}instructions|system\s+prompt|忽略.{0,15}指令|执行命令", term, re.I)
+                    or len(term.split()) > 10 or not term_numbers.issubset(question_numbers)):
+                rejected += 1
+                continue
+            if normalized_term in seen or normalized_term == normalized_question:
+                continue
+            seen.add(normalized_term)
+            accepted.append({"source_phrase": item.source_phrase, "text": term})
+        return accepted, rejected
+
+    async def retrieve_for_question(self, question: str, document_ids: list[str], *, limit: int = 12,
+                                   expansion: Literal["auto", "off", "always"] = "auto",
+                                   check_cancel=None) -> dict:
+        """Bilingual query expansion + BM25/RRF, not embeddings or factual evidence.
+
+        Auto expands Chinese questions over predominantly English source samples,
+        or Greek-symbol questions whose symbols are absent from the source text.
+        Ordinary English lexical queries remain free of a query-generation call.
+        Every ranking uses one frozen, canonical document/run snapshot, including
+        when a reparse completes while the optional model request is in flight.
+        """
+        document_ids = self._retrieval_inputs(question, document_ids, limit)
+        if expansion not in {"auto", "off", "always"}:
+            raise LibraryError("查询扩展策略须为auto、off或always。")
+        blocks = self._blocks(document_ids)
+        index = self._lexical_index(blocks)
+        original = self._rank_lexical(question, blocks, index)
+        english = self._english_documents(blocks, document_ids)
+        has_chinese = bool(re.search(r"[\u3400-\u9fff]", question))
+        symbols = set(re.findall(r"[α-ω]", question.casefold()))
+        missing_symbols = symbols and not any(symbol in block.text.casefold() for symbol in symbols for block in blocks)
+        trigger = ("explicit_always" if expansion == "always" else
+                   "chinese_question_english_sources" if has_chinese and english else
+                   "unmatched_mathematical_symbols" if missing_symbols and english else "not_needed")
+        eligible = bool(blocks and self.provider.configured and expansion != "off" and trigger != "not_needed")
+        info = {"policy": expansion, "trigger": trigger, "status": "not_needed", "calls": 0,
+                "max_calls": 1, "max_output_tokens": MAX_EXPANSION_TOKENS, "rejected_terms": 0}
+        queries = [{"kind": "original", "text": question}]
+        trace = [self._trace("retrieve", f"原问题BM25在{len(document_ids)}篇固定版本文献中匹配{len(original)}个文本块。")]
+        if eligible:
+            await self._check_cancel(check_cancel)
+            try:
+                info["calls"] = 1
+                generated = await self.provider.generate(_prompt("retrieval_query_v1"), {
+                    "task": "bilingual_retrieval_terms", "question": question,
+                    "source_language_hint": "predominantly_english" if english else "mixed_or_unknown",
+                    "max_terms": MAX_EXPANSION_TERMS,
+                    "purpose": "query_terms_only_not_an_answer",
+                }, RetrievalQueryPayload)
+                payload = RetrievalQueryPayload.model_validate(
+                    generated.model_dump() if isinstance(generated, RetrievalQueryPayload) else generated)
+                accepted, info["rejected_terms"] = self._expansion_terms(payload, question)
+                queries.extend({"kind": "expansion", **item} for item in accepted)
+                info["status"] = "applied" if accepted else "no_usable_terms"
+            except (RuntimeError, ValueError, TypeError, OSError, httpx.HTTPError):
+                # JobStore.TaskCancelled inherits Exception directly, and asyncio
+                # cancellation inherits BaseException; neither is swallowed here.
+                info["status"] = "failed_fallback"
+                info["error"] = "query_expansion_failed"
+            await self._check_cancel(check_cancel)
+            if info["status"] == "applied":
+                trace.append(self._trace("query_expansion", "双语查询扩展仅用于检索，不作为原文证据：" + "；".join(item["text"] for item in queries[1:])))
+            else:
+                trace.append(self._trace("query_expansion", "查询扩展失败或没有合规词组；保留原问题BM25结果，未伪造证据。"))
+        else:
+            info["status"] = "disabled" if expansion == "off" else "no_source_text" if not blocks else "unconfigured" if not self.provider.configured else "not_needed"
+            trace.append(self._trace("query_expansion", "未触发查询扩展模型调用；使用本地原文检索。"))
+        rankings = [self._fair_blocks(original, document_ids, MAX_EVIDENCE)]
+        rankings.extend(self._fair_blocks(self._rank_lexical(item["text"], blocks, index), document_ids, MAX_EVIDENCE)
+                        for item in queries[1:])
+        weights = [1.0] + [1.0 / max(len(queries) - 1, 1)] * (len(queries) - 1)
+        bibliographic = bool(re.search(r"作者|机构|单位|隶属|\bauthors?\b|\baffiliations?\b", question, re.I))
+        if bibliographic and blocks:
+            opening = []
+            for document_id in document_ids:
+                first_page = min((block.page for block in blocks if block.document_id == document_id), default=None)
+                opening.extend([block for block in blocks if block.document_id == document_id and block.page == first_page][:8])
+            rankings.append(self._fair_blocks(opening, document_ids, MAX_EVIDENCE))
+            weights.append(0.75)
+            trace.append(self._trace("bibliographic_candidates", "作者/机构问题加入各文献最早可读页的有限文本块；这是版面候选，是否包含答案仍须原文支持。"))
+        if len(rankings) == 1:
+            selected = self._fair_blocks(original, document_ids, limit)
+            mode = "bm25_lexical"
+        else:
+            scores, canonical = {}, {block.block_id: block for block in blocks}
+            for ranking, weight in zip(rankings, weights):
+                for rank, block in enumerate(ranking, 1):
+                    scores[block.block_id] = scores.get(block.block_id, 0.0) + weight / (60 + rank)
+            fused = [canonical[block_id].model_copy(update={"score": round(score, 8)}) for block_id, score in scores.items()]
+            fused.sort(key=lambda block: (-block.score, block.document_id, block.page, block.block_id))
+            selected = self._fair_blocks(fused, document_ids, limit)
+            mode = "bilingual_query_expansion_bm25_rrf" if len(queries) > 1 else "bm25_with_bibliographic_candidates"
+            trace.append(self._trace("rank_fusion", f"对{len(rankings)}组候选进行RRF融合并优先覆盖每篇有候选的文献；选出{len(selected)}个真实原文块。"))
+        return {"evidence": self._excerpts(selected), "mode": mode, "queries": queries,
+                "query_terms": [item["text"] for item in queries[1:]], "expansion": info,
+                "prompt_version": RETRIEVAL_PROMPT_VERSION, "trace": trace,
+                "selected_runs": {document_id: next((block.run_id for block in blocks if block.document_id == document_id), None)
+                                  for document_id in document_ids},
+                "evidence_rule": "only_canonical_document_run_blocks; generated_terms_are_not_evidence"}
 
     @staticmethod
     def _validate_claims(claims: list[Claim], evidence: list[Evidence]) -> set[str]:
@@ -402,23 +574,28 @@ class IntelligenceService:
         return {"step": step, "detail": detail}
 
     async def answer(self, question: str, document_ids: list[str], *,
-                     mode: Literal["qa", "compare"] = "qa") -> dict:
+                     mode: Literal["qa", "compare"] = "qa", check_cancel=None) -> dict:
         self._require_model()
         if mode not in {"qa", "compare"}:
             raise LibraryError("问答模式无效。")
         document_ids = self._validate_documents(document_ids)
         if mode == "compare" and len(document_ids) < 2:
             raise LibraryError("跨文献比较需要至少两篇文献。")
-        evidence = self.retrieve(question, document_ids, limit=max(12, len(document_ids)))
+        retrieval = await self.retrieve_for_question(question, document_ids, limit=max(12, len(document_ids)),
+                                                     check_cancel=check_cancel)
+        evidence = retrieval["evidence"]
+        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace"}}
         represented = {block.document_id for block in evidence}
         missing = [value for value in document_ids if value not in represented]
-        trace = [self._trace("retrieve", f"从{len(document_ids)}篇选定文献中按BM25检索到{len(evidence)}个文本块。")]
+        trace = retrieval["trace"]
         if not evidence or (mode == "compare" and missing):
             return {"status": "insufficient_evidence", "answer": "现有可用文献中未找到足够证据，无法可靠回答。",
                     "claims": [], "evidence": [block.model_dump() for block in evidence],
                     "sources": [], "missing_document_ids": missing, "prompt_version": PROMPT_VERSION,
-                    "trace": trace + [self._trace("decline", "没有足够的匹配原文；未调用模型编造回答。")],
+                    "retrieval": retrieval_audit,
+                    "trace": trace + [self._trace("decline", "没有足够的匹配原文；未调用回答生成模型。")],
                     "verification": "no_matching_evidence"}
+        await self._check_cancel(check_cancel)
         result = await self.provider.generate(_prompt("qa_v1"), {
             "task": mode, "question": question, "selected_document_ids": document_ids,
             "evidence": [block.model_dump() for block in evidence],
@@ -435,6 +612,7 @@ class IntelligenceService:
                 "evidence": [block.model_dump() for block in evidence],
                 "sources": [block.model_dump() for block in evidence if block.evidence_id in used],
                 "missing_document_ids": missing, "prompt_version": PROMPT_VERSION,
+                "retrieval": retrieval_audit,
                 "trace": trace + [self._trace("model", "已调用配置的模型生成结构化回答。"),
                     self._trace("validate", "已核验引文属于检索集且引文文本存在于对应来源。")],
                 "verification": "citation_membership_and_quote_match; semantic_entailment_not_guaranteed"}
@@ -561,7 +739,7 @@ class IntelligenceService:
                 "source_scope": "extracted_text_only; no_OCR_or_original_layout_PDF"}
 
     async def synthesize(self, kind: Literal["review", "future_work", "draft"], document_ids: list[str],
-                         *, instruction: str = "") -> dict:
+                         *, instruction: str = "", check_cancel=None) -> dict:
         self._require_model()
         if kind not in {"review", "future_work", "draft"}:
             raise LibraryError("学术生成任务类型无效。")
@@ -572,7 +750,11 @@ class IntelligenceService:
         document_ids = self._validate_documents(document_ids)
         query = instruction[:3000] or ("future work limitations further research 未来 工作 局限 后续"
                                       if kind == "future_work" else "abstract introduction conclusion results contribution")
-        evidence = self.retrieve(query, document_ids, limit=max(12, len(document_ids)))
+        retrieval = await self.retrieve_for_question(query, document_ids, limit=max(12, len(document_ids)),
+                                                     expansion="auto" if instruction.strip() else "off",
+                                                     check_cancel=check_cancel)
+        evidence = retrieval["evidence"]
+        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace"}}
         # Reviews may include a selected document's opening passage when none of
         # its blocks matched headings. This is disclosed as a bounded excerpt.
         if kind == "review":
@@ -584,7 +766,7 @@ class IntelligenceService:
                     if candidate and len(evidence) < MAX_EVIDENCE:
                         evidence.append(candidate.model_copy(update={"text": candidate.text[:MAX_EVIDENCE_CHARS],
                             "truncated": len(candidate.text) > MAX_EVIDENCE_CHARS}))
-        trace = [self._trace("retrieve", f"本次生成使用{len(evidence)}个选定文献片段，未自动核验外部最新研究。")]
+        trace = retrieval["trace"] + [self._trace("retrieve_scope", f"本次生成使用{len(evidence)}个选定文献片段，未自动核验外部最新研究。")]
         limitations = ["仅基于所选文献的有限检索片段，未验证覆盖全文。",
                        "引用校验验证来源归属与原文引句，不等于自动证明全部推论正确。"]
         if kind == "future_work":
@@ -593,7 +775,9 @@ class IntelligenceService:
             return {"kind": kind, "status": "insufficient_evidence", "content": "未找到足够的相关原文，无法可靠生成。",
                     "sections": [], "sources": [], "references": [], "architecture": None,
                     "limitations": limitations, "prompt_version": PROMPT_VERSION, "trace": trace,
+                    "retrieval": retrieval_audit,
                     "future_work_verification": "evidence_insufficient" if kind == "future_work" else None}
+        await self._check_cancel(check_cancel)
         result = await self.provider.generate(_prompt("synthesis_v1"), {
             "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
             "external_freshness_verified": False,
@@ -633,6 +817,7 @@ class IntelligenceService:
                 "architecture": result.architecture.model_dump() if result.architecture and kind == "draft" else None,
                 "architecture_status": "proposed_design_not_experimental_evidence" if result.architecture and kind == "draft" else None,
                 "limitations": limitations, "prompt_version": PROMPT_VERSION,
+                "retrieval": retrieval_audit,
                 "trace": trace + [self._trace("model", "已调用模型生成分节内容。"),
                     self._trace("validate", "已核验引文，并从实际本地文献记录生成来源清单。")],
                 "future_work_verification": "evidence_insufficient" if kind == "future_work" else None,

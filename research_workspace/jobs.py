@@ -211,7 +211,8 @@ class JobStore:
                 return True
             self.event(job_id,'execute','读取选定资料并执行'+kind+'任务。')
             if kind in {'qa','compare'}:
-                result = await service.answer(payload['question'],payload['document_ids'],mode=kind)
+                result = await service.answer(payload['question'],payload['document_ids'],mode=kind,
+                                              check_cancel=lambda:self.check_cancel(job_id))
             elif kind=='translate':
                 # Freeze the parse version at task creation; retained blocks are immutable.
                 selection = service.list_translation_blocks(payload['document_id'],run_id=payload.get('run_id'),page=payload.get('page'),block_ids=payload.get('block_ids'))
@@ -250,7 +251,8 @@ class JobStore:
                 from .future_verification import verify_future_work
                 saved = {item.get('stage'):item.get('result') for item in job['completed_items']}
                 if saved.get('future_synthesis') is None:
-                    synthesis = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''))
+                    synthesis = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''),
+                                                         check_cancel=lambda:self.check_cancel(job_id))
                     self.save_item(job_id,'future_synthesis',{'stage':'future_synthesis','result':synthesis},2)
                     self.event(job_id,'synthesis_saved','已保存原文支持的候选方向；下一轮核验最新公开研究。')
                     self._yield_step(job_id)
@@ -262,7 +264,8 @@ class JobStore:
                                                      check_cancel=lambda:self.check_cancel(job_id))
                     self.save_item(job_id,'future_verification',{'stage':'future_verification','result':result},2)
             else:
-                result = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''))
+                result = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''),
+                                                  check_cancel=lambda:self.check_cancel(job_id))
             # finish atomically observes cancellation but retains a completed response.
             self.finish(job_id,'completed',result=result)
         except TaskCancelled:
