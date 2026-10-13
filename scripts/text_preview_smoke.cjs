@@ -1,5 +1,5 @@
-/* Offline regression for extracted-text reflow, translation selection, and PDF
- * location previews. Uses the existing Playwright/Edge runtime; installs nothing.
+/* Offline regression for extracted-text reflow, translation selection, in-page
+ * source dialogs, and outline navigation. Uses existing Playwright/Edge; installs nothing.
  * All requests are fulfilled locally. No application service, credentials, model,
  * or persisted user data is read or changed. Each run keeps separate evidence.
  */
@@ -41,6 +41,16 @@ function pageData(documentId, page) {
     id:`${name}-${page}-${index}`, ordinal:index, page, text, bbox:index === 0 ? [.1,.15,.85,.30] : page === 3 ? null : [.12,.5,.88,.72]
   }))};
 }
+function structureData(documentId) {
+  const name = documentId.endsWith('beta') ? 'beta' : 'alpha';
+  const evidence = (page, extra = {}) => ({document_id:documentId,run_id:`run-${name}`,page,...extra});
+  return {headings:[
+    {id:`${name}-heading-first`,title:'Fixture opening block',level:1,evidence:evidence(1,{block_id:`${name}-1-0`,bbox:[.1,.15,.85,.3]})},
+    {id:`${name}-heading-second`,title:'Fixture second-page block',level:2,evidence:evidence(2,{block_id:`${name}-2-1`,bbox:[.12,.5,.88,.72]})},
+    {id:`${name}-heading-box`,title:'Fixture coordinate-only heading',level:2,evidence:evidence(2,{bbox:[.1,.15,.85,.3]})},
+    {id:`${name}-heading-unmatched`,title:'Fixture page without reliable block',level:1,evidence:evidence(3,{bbox:[.9,.9,.99,.99]})},
+  ],references:[],citations:[],limitations:[]};
+}
 function pageSvg(label) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800"><rect width="600" height="800" fill="white"/><text x="45" y="50" font-size="21" fill="#173e41">SYNTHETIC ${label}</text>${Array.from({length:20}, (_,i) => `<rect x="60" y="${100+i*25}" width="${430-i%3*20}" height="6" fill="#526875"/>`).join('')}</svg>`;
 }
@@ -59,6 +69,7 @@ function check(name, actual, detail) {
 }
 let hold = null;
 let failNextImage = false;
+const pageRequests = [];
 const pending = [];
 async function main() {
   const browser = await chromium.launch({headless:true, executablePath:process.env.BROWSER_EXECUTABLE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
@@ -81,11 +92,12 @@ async function main() {
     let response;
     if (p === '/api/documents') response = {documents};
     else if (p.endsWith('/versions')) response = {family:{documents:[]},candidates:[]};
-    else if (p.endsWith('/structure')) response = {headings:[],references:[],citations:[],limitations:[]};
+    else if (p.endsWith('/structure')) response = structureData(p.split('/')[3]);
     else {
       const match = p.match(/^\/api\/documents\/(fixture-(?:alpha|beta))\/pages\/(\d+)(\/image)?$/);
       if (match) {
         const [,documentId,number,image] = match;
+        if (!image) pageRequests.push({documentId,page:Number(number),runId:url.searchParams.get('run_id')});
         const send = () => {
           if (image) {
             if (failNextImage) {failNextImage=false;return route.fulfill({status:500,contentType:'text/plain',body:'Synthetic image failure'});}
@@ -126,6 +138,19 @@ async function main() {
   async function imageReady() {
     await page.waitForFunction(() => {const image=document.querySelector('.rm-preview-image');return image && image.complete && image.naturalWidth > 0 && !image.closest('[hidden]');});
     await page.locator('.rm-preview-highlight').waitFor({state:'visible'});
+  }
+  const dialog = () => page.getByRole('dialog',{name:'原页放大预览',exact:true});
+  async function openSource() {
+    await page.getByRole('button',{name:'放大查看原页',exact:true}).click();
+    await dialog().waitFor({state:'visible'});
+  }
+  async function sourceReady() {
+    await page.waitForFunction(() => {const image=document.querySelector('.rm-source-dialog[open] .rm-source-image');return image && image.complete && image.naturalWidth>0 && !image.hidden;});
+  }
+  async function openReaderFromPreview() {
+    await openSource();
+    await dialog().getByRole('button',{name:'在阅读器中打开原文',exact:true}).click();
+    await dialog().waitFor({state:'hidden'});
   }
   async function expectPage(documentId,number) {
     const expected = pageData(documentId,number).blocks[0].text;
@@ -187,9 +212,32 @@ async function main() {
     const box = await page.locator('.rm-preview-highlight').evaluate(el=>({left:parseFloat(el.style.left),top:parseFloat(el.style.top),width:parseFloat(el.style.width),height:parseFloat(el.style.height)}));
     check('first block normalized bbox matches highlight',Math.abs(box.left-10)<.01 && Math.abs(box.top-15)<.01 && Math.abs(box.width-75)<.01 && Math.abs(box.height-15)<.01,box);
     check('preview caption identifies page and block',(await page.locator('.rm-preview-caption').textContent()).includes('第 1 页 · 文本块 1'));
-    await page.getByRole('button',{name:'在阅读器中打开当前文本块',exact:true}).click();
+    await page.getByRole('button',{name:'放大查看原页',exact:true}).focus();
+    await chooseRange(0,6,0,34);
+    const beforeSource = await page.evaluate(() => ({scroll:document.querySelector('#moduleRoot').scrollTop,evidence:window.fixtureEvidence.length,url:location.href,selection:window.getSelection().getRangeAt(0).toString()}));
+    await openSource();await sourceReady();
+    check('thumbnail opens a local dialog without navigating or emitting reader evidence',await page.evaluate(before => window.fixtureEvidence.length===before.evidence && location.href===before.url,beforeSource));
+    check('source dialog locks background module scrolling',await page.locator('#moduleRoot').evaluate(el=>getComputedStyle(el).overflowY)==='hidden');
+    const sourceBox = await page.locator('.rm-source-highlight').evaluate(el=>({left:parseFloat(el.style.left),top:parseFloat(el.style.top),width:parseFloat(el.style.width),height:parseFloat(el.style.height),visible:!el.hidden}));
+    check('large source image highlights the same normalized block',sourceBox.visible && Math.abs(sourceBox.left-10)<.01 && Math.abs(sourceBox.top-15)<.01 && Math.abs(sourceBox.width-75)<.01 && Math.abs(sourceBox.height-15)<.01,sourceBox);
+    check('large source image identifies the original page',(await dialog().locator('.rm-source-image').getAttribute('src')).includes('/fixture-alpha/pages/1/image'));
+    await dialog().getByRole('combobox',{name:'预览缩放',exact:true}).selectOption('2');
+    await dialog().getByRole('combobox',{name:'预览缩放',exact:true}).selectOption('page');
+    check('source zoom accepts magnified and fit-page views',await dialog().getByRole('combobox',{name:'预览缩放',exact:true}).inputValue()==='page');
+    await page.keyboard.press('Tab');
+    check('keyboard focus stays inside the modal',await dialog().evaluate(el=>el.contains(document.activeElement)));
+    await dialog().getByRole('button',{name:'关闭预览',exact:true}).click();
+    await dialog().waitFor({state:'hidden'});
+    const afterSource = await page.evaluate(() => ({scroll:document.querySelector('#moduleRoot').scrollTop,overflow:getComputedStyle(document.querySelector('#moduleRoot')).overflowY,focused:document.activeElement===document.querySelector('.rm-preview-page'),selection:window.getSelection().rangeCount ? window.getSelection().getRangeAt(0).toString() : ''}));
+    check('closing source returns to the unchanged text selection and scroll position',Math.abs(afterSource.scroll-beforeSource.scroll)<=1 && afterSource.selection===beforeSource.selection && afterSource.overflow!=='hidden',afterSource);
+    check('closing source restores thumbnail keyboard focus',afterSource.focused,afterSource);
+    await openSource();await sourceReady();await page.keyboard.press('Escape');
+    await dialog().waitFor({state:'hidden'});
+    check('Escape closes the source dialog and releases background scroll',await page.locator('#moduleRoot').evaluate(el=>getComputedStyle(el).overflowY)!=='hidden');
+    await clearSelection();
+    await openReaderFromPreview();
     const evidence = await page.evaluate(() => window.fixtureEvidence.at(-1));
-    check('thumbnail opens matching reader evidence',evidence.document_id === 'fixture-alpha' && evidence.run_id === 'run-alpha' && evidence.page === 1 && evidence.block_id === 'alpha-1-0' && JSON.stringify(evidence.bbox) === JSON.stringify([.1,.15,.85,.3]),evidence);
+    check('explicit dialog action opens matching reader evidence and closes modal',evidence.document_id === 'fixture-alpha' && evidence.run_id === 'run-alpha' && evidence.page === 1 && evidence.block_id === 'alpha-1-0' && JSON.stringify(evidence.bbox) === JSON.stringify([.1,.15,.85,.3]) && !await dialog().isVisible(),evidence);
     await preview(1);await imageReady();
     check('same-page switch updates caption and highlight',(await page.locator('.rm-preview-caption').textContent()).includes('文本块 2') && Math.abs(await page.locator('.rm-preview-highlight').evaluate(el=>parseFloat(el.style.top))-50)<.01);
 
@@ -229,9 +277,58 @@ async function main() {
     await read(3);await expectPage('fixture-alpha',3);await preview(1);
     await page.waitForFunction(() => {const image=document.querySelector('.rm-preview-image');return image?.complete && image.naturalWidth>0;});
     check('missing coordinates show full page without a fabricated highlight',await page.locator('.rm-preview-highlight:visible').count() === 0 && await page.locator('.rm-preview-image').isVisible() && (await page.locator('.rm-preview-status').textContent()).includes('缺少可靠坐标'));
-    await page.getByRole('button',{name:'在阅读器中打开当前文本块',exact:true}).click();
+    await openSource();await sourceReady();
+    check('missing coordinates remain unhighlighted in the large source dialog',await page.locator('.rm-source-highlight:visible').count()===0);
+    await dialog().getByRole('button',{name:'在阅读器中打开原文',exact:true}).click();
+    await dialog().waitFor({state:'hidden'});
     const noBoxEvidence = await page.evaluate(() => window.fixtureEvidence.at(-1));
     check('missing coordinates still open the correct source page',noBoxEvidence.document_id === 'fixture-alpha' && noBoxEvidence.page === 3 && noBoxEvidence.block_id === 'alpha-3-1' && noBoxEvidence.bbox === null,noBoxEvidence);
+
+    // Outline links locate extracted text in the same module, never the reader.
+    const evidenceBeforeOutline = await page.evaluate(() => window.fixtureEvidence.length);
+    const requestsBeforeOutline = pageRequests.length;
+    await page.getByRole('tab',{name:'标题与引用',exact:true}).click();
+    await page.getByRole('tabpanel',{name:'标题与引用',exact:true}).getByRole('button',{name:'Fixture second-page block',exact:true}).click();
+    await expectPage('fixture-alpha',2);
+    check('structure outline switches to text tab without opening reader',await page.getByRole('tab',{name:'本页文字',exact:true}).getAttribute('aria-selected')==='true' && await page.evaluate(()=>window.fixtureEvidence.length)===evidenceBeforeOutline);
+    await page.waitForFunction(expected => document.activeElement?.textContent===expected,pageData('fixture-alpha',2).blocks[1].text);
+    check('outline exact block receives text focus and matching preview',(await page.locator('.rm-preview-caption').textContent()).includes('第 2 页 · 文本块 2'));
+    check('outline page request carries document and parse-run identity',pageRequests.slice(requestsBeforeOutline).some(item=>item.documentId==='fixture-alpha' && item.page===2 && item.runId==='run-alpha'),pageRequests.slice(requestsBeforeOutline));
+    const textOutline = page.locator('.rm-text-outline');
+    if (!await textOutline.evaluate(el=>el.open)) await textOutline.locator('summary').click();
+    await textOutline.getByRole('button',{name:'Fixture coordinate-only heading',exact:true}).click();
+    await page.waitForFunction(expected => document.activeElement?.textContent===expected,pageData('fixture-alpha',2).blocks[0].text);
+    check('coordinate-only outline safely resolves corresponding source block',(await page.locator('.rm-preview-caption').textContent()).includes('文本块 1'));
+    if (!await textOutline.evaluate(el=>el.open)) await textOutline.locator('summary').click();
+    await textOutline.getByRole('button',{name:'Fixture page without reliable block',exact:true}).click();
+    await expectPage('fixture-alpha',3);
+    check('unmatched outline opens page without inventing a block highlight',await page.locator('.rm-preview-highlight:visible').count()===0 && await page.locator('.rm-text-block.is-previewed').count()===0);
+    check('outline navigation never invokes reader callback',await page.evaluate(()=>window.fixtureEvidence.length)===evidenceBeforeOutline);
+
+    // A broken high-resolution image can be retried without losing extracted text.
+    // Use a never-opened large-image URL to avoid decoded-image memory reuse.
+    await page.getByRole('combobox',{name:'选择文献，含已归档文献'}).selectOption('fixture-beta');
+    await expectPage('fixture-beta',1);await read(2);await expectPage('fixture-beta',2);
+    await preview(0);await imageReady();
+    failNextImage = true;
+    await openSource();
+    await dialog().getByRole('button',{name:'重试大图',exact:true}).waitFor({state:'visible'});
+    check('large-image failure hides stale coordinate overlays',await page.locator('.rm-source-highlight:visible').count()===0);
+    await dialog().getByRole('button',{name:'重试大图',exact:true}).click();await sourceReady();
+    check('large-image retry restores original page and coordinates',await page.locator('.rm-source-highlight').isVisible());
+    await dialog().getByRole('button',{name:'关闭预览',exact:true}).click();
+    await dialog().waitFor({state:'hidden'});
+    check('large-image failure and retry preserve extracted source text',await blocks().first().locator('.rm-block-text').textContent()===pageData('fixture-beta',2).blocks[0].text);
+
+    // A late large-image response cannot reopen the dialog after navigation.
+    await read(3);await expectPage('fixture-beta',3);await preview(0);await imageReady();
+    hold = item=>item.documentId==='fixture-beta' && item.page===3 && item.image;
+    await openSource();await waitPending();
+    await page.keyboard.press('Escape');await dialog().waitFor({state:'hidden'});
+    await page.getByRole('combobox',{name:'选择文献，含已归档文献'}).selectOption('fixture-alpha');
+    await expectPage('fixture-alpha',1);await preview(0);await imageReady();
+    await releaseAll();
+    check('late large image cannot reopen a closed dialog or replace another document',await page.locator('dialog[open]').count()===0 && (await page.locator('.rm-preview-image').getAttribute('src')).includes('/fixture-alpha/') && await page.locator('#moduleRoot').evaluate(el=>getComputedStyle(el).overflowY)!=='hidden');
 
     // Reload to leave screenshots in a clean normal state after rejection tests.
     await page.reload();await page.evaluate(() => window.fixtureReady);
@@ -252,7 +349,22 @@ async function main() {
       });
       check(`responsive ${width}: no horizontal overflow or controls covering text`,layout.scrollWidth <= width+1 && layout.moduleScrollWidth <= layout.moduleWidth+1 && !layout.overlaps.length && !layout.escaped.length,layout);
       const filename = `text-preview-${width}.png`;await page.screenshot({path:path.join(output,filename),fullPage:false});report.screenshots.push({width,path:path.join(output,filename)});
+      await openSource();await sourceReady();
+      for (const zoom of ['1','2','page']) {
+        await dialog().getByRole('combobox',{name:'预览缩放',exact:true}).selectOption(zoom);
+        const sourceLayout = await dialog().evaluate(el=>{
+          const bounds=el.getBoundingClientRect();
+          const controls=[...el.querySelectorAll('button,select')].filter(control=>control.getClientRects().length && !control.closest('[hidden]')).map(control=>{const r=control.getBoundingClientRect();return {name:control.getAttribute('aria-label')||control.textContent,left:r.left,right:r.right,top:r.top,bottom:r.bottom};});
+          return {left:bounds.left,right:bounds.right,top:bounds.top,bottom:bounds.bottom,viewport:innerWidth,height:innerHeight,controls};
+        });
+        check(`source dialog ${width} zoom ${zoom}: frame and controls stay in viewport`,sourceLayout.left>=-1 && sourceLayout.right<=width+1 && sourceLayout.top>=-1 && sourceLayout.bottom<=sourceLayout.height+1 && sourceLayout.controls.every(control=>control.left>=-1 && control.right<=width+1 && control.top>=-1 && control.bottom<=sourceLayout.height+1),sourceLayout);
+      }
+      const modalFilename = `source-dialog-${width}.png`;await page.screenshot({path:path.join(output,modalFilename),fullPage:false});report.screenshots.push({width,path:path.join(output,modalFilename)});
+      await page.keyboard.press('Escape');await dialog().waitFor({state:'hidden'});
     }
+    await openSource();await sourceReady();
+    await page.evaluate(()=>window.fixtureController.destroy());
+    check('module teardown closes dialog and releases background scroll',await page.locator('dialog[open]').count()===0 && await page.locator('#moduleRoot').evaluate(el=>getComputedStyle(el).overflowY)!=='hidden');
     check('no browser script errors',report.pageErrors.length === 0,report.pageErrors);
     check('no unmatched/external/write requests',report.unexpectedRequests.length === 0,report.unexpectedRequests);
   } catch (error) {

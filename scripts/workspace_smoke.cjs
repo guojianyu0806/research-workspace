@@ -192,13 +192,17 @@ async function main() {
     await page.getByRole('tab', { name: '标题与引用', exact: true }).click();
     const structure = await get(`/api/documents/${doc.id}/structure`);
     assert.ok(structure.headings.length > 0 && structure.references.length > 0 && structure.citations.length > 0);
-    assert.equal(await page.locator('.rm-outline-item').count(), structure.headings.length);
+    assert.equal(await page.locator('.rm-outline .rm-outline-item').count(), structure.headings.length);
     assert.equal(await page.locator('.rm-reference').count(), structure.references.length);
     await page.locator('.rm-citation-context summary').first().click();
     await page.locator('.rm-context-body .rm-original-text').first().waitFor();
     assert.ok((await page.locator('.rm-context-body .rm-original-text').first().textContent()).length > 10);
     await screenshot('04-structure-and-reference-context');
-    await page.locator('.rm-outline-item').first().click();
+    await page.locator('.rm-outline .rm-outline-item').first().click();
+    await page.locator('.rm-text-block.is-previewed .rm-block-text').waitFor();
+    assert.equal(await page.getByRole('tab', { name: '本页文字', exact: true }).getAttribute('aria-selected'), 'true');
+    assert.equal(Number(await page.getByRole('spinbutton', { name: '原文页码', exact: true }).inputValue()), structure.headings[0].evidence.page);
+    await page.locator('.rm-text-block.is-previewed').getByRole('button', { name: '定位原文', exact: true }).click();
     await assertEvidence(structure.headings[0].evidence);
     await screenshot('05-heading-original-evidence');
     await manageDocument(doc.id, '标题与引用');
@@ -207,7 +211,7 @@ async function main() {
     const reverseIndex = structure.citations.indexOf(reverse);
     await page.locator('.rm-reverse-row').nth(reverseIndex).getByRole('button', { name: `书目 [${reference.label}] ↗`, exact: true }).click();
     await assertEvidence(reference.evidence);
-    check('Heading and reverse citation links open the matching PDF page and highlight', { headings: structure.headings.length, references: structure.references.length, citations: structure.citations.length });
+    check('Heading outline locates extracted text; explicit source and reverse citation links open the matching PDF', { headings: structure.headings.length, references: structure.references.length, citations: structure.citations.length });
 
     await manageDocument(doc.id, '本页文字');
     await page.locator('.rm-block-text').first().waitFor();

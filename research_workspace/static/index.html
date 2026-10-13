@@ -9,12 +9,12 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/styles.css?v=20261009-regions1">
   <link rel="stylesheet" href="/static/shell.css?v=20261009-regions1">
-  <link rel="stylesheet" href="/static/manage.css?v=20261013-text-preview1">
+  <link rel="stylesheet" href="/static/manage.css?v=20261013-source-return1">
   <link rel="stylesheet" href="/static/bilingual.css">
   <link rel="stylesheet" href="/static/explore.css?v=20261009-regions1">
   <link rel="stylesheet" href="/static/research.css?v=20261009-regions1">
   <link rel="stylesheet" href="/static/model-settings.css">
-  <link rel="stylesheet" href="/static/reader.css?v=20261009-regions1">
+  <link rel="stylesheet" href="/static/reader.css?v=20261013-source-return1">
   <link rel="stylesheet" href="/static/examples.css?v=20261009-demo1">
   <script defer src="/static/app.js?v=20261009-reader3"></script>
   <script defer src="/static/reader-controls.js?v=20261009-sizing3"></script>
@@ -23,11 +23,11 @@
   <script defer src="/static/explore.js"></script>
   <script defer src="/static/layout.js"></script>
   <script defer src="/static/references.js"></script>
-  <script defer src="/static/manage.js?v=20261013-text-preview1"></script>
+  <script defer src="/static/manage.js?v=20261013-source-return1"></script>
   <script defer src="/static/research.js?v=20261009-demo1"></script>
   <script defer src="/static/model-settings.js"></script>
   <script defer src="/static/examples.js?v=20261009-demo1"></script>
-  <script defer src="/static/shell.js?v=20261009-demo1"></script>
+  <script defer src="/static/shell.js?v=20261013-source-return1"></script>
 </head>
 <body class="reader-active">
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -92,6 +92,7 @@
 
     <section class="reader-panel panel" id="readerPanel" aria-label="原文阅读">
       <div class="reader-heading" id="readerHeading">
+        <button class="reader-control" id="readerReturnButton" type="button" hidden>← 返回文字核对</button>
         <button class="reader-control reader-panel-toggle" id="toggleLibrary" type="button" aria-controls="libraryPanel" aria-expanded="true" title="展开或收起文献栏"><svg class="icon"><use href="#i-book"></use></svg><span data-reader-label>文献</span></button>
         <h2 id="readerTitle">原文阅读</h2>
         <button class="reader-control reader-info-toggle" id="readerInfoToggle" type="button" aria-controls="readerInfo" aria-expanded="false" aria-label="展开文献信息" title="文献信息"><svg class="icon"><use href="#i-info"></use></svg><span class="visually-hidden" data-reader-label>文献信息</span></button>

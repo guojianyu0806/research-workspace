@@ -164,8 +164,8 @@ const check = async (name, action) => {
 
     await check("Latest source connects module, tab, document and destruction lifecycle invalidation", () => {
       const hooks = {
-        "shell.activate": between(source["shell.js"], "  async function activate(name) {", "\n  document.querySelectorAll('[data-module]')"),
-        "manage.switchTab": between(source["manage.js"], "    function switchTab(key) {", "\n    function clearExtensions()"),
+        "shell.activate": between(source["shell.js"], "  async function activate(", "\n  document.querySelectorAll('[data-module]')"),
+        "manage.switchTab": between(source["manage.js"], "    function switchTab(", "\n    function clearExtensions()"),
         "manage.loadDocument": between(source["manage.js"], "    async function loadDocument(id) {", "\n    function renderMetadata("),
         "manage.destroy": between(source["manage.js"], "      destroy() {", "\n    };")
       };

@@ -49,6 +49,8 @@
     let invalidSelection = false;
     let pagePreview = null;
     let preserveLineBreaks = false;
+    let suspended = false;
+    let sourceDialog = null;
     let activeTab = "metadata";
     const extensions = {};
     const pageCache = new Map();
@@ -134,7 +136,8 @@
       const value = typeof options.currentDocument === "function" ? options.currentDocument() : options.currentDocument;
       return typeof value === "string" ? value : value?.id;
     }
-    function switchTab(key) {
+    function switchTab(key, loadDefault = true) {
+      sourceDialog?.close();
       options.invalidateEvidenceNavigation?.();
       activeTab = key;
       for (const name of Object.keys(panes)) {
@@ -143,7 +146,7 @@
         tabButtons[name].setAttribute("aria-selected", String(name === key));
         tabButtons[name].tabIndex = name === key ? 0 : -1;
       }
-      if (key === "text" && selectedDocument && !currentPage && !pageLoading) loadPage(1);
+      if (loadDefault && key === "text" && selectedDocument && !currentPage && !pageLoading) loadPage(1);
       mountExtension(key);
     }
     function clearExtensions() {
@@ -198,6 +201,7 @@
     }
 
     async function loadDocument(id) {
+      sourceDialog?.close();
       options.invalidateEvidenceNavigation?.();
       const epoch = ++documentEpoch;
       clearExtensions();
@@ -376,8 +380,8 @@
       outline.append(el("h3", "", "标题树"));
       if (!data.headings?.length) outline.append(el("p", "rm-muted", "尚未识别到可靠标题，可通过本页文字继续阅读。"));
       (data.headings || []).forEach((heading) => {
-        const link = evidenceButton(heading.evidence, heading.title);
-        link.className = "rm-outline-item";
+        const link = btn(heading.title, () => navigateTextEvidence(heading.evidence), "rm-outline-item");
+        link.disabled = !heading.evidence?.page;
         link.style.setProperty("--heading-level", Math.min(3, Math.max(1, Number(heading.level) || 1)));
         outline.append(link);
       });
@@ -448,6 +452,137 @@
       (data.limitations || []).forEach((text) => limits.append(el("p", "rm-muted", text)));
       if (data.unavailable_fields?.length) limits.append(el("p", "rm-muted", "复杂公式、表格单元格、作者机构及作者年份型引用仍可能无法完整提取。"));
       root.append(limits);
+      const textOutline = panes.text.querySelector(".rm-text-outline");
+      if (textOutline) textOutline.replaceWith(createTextOutline());
+    }
+
+    function createTextOutline() {
+      const outline = el("details", "rm-text-outline");
+      outline.open = shell.clientWidth > 1080;
+      outline.append(el("summary", "", "章节导航"));
+      const nav = el("nav"); nav.setAttribute("aria-label", "跳转到章节文字");
+      (structureData?.headings || []).forEach(heading => {
+        const link = btn(heading.title, () => navigateTextEvidence(heading.evidence), "rm-outline-item");
+        link.disabled = !heading.evidence?.page;
+        link.dataset.blockId = heading.evidence?.block_id || heading.evidence?.id || "";
+        link.style.setProperty("--heading-level", Math.min(3, Math.max(1, Number(heading.level) || 1)));
+        nav.append(link);
+      });
+      if (!nav.children.length) nav.append(el("p", "rm-muted", "暂无可靠章节目录，可按页码核对文字。"));
+      outline.append(nav);
+      return outline;
+    }
+    async function navigateTextEvidence(evidence) {
+      if (!evidence?.page || !selectedDocument) return;
+      const documentId = selectedId;
+      if (evidence.document_id && evidence.document_id !== documentId) return;
+      switchTab("text", false);
+      const result = await loadPage(evidence.page, { runId: evidence.run_id });
+      if (!result || !alive || activeTab !== "text" || selectedId !== documentId) return;
+      const id = evidence.block_id || evidence.id;
+      let block = result.blocks?.find(item => item.id === id);
+      if (!block && Array.isArray(evidence.bbox) && evidence.bbox.length === 4) {
+        const matches = result.blocks?.filter(item => Array.isArray(item.bbox) && item.bbox.length === 4 && item.bbox.every((value, index) => Number.isFinite(value) && Math.abs(value - evidence.bbox[index]) < 0.0001)) || [];
+        if (matches.length === 1) block = matches[0];
+      }
+      pagePreview?.setBlock(block?.id);
+      if (block) {
+        const text = textElements.get(block.id);
+        text?.focus({ preventScroll: true });
+        text?.closest(".rm-text-block")?.scrollIntoView({ block: "start", behavior: "auto" });
+      } else {
+        const hint = panes.text.querySelector(".rm-selection-hint");
+        hint.textContent = `已打开第 ${result.page} 页，未能可靠匹配文字块。请对照原页确认位置。`;
+        hint.scrollIntoView({ block: "nearest", behavior: "auto" });
+      }
+    }
+
+    function openSourcePreview(doc, result, block, trigger) {
+      sourceDialog?.close();
+      const originalScroll = { top: container.scrollTop, left: container.scrollLeft, overflow: container.style.overflow };
+      const selected = window.getSelection();
+      const savedRange = selected?.rangeCount && panes.text.contains(selected.getRangeAt(0).commonAncestorContainer) ? selected.getRangeAt(0).cloneRange() : null;
+      const dialog = el("dialog", "rm-source-dialog");
+      dialog.setAttribute("aria-label", "原页放大预览");
+      const heading = el("div", "rm-source-heading");
+      const words = el("div");
+      words.append(el("h3", "", "原页放大预览"), el("p", "rm-muted", `${doc.title || doc.filename} · 第 ${result.page} 页`));
+      const close = btn("关闭预览", () => dialog.close(), "rm-button"); close.autofocus = true;
+      heading.append(words, close);
+      const toolbar = el("div", "rm-source-toolbar");
+      const zoom = el("select", "rm-select"); zoom.setAttribute("aria-label", "预览缩放");
+      [["1", "适合宽度"], ["page", "适合整页"], ["1.5", "150%"], ["2", "200%"]].forEach(([value, title]) => zoom.append(option(value, title)));
+      const openReader = btn("在阅读器中打开原文", () => {
+        dialog.close();
+        Promise.resolve().then(() => onEvidence?.({ document_id: doc.id, run_id: result.run_id, page: result.page, block_id: block?.id, bbox: block?.bbox, text: block?.text })).catch(error => showNotice(error.message || String(error), true));
+      }, "rm-link-button");
+      openReader.disabled = typeof onEvidence !== "function";
+      toolbar.append(field("缩放", zoom), openReader);
+      const status = el("p", "rm-source-status rm-muted", "正在加载原页大图…"); status.setAttribute("role", "status");
+      const retry = btn("重试大图", () => loadImage(), "rm-small-button"); retry.hidden = true;
+      const viewport = el("div", "rm-source-viewport");
+      const paper = el("div", "rm-source-paper");
+      const image = el("img", "rm-source-image"); image.alt = `第 ${result.page} 页原文大图`;
+      const highlight = el("span", "rm-source-highlight"); highlight.hidden = true; highlight.setAttribute("aria-hidden", "true");
+      const box = block?.bbox;
+      const validBox = Array.isArray(box) && box.length === 4 && box.every(value => Number.isFinite(value) && value >= 0 && value <= 1) && box[2] > box[0] && box[3] > box[1];
+      if (validBox) {
+        highlight.style.left = `${box[0] * 100}%`; highlight.style.top = `${box[1] * 100}%`;
+        highlight.style.width = `${(box[2] - box[0]) * 100}%`; highlight.style.height = `${(box[3] - box[1]) * 100}%`;
+      }
+      paper.append(image, highlight); viewport.append(paper);
+      dialog.append(heading, toolbar, status, retry, viewport);
+      let loaded = false, cleaned = false;
+      function resize(center = false) {
+        const ratio = image.naturalWidth && image.naturalHeight ? image.naturalWidth / image.naturalHeight : (result.width / result.height || 0.75);
+        const available = Math.max(1, viewport.clientWidth - 24);
+        const width = zoom.value === "page" ? Math.min(available, Math.max(1, viewport.clientHeight - 24) * ratio) : available * Number(zoom.value);
+        paper.style.width = `${width}px`; paper.style.aspectRatio = String(ratio);
+        if (center && loaded && validBox) {
+          viewport.scrollTop = Math.max(0, 12 + (box[1] + box[3]) / 2 * width / ratio - viewport.clientHeight / 2);
+          viewport.scrollLeft = Math.max(0, 12 + (box[0] + box[2]) / 2 * width - viewport.clientWidth / 2);
+        }
+      }
+      image.addEventListener("load", () => {
+        if (cleaned) return;
+        loaded = true; image.hidden = false; highlight.hidden = !validBox; retry.hidden = true;
+        status.textContent = validBox ? "色框为当前文本块；关闭预览后继续阅读原位置。" : "当前块没有可靠坐标，可核对整页原文。";
+        resize(true);
+      });
+      image.addEventListener("error", () => {
+        if (cleaned) return;
+        loaded = false; image.hidden = true; highlight.hidden = true; retry.hidden = false;
+        status.textContent = "原页大图加载失败，请重试，或关闭后继续阅读文字。";
+      });
+      function loadImage() {
+        loaded = false; image.hidden = true; highlight.hidden = true; retry.hidden = true;
+        status.textContent = "正在加载原页大图…";
+        image.src = `${pathFor(doc.id)}/pages/${result.page}/image?scale=1.5`;
+      }
+      zoom.addEventListener("change", () => resize(true));
+      const observer = new ResizeObserver(() => resize());
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true; observer.disconnect();
+        container.style.overflow = originalScroll.overflow;
+        dialog.remove(); if (sourceDialog === dialog) sourceDialog = null;
+        if (alive && !suspended && container.isConnected && !container.hidden) {
+          trigger?.focus({ preventScroll: true });
+          if (savedRange?.commonAncestorContainer.isConnected) {
+            const current = window.getSelection(); current.removeAllRanges(); current.addRange(savedRange);
+          }
+          container.scrollTop = originalScroll.top; container.scrollLeft = originalScroll.left;
+          selectionChanged();
+        }
+      };
+      // Cleanup synchronously before a reader navigation can detach this module.
+      const nativeClose = dialog.close.bind(dialog);
+      dialog.close = () => { nativeClose(); cleanup(); };
+      dialog.addEventListener("cancel", event => { event.preventDefault(); dialog.close(); });
+      dialog.addEventListener("close", cleanup);
+      sourceDialog = dialog; shell.append(dialog);
+      container.style.overflow = "hidden";
+      dialog.showModal(); observer.observe(viewport); resize(); loadImage();
     }
 
     function renderTextControls(doc) {
@@ -484,14 +619,10 @@
       const status = el("p", "rm-muted rm-preview-status", "正在加载原页缩略图…");
       status.setAttribute("role", "status");
       let activeBlock = null, loaded = false, failed = false;
-      const imageButton = btn("", () => {
-        const evidence = { document_id: doc.id, run_id: result.run_id, page: result.page,
-          block_id: activeBlock?.id, bbox: activeBlock?.bbox, text: activeBlock?.text };
-        Promise.resolve().then(() => onEvidence?.(evidence)).catch((error) => showNotice(error.message || String(error), true));
-      }, "rm-preview-page");
-      imageButton.setAttribute("aria-label", "在阅读器中打开当前文本块");
-      imageButton.title = "点击缩略图，在阅读器中查看原文";
-      imageButton.disabled = typeof onEvidence !== "function";
+      const imageButton = btn("", () => openSourcePreview(doc, result, activeBlock, imageButton), "rm-preview-page");
+      imageButton.addEventListener("mousedown", event => event.preventDefault());
+      imageButton.setAttribute("aria-label", "放大查看原页");
+      imageButton.title = "在当前页放大核对原文";
       const image = el("img", "rm-preview-image");
       image.alt = `第 ${result.page} 页原文缩略图`;
       image.decoding = "async";
@@ -514,7 +645,7 @@
           highlight.style.left = `${box[0] * 100}%`; highlight.style.top = `${box[1] * 100}%`;
           highlight.style.width = `${(box[2] - box[0]) * 100}%`; highlight.style.height = `${(box[3] - box[1]) * 100}%`;
         }
-        status.textContent = failed ? "缩略图加载失败，可重试或使用“定位原文”。" : !loaded ? "正在加载原页缩略图…" : !activeBlock ? "本页暂无可定位文本块。" : valid ? "色框标出整块位置；点击小图可放大核对。" : "此文本块缺少可靠坐标，请打开原页核对。";
+        status.textContent = failed ? "缩略图加载失败，可重试或使用“定位原文”。" : !loaded ? "正在加载原页缩略图…" : !activeBlock ? "本页暂无可定位文本块。" : valid ? "点击小图就地放大，关闭后继续读这段文字。" : "此文本块缺少可靠坐标，请放大原页核对。";
       }
       image.addEventListener("load", () => {
         loaded = true; failed = false; retry.hidden = true; image.hidden = false;
@@ -540,6 +671,10 @@
             article.classList.toggle("is-previewed", blockId === id);
             article.querySelector(".rm-preview-block")?.setAttribute("aria-pressed", String(blockId === id));
           }
+          for (const link of panes.text.querySelectorAll(".rm-text-outline .rm-outline-item")) {
+            if (id && link.dataset.blockId === id) link.setAttribute("aria-current", "location");
+            else link.removeAttribute("aria-current");
+          }
           renderHighlight();
           if (reveal) preview.scrollIntoView({ block: "nearest", behavior: "auto" });
         },
@@ -554,7 +689,8 @@
       }
       return pageCache.get(key);
     }
-    async function loadPage(page) {
+    async function loadPage(page, pageOptions = {}) {
+      sourceDialog?.close();
       const doc = selectedDocument;
       if (!doc) return;
       if (!Number.isInteger(page) || page < 1 || page > doc.page_count) { showNotice(`请输入1至${doc.page_count}之间的页码。`, true); return; }
@@ -567,7 +703,7 @@
       const input = panes.text.querySelector(".rm-page-number");
       if (input) input.value = page;
       empty(body, `正在读取第 ${page} 页`, "原文将使用可用解析版本的页面记录。");
-      const runId = (doc.available_run || doc.current_run)?.id;
+      const runId = pageOptions.runId || (doc.available_run || doc.current_run)?.id;
       try {
         // An explicit reread must see new persisted pages after worker progress.
         pageCache.delete(`${doc.id}:${runId || "default"}:${page}`);
@@ -578,7 +714,7 @@
         const layout = el("div", "rm-text-layout");
         const list = el("div", "rm-text-list");
         pagePreview = createPagePreview(doc, result);
-        layout.append(list, pagePreview.element);
+        layout.append(createTextOutline(), list, pagePreview.element);
         if (result.notice) body.append(el("p", "rm-warning", result.notice));
         if (result.error) body.append(el("p", "rm-warning", result.error));
         if (!result.blocks?.length) {
@@ -620,6 +756,7 @@
         body.append(layout);
         pagePreview.setBlock(result.blocks?.[0]?.id);
         updateSelectionHint();
+        return result;
       } catch (error) { if (alive && epoch === pageEpoch) empty(body, "无法读取本页文字", error.message || String(error)); }
       finally { if (alive && epoch === pageEpoch) pageLoading = false; }
     }
@@ -631,7 +768,7 @@
       for (const [id, button] of translateButtons) button.textContent = selection?.blockId === id ? "翻译所选文字" : "翻译整块";
     }
     function selectionChanged() {
-      if (!alive || activeTab !== "text") return;
+      if (!alive || suspended || sourceDialog || activeTab !== "text") return;
       const selected = window.getSelection();
       // Keep the exact DOM substring: Selection.toString() collapses PDF line
       // breaks in normal white-space mode, but the backend checks source text.
@@ -662,8 +799,11 @@
     const controller = {
       ready: null,
       refresh,
+      suspend() { sourceDialog?.close(); suspended = true; },
+      resume() { suspended = false; },
       destroy() {
         if (!alive) return;
+        sourceDialog?.close();
         alive = false; refreshEpoch++; documentEpoch++; pageEpoch++; diffEpoch++;
         options.invalidateEvidenceNavigation?.();
         clearExtensions();

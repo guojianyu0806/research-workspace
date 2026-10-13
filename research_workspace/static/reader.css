@@ -1,4 +1,5 @@
 /* Reading has one canvas. Ancillary panels expand only when requested. */
+#readerReturnButton{flex-shrink:0;color:var(--primary);background:var(--primary-soft);border-color:#8faead;font-size:14px;white-space:nowrap}
 .mobile-navigation{display:none!important}
 #workspace{--library-size:240px;--evidence-size:300px;--library-width:var(--library-size);--evidence-width:var(--evidence-size);display:grid;grid-template-columns:var(--library-width) minmax(0,1fr) var(--evidence-width);position:relative;overflow:hidden;min-height:0;gap:0;transition:grid-template-columns .24s cubic-bezier(.2,.7,.2,1)}
 #workspace.library-collapsed{--library-width:0px}
