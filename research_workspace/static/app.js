@@ -8,7 +8,7 @@
     "connectionState", "connectionText", "libraryFooter", "appNotice", "noticeText", "dismissNotice",
     "readerTitle", "readerSubtitle", "reparseButton", "readerToolbar", "readerMessage", "readerViewport",
     "readerEmpty", "pageLoading", "pageError", "pageErrorText", "retryPageButton", "paperPage", "pageImage",
-    "evidenceHighlight", "readerFooterText", "pageForm", "pageNumber", "pageTotal", "previousPage", "nextPage",
+    "evidenceHighlight", "readerFooterText", "pageForm", "pageNumber", "pageTotal", "firstPage", "previousPage", "nextPage", "lastPage",
     "searchForm", "searchQuery", "searchScope", "currentScopeOption", "searchButton", "searchExplanation",
     "resultsHeading", "resultsTitle", "clearSearchButton", "searchResults",
   ].map((id) => [id, byId(id)]));
@@ -28,6 +28,28 @@
   const isPending = (run) => run && ["queued", "running"].includes(run.status);
   const currentDocument = () => state.documents.find((doc) => doc.id === state.selectedId);
   const readableRun = (doc) => doc?.available_run || doc?.current_run;
+  const readingPages = new Map();
+  const readingPageKey = (id) => `research-reader-page:v1:${id}`;
+  function rememberedPage(id) {
+    if (readingPages.has(id)) return readingPages.get(id);
+    let page = 1;
+    try {
+      const stored = Number(localStorage.getItem(readingPageKey(id)));
+      if (Number.isSafeInteger(stored) && stored > 0) page = stored;
+    } catch { /* Reading still works when browser storage is unavailable. */ }
+    readingPages.set(id, page);
+    return page;
+  }
+  function clampReadingPage(value, doc) {
+    const page = Number(value);
+    return Math.min(Number.isSafeInteger(page) && page > 0 ? page : 1, Math.max(1, Number(doc.page_count) || 1));
+  }
+  function rememberReadingPage(doc) {
+    if (!doc || !(Number(doc.page_count) > 0)) return;
+    readingPages.set(doc.id, state.page);
+    try { localStorage.setItem(readingPageKey(doc.id), String(state.page)); }
+    catch { /* Keep per-document progress in memory for this session. */ }
+  }
   const statusLabels = {
     queued: "等待处理", running: "正在提取文字", completed: "文本已提取",
     partial: "部分页面待识别", needs_ocr: "需要文字识别", failed: "处理失败", cancelled: "已取消",
@@ -156,6 +178,8 @@
     ui.pageTotal.textContent = `/ ${total || "—"}`;
     ui.previousPage.disabled = total < 1 || state.page <= 1;
     ui.nextPage.disabled = state.page >= total;
+    ui.firstPage.disabled = ui.previousPage.disabled;
+    ui.lastPage.disabled = ui.nextPage.disabled;
     const run = doc.current_run;
     let message = "";
     if (historical) message = "这条证据来自之前的处理结果，原文位置仍与该结果对应。";
@@ -195,12 +219,22 @@
         selectDocument(state.documents[0].id, { keepView: true });
       } else if (state.selectedId) {
         const selected = currentDocument();
+        const clampedPage = clampReadingPage(state.page, selected);
+        const pageChanged = clampedPage !== state.page;
+        if (pageChanged) {
+          state.page = clampedPage;
+          state.highlight = null;
+          state.selectedHit = null;
+          state.pageHasText = null;
+          rememberReadingPage(selected);
+          renderHitSelection();
+        }
         if (selected && !state.pinnedRun) {
           state.selectedRunId = readableRun(selected)?.id || null;
           const firstRunFinished = isPending(previousCurrentRun) && !isPending(selected.current_run)
             && state.selectedRunId === selected.current_run?.id;
-          if (readableRun(selected)?.id !== previousReadableId || firstRunFinished) loadPage();
-        }
+          if (pageChanged || readableRun(selected)?.id !== previousReadableId || firstRunFinished) loadPage();
+        } else if (pageChanged) loadPage();
         renderReaderHeading();
       } else {
         ui.readerTitle.textContent = "原文阅读";
@@ -245,7 +279,8 @@
     state.selectedId = id;
     state.selectedRunId = options.runId || readableRun(doc)?.id || null;
     state.pinnedRun = Boolean(options.runId);
-    state.page = Math.min(Math.max(1, Number(options.page) || 1), Number(doc.page_count) || 1);
+    state.page = clampReadingPage(options.page ?? rememberedPage(id), doc);
+    rememberReadingPage(doc);
     state.highlight = normalizeBox(options.bbox);
     state.selectedHit = options.hitKey || null;
     state.pageHasText = null;
@@ -340,6 +375,7 @@
     if (page === state.page) return;
     navigationRequest += 1;
     state.page = page;
+    rememberReadingPage(doc);
     state.highlight = null;
     state.selectedHit = null;
     state.pageHasText = null;
@@ -570,6 +606,8 @@
   ui.documentFilter.addEventListener("input", renderLibrary);
   ui.previousPage.addEventListener("click", () => goToPage(state.page - 1));
   ui.nextPage.addEventListener("click", () => goToPage(state.page + 1));
+  ui.firstPage.addEventListener("click", () => goToPage(1));
+  ui.lastPage.addEventListener("click", () => goToPage(currentDocument()?.page_count));
   ui.pageForm.addEventListener("submit", (event) => { event.preventDefault(); goToPage(ui.pageNumber.value); });
   ui.pageNumber.addEventListener("change", () => goToPage(ui.pageNumber.value));
   ui.retryPageButton.addEventListener("click", loadPage);

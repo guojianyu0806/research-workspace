@@ -54,6 +54,8 @@
 #readerToolbar .icon-button{width:32px;height:32px;min-width:32px}
 #readerToolbar .page-navigation input{height:32px;width:42px;background:var(--paper);border-color:var(--input-line)}
 #readerToolbar .page-total{min-width:32px;text-align:center}
+#readerToolbar .page-navigation{flex-shrink:0}
+#readerToolbar .page-edge-button{padding:4px 6px;flex-shrink:0}
 .reader-zoom{display:flex;align-items:center;gap:4px;min-width:0}
 #readerToolbar .page-fit-label{min-width:0;display:flex}
 #readerToolbar #pageZoom{max-width:144px;min-height:32px;height:32px;padding:4px 6px;font-size:14px}

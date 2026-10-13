@@ -14,9 +14,9 @@
   <link rel="stylesheet" href="/static/explore.css?v=20261009-regions1">
   <link rel="stylesheet" href="/static/research.css?v=20261009-regions1">
   <link rel="stylesheet" href="/static/model-settings.css">
-  <link rel="stylesheet" href="/static/reader.css?v=20261013-source-return1">
+  <link rel="stylesheet" href="/static/reader.css?v=20261013-progress1">
   <link rel="stylesheet" href="/static/examples.css?v=20261009-demo1">
-  <script defer src="/static/app.js?v=20261009-reader3"></script>
+  <script defer src="/static/app.js?v=20261013-progress1"></script>
   <script defer src="/static/reader-controls.js?v=20261009-sizing3"></script>
   <script defer src="/static/reader-layout.js?v=20261009-sizing3"></script>
   <script defer src="/static/bilingual.js"></script>
@@ -116,9 +116,11 @@
       </div>
       <div class="reader-toolbar" id="readerToolbar" hidden>
         <form class="page-navigation" id="pageForm">
+          <button class="reader-control page-edge-button" id="firstPage" type="button" disabled>第一页</button>
           <button class="icon-button" id="previousPage" type="button" disabled aria-label="上一页"><svg class="icon"><use href="#i-left"></use></svg></button>
           <label><span class="visually-hidden">页码</span><input id="pageNumber" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="跳转到页码"></label><span class="page-total" id="pageTotal">/ —</span>
           <button class="icon-button" id="nextPage" type="button" disabled aria-label="下一页"><svg class="icon"><use href="#i-right"></use></svg></button>
+          <button class="reader-control page-edge-button" id="lastPage" type="button" disabled>最后一页</button>
         </form>
         <div class="reader-zoom" aria-label="阅读缩放"><button class="reader-control reader-zoom-step" id="zoomOutButton" type="button" aria-label="缩小原文" title="缩小原文">−</button><label class="page-fit-label"><span class="visually-hidden">页面缩放</span><select id="pageZoom" aria-label="页面缩放" title="倍率以适合阅读区宽度为基准；按住Ctrl滚轮缩放"><option value="1">适合宽度</option><option value="page">适合整页</option><option value="0.5">适宽 × 50%</option><option value="0.75">适宽 × 75%</option><option value="1.25">适宽 × 125%</option><option value="1.5">适宽 × 150%</option><option value="2">适宽 × 200%</option><option value="3">适宽 × 300%</option><option id="readerCustomZoom" value="custom" hidden>自定义宽度</option></select></label><button class="reader-control reader-zoom-step" id="zoomInButton" type="button" aria-label="放大原文" title="放大原文">＋</button></div>
       </div>

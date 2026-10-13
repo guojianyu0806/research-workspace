@@ -47,7 +47,7 @@ function fixture(ids = ["B"]) {
     selectedId: ids[0] || null, selectedRunId: ids[0] ? `latest-${ids[0]}` : null,
     pinnedRun: false, page: 1, highlight: null, selectedHit: null, pageHasText: null
   };
-  const pending = new Map(), calls = [], events = [], loads = [], views = [];
+  const pending = new Map(), storage = new Map(), calls = [], events = [], loads = [], views = [];
   const api = request => {
     calls.push(request);
     assert.match(request, /^\/api\/documents\/[^/?]+$/, "Only an expected local document lookup is requested.");
@@ -56,6 +56,7 @@ function fixture(ids = ["B"]) {
     return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); });
   };
   const context = vm.createContext({
+    localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
     state, api, ui: { searchScope: { value: "all" }, pageNumber: { value: "1" } },
     currentDocument: () => state.documents.find(doc => doc.id === state.selectedId),
     readableRun: doc => doc.available_run || doc.current_run,
@@ -70,7 +71,8 @@ function fixture(ids = ["B"]) {
   const select = between(source["app.js"], "  function selectDocument(id, options = {}) {", "\n  function normalizeBox(");
   const turnPage = between(source["app.js"], "  function goToPage(value) {", "\n  function setUploadBusy(");
   const bridge = between(source["app.js"], "  window.ResearchWorkspace = {", "\n  initialize();");
-  vm.runInContext(`let navigationRequest = 0;\n${select}\n${turnPage}\n${bridge}\nglobalThis.fixtureControls = { selectDocument, goToPage };`, context, { filename: "current-app-navigation-extract.js" });
+  const progress = between(source["app.js"], "  const readingPages = new Map();", "\n  const statusLabels =");
+  vm.runInContext(`let navigationRequest = 0;\n${progress}\n${select}\n${turnPage}\n${bridge}\nglobalThis.fixtureControls = { selectDocument, goToPage };`, context, { filename: "current-app-navigation-extract.js" });
   const value = context.window.ResearchWorkspace;
   assert.equal(typeof value.onEvidence, "function");
   assert.equal(typeof value.invalidateEvidenceNavigation, "function", "Current bridge exposes explicit navigation invalidation.");
