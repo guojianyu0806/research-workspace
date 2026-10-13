@@ -209,7 +209,9 @@
   function mountTasks(container, options = {}) {
     const life = lifecycle(container, options);
     const state = { documents: [], jobs: [], selectedDocuments: new Set(), configured: false,
-      selectedJob: null, refreshGeneration: 0, pollTimer: null, resultStamp: "", bilingual: null, posting: false };
+      selectedJob: null, refreshGeneration: 0, readGeneration: 0, pollTimer: null, resultStamp: "", bilingual: null, posting: false,
+      suspended: false, refreshing: false, selectingJobId: null, refreshOnResume: false, readOnResume: null, deferredJob: null,
+      initialJobId: typeof options.initialJobId === "string" && options.initialJobId ? options.initialJobId : null };
     const heading = node("header", "rs-heading");
     const headingText = node("div", "");
     headingText.append(node("span", "rs-eyebrow", "RESEARCH TASKS"), node("h2", "", "研究任务"),
@@ -283,6 +285,7 @@
       section.scrollIntoView({ block: "start", behavior: "auto" });
     }
     function revealTaskResult() {
+      if (!life.alive || state.suspended) return;
       if (getComputedStyle(shortcuts).display !== "none") revealSection(detail);
     }
     life.on(newTask, "click", () => { revealSection(form); kind.focus({ preventScroll: true }); });
@@ -447,6 +450,7 @@
     }
     function displayJob(job) {
       if (!life.alive) return;
+      if (state.suspended) { state.deferredJob = job; return; }
       if (state.selectedJob?.id !== job.id) { state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = ""; }
       state.selectedJob = job;
       layout.classList.add("rs-has-task"); detail.hidden = false;
@@ -470,42 +474,56 @@
     }
     function schedulePoll() {
       life.stopTimer(state.pollTimer);
-      if (!pending(state.selectedJob)) return;
-      const id = state.selectedJob.id;
+      state.pollTimer = null;
+      if (!life.alive || state.suspended || !pending(state.selectedJob)) return;
+      const id = state.selectedJob.id, generation = state.readGeneration;
       state.pollTimer = life.later(async () => {
+        if (state.suspended || generation !== state.readGeneration) return;
         try {
           const response = await life.api(`/api/research/tasks/${encodeURIComponent(id)}`);
-          if (state.selectedJob?.id !== id || !life.alive) return;
+          if (state.selectedJob?.id !== id || !life.alive || state.suspended || generation !== state.readGeneration) return;
           displayJob(response.job); schedulePoll();
-        } catch (error) { life.show(`任务状态更新中断：${error.message} 可点击刷新继续查看。`, true); }
+        } catch (error) { if (life.alive && !state.suspended && generation === state.readGeneration) life.show(`任务状态更新中断：${error.message} 可点击刷新继续查看。`, true); }
       }, 1500);
     }
     async function selectJob(id, reveal = false) {
+      if (!life.alive) return;
+      if (state.suspended) { state.readOnResume = id; return; }
+      const generation = ++state.readGeneration;
       life.stopTimer(state.pollTimer);
-      state.selectedJob = state.jobs.find((item) => item.id === id) || { id };
+      state.pollTimer = null;
+      state.selectingJobId = id;
+      state.selectedJob = state.jobs.find((item) => item.id === id) || (state.selectedJob?.id === id ? state.selectedJob : { id });
       try {
         const response = await life.api(`/api/research/tasks/${encodeURIComponent(id)}`);
-        if (state.selectedJob?.id !== id || !life.alive) return;
+        if (state.selectedJob?.id !== id || !life.alive || state.suspended || generation !== state.readGeneration) return;
         displayJob(response.job); schedulePoll();
         if (reveal) revealTaskResult();
-      } catch (error) { life.show(error.message, true); }
+      } catch (error) { if (life.alive && !state.suspended && generation === state.readGeneration) life.show(error.message, true); }
+      finally { if (generation === state.readGeneration) state.selectingJobId = null; }
     }
-    async function refresh() {
+    async function refresh(preferredJobId = null) {
+      if (!life.alive) return;
+      if (state.suspended) { state.refreshOnResume = true; return; }
       const generation = ++state.refreshGeneration;
+      ++state.readGeneration;
+      life.stopTimer(state.pollTimer); state.pollTimer = null;
+      state.refreshing = true;
       refreshButton.disabled = true;
       try {
         const [capabilities, documents, jobs] = await Promise.all([
           life.api("/api/capabilities"), life.api("/api/documents"), life.api("/api/research/tasks"),
         ]);
-        if (!life.alive || generation !== state.refreshGeneration) return;
+        if (!life.alive || state.suspended || generation !== state.refreshGeneration) return;
         state.configured = Boolean(capabilities.intelligence?.configured ?? capabilities.llm);
         configuration.textContent = state.configured ? "模型配置已就绪。任务会调用实际服务；输出仍需结合原文核验。" : "尚未配置大模型服务。可以准备任务输入，配置完成后刷新；当前不会生成模拟回答。";
         configuration.classList.toggle("is-ready", state.configured);
         state.documents = documents.documents || []; state.jobs = jobs.jobs || [];
         renderDocuments(); renderHistory();
         submit.disabled = !state.configured || state.posting;
-        const selected = state.jobs.find((job) => job.id === state.selectedJob?.id) || state.jobs[0];
-        if (selected) await selectJob(selected.id);
+        const selectedId = state.initialJobId || preferredJobId || (state.jobs.find((job) => job.id === state.selectedJob?.id) || state.jobs[0])?.id;
+        state.initialJobId = null;
+        if (selectedId) await selectJob(selectedId);
         else {
           state.selectedJob = null; state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = "";
           layout.classList.remove("rs-has-task"); detail.hidden = true;
@@ -514,9 +532,9 @@
           eventList.replaceChildren();
           resultArea.replaceChildren(node("p", "rs-empty", "当前工作空间暂无研究任务。"));
         }
-        life.show("");
-      } catch (error) { life.show(error.message, true); }
-      finally { if (life.alive && generation === state.refreshGeneration) refreshButton.disabled = false; }
+        if (life.alive && !state.suspended && generation === state.refreshGeneration) life.show("");
+      } catch (error) { if (life.alive && !state.suspended && generation === state.refreshGeneration) life.show(error.message, true); }
+      finally { if (life.alive && generation === state.refreshGeneration) { state.refreshing = false; refreshButton.disabled = false; } }
     }
     life.on(refreshButton, "click", async () => {
       try { if (typeof options.refreshLibrary === "function") await options.refreshLibrary(); await refresh(); }
@@ -578,7 +596,33 @@
     }
     changeKind();
     const ready = refresh();
-    return { ready, refresh, prepareExample, destroy: () => life.destroy() };
+    return {
+      ready, refresh, prepareExample,
+      getReturnLabel() { return ["translate", "translate_text"].includes(state.selectedJob?.kind) ? "返回翻译结果" : "返回任务结果"; },
+      suspend() {
+        if (!life.alive || state.suspended) return;
+        state.refreshOnResume = state.refreshOnResume || state.refreshing;
+        state.readOnResume = state.selectingJobId || state.readOnResume;
+        state.suspended = true;
+        ++state.refreshGeneration; ++state.readGeneration;
+        state.refreshing = false; state.selectingJobId = null;
+        refreshButton.disabled = false;
+        life.stopTimer(state.pollTimer); state.pollTimer = null;
+        state.bilingual?.suspend?.();
+      },
+      resume() {
+        if (!life.alive || !state.suspended) return;
+        state.suspended = false;
+        if (state.deferredJob) { const job = state.deferredJob; state.deferredJob = null; displayJob(job); }
+        state.bilingual?.resume?.();
+        const refreshAgain = state.refreshOnResume, readAgain = state.readOnResume;
+        state.refreshOnResume = false; state.readOnResume = null;
+        if (refreshAgain) void refresh(readAgain);
+        else if (readAgain) void selectJob(readAgain);
+        else schedulePoll();
+      },
+      destroy: () => life.destroy(),
+    };
   }
 
   function mountData(container, options = {}) {

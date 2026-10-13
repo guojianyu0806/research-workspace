@@ -7,37 +7,48 @@
   let controller = null;
   let revision = 0;
   let activeModule = 'reader';
-  let retainedManage = null;
+  const returnHistory = [];
   let evidenceOrigin = null;
   const returnButton = document.getElementById('readerReturnButton');
-  function clearRetainedManage() {
-    retainedManage?.controller?.destroy?.();
-    retainedManage = null;
-    if (returnButton) returnButton.hidden = true;
+  const moduleReturnBar = document.getElementById('moduleReturnBar');
+  const moduleReturnButton = document.getElementById('moduleReturnButton');
+  function updateReturnButtons() {
+    const previous = returnHistory.at(-1);
+    if (returnButton) {
+      returnButton.hidden = activeModule !== 'reader' || !previous;
+      if (previous) returnButton.textContent = previous.returnLabel;
+    }
+    if (moduleReturnBar) moduleReturnBar.hidden = activeModule === 'reader' || !previous;
+    if (moduleReturnButton && previous) moduleReturnButton.textContent = previous.returnLabel;
   }
-  function retainManage() {
+  function clearReturnHistory() {
+    for (const saved of returnHistory.splice(0)) saved.controller?.destroy?.();
+  }
+  function retainModule() {
     const selected = window.getSelection();
     const selection = selected?.rangeCount && root.contains(selected.anchorNode) && root.contains(selected.focusNode)
       ? {anchorNode:selected.anchorNode, anchorOffset:selected.anchorOffset, focusNode:selected.focusNode, focusOffset:selected.focusOffset} : null;
     const state = {
-      controller, scrollTop:root.scrollTop, scrollLeft:root.scrollLeft,
+      controller, module:activeModule, scrollTop:root.scrollTop, scrollLeft:root.scrollLeft,
       focus:root.contains(document.activeElement) ? document.activeElement : null,
       selection, nodes:document.createDocumentFragment(),
-      isText:root.querySelector('[role="tab"][aria-selected="true"]')?.textContent === '本页文字',
+      // The bilingual controller restores its paragraph anchor after resizing.
+      scrolls:[...root.querySelectorAll('*')].filter(element => !element.classList.contains('rb-scroll') && (element.scrollTop || element.scrollLeft))
+        .map(element => ({element, top:element.scrollTop, left:element.scrollLeft})),
+      returnLabel:activeModule === 'manage'
+        ? (root.querySelector('[role="tab"][aria-selected="true"]')?.textContent === '本页文字' ? '返回文字核对' : '返回文献管理')
+        : (controller?.getReturnLabel?.() || '返回任务结果'),
     };
     controller?.suspend?.();
     while (root.firstChild) state.nodes.append(root.firstChild);
-    retainedManage = state;
+    returnHistory.push(state);
+    // The supported chain is text → translation → source; never keep an
+    // unbounded collection of live controllers after repeated navigation.
+    if (returnHistory.length > 2) returnHistory.shift().controller?.destroy?.();
     controller = null;
-    if (returnButton) {
-      returnButton.textContent = state.isText ? '返回文字核对' : '返回文献管理';
-      returnButton.hidden = false;
-    }
   }
-  function restoreManage(request) {
-    const state = retainedManage;
-    retainedManage = null;
-    if (returnButton) returnButton.hidden = true;
+  function restoreModule(request) {
+    const state = returnHistory.pop();
     controller = state.controller;
     root.append(state.nodes);
     controller?.resume?.();
@@ -49,14 +60,20 @@
         if (root.contains(anchorNode) && root.contains(focusNode)) selected.setBaseAndExtent(anchorNode,anchorOffset,focusNode,focusOffset);
       } catch { /* A source refresh may have replaced the saved text node. */ }
     }
-    root.scrollTop = state.scrollTop;
-    root.scrollLeft = state.scrollLeft;
+    const restoreScroll = () => {
+      for (const saved of state.scrolls) if (root.contains(saved.element)) {
+        saved.element.scrollTop = saved.top; saved.element.scrollLeft = saved.left;
+      }
+      root.scrollTop = state.scrollTop;
+      root.scrollLeft = state.scrollLeft;
+    };
+    updateReturnButtons();
+    restoreScroll();
     // A resumed preview may finish its layout on the next frame. Do not allow
     // this correction to affect a later navigation.
     requestAnimationFrame(() => {
-      if (request !== revision || activeModule !== 'manage') return;
-      root.scrollTop = state.scrollTop;
-      root.scrollLeft = state.scrollLeft;
+      if (request !== revision || activeModule !== state.module) return;
+      restoreScroll();
     });
   }
   function error(message) {
@@ -66,15 +83,15 @@
     root.replaceChildren(element);
   }
   async function activate(name, intent) {
-    const restoring = name === 'manage' && intent?.restoreManage && retainedManage;
-    const retaining = name === 'reader' && intent?.retainManage && activeModule === 'manage' && controller;
+    const restoring = intent?.restorePrevious && returnHistory.at(-1)?.module === name;
+    const retaining = intent?.retainCurrent && ['manage','research'].includes(activeModule) && controller;
     bridge.invalidateEvidenceNavigation?.();
     evidenceOrigin = null;
-    if (retaining) retainManage();
+    if (retaining) retainModule();
     else {
       controller?.destroy?.();
       controller = null;
-      if (!restoring) clearRetainedManage();
+      if (!restoring) clearReturnHistory();
     }
     activeModule = name;
     document.body.classList.toggle('reader-active', name === 'reader');
@@ -87,18 +104,24 @@
     reader.hidden = name !== 'reader';
     mobileNavigation.hidden = name !== 'reader';
     root.hidden = name === 'reader';
+    updateReturnButtons();
     if (name === 'reader') return true;
-    if (restoring) { restoreManage(request); return true; }
+    if (restoring) { restoreModule(request); return true; }
     let mountedController = null;
-    const options = {...bridge, async onTranslate(selection) {
+    const options = {...bridge, initialJobId:intent?.jobId, async onTranslate(selection) {
+      if (activeModule !== 'manage' || controller !== mountedController) return;
+      const originRevision = revision;
       try {
         const response = await bridge.api('/api/research/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'translate',target_language:'zh',...selection})});
-        sessionStorage.setItem('research-last-job',response.job.id);
-        await activate('research');
-      } catch (problem) { window.alert(problem.message); }
+        if (originRevision !== revision || activeModule !== 'manage' || controller !== mountedController) return;
+        try { sessionStorage.setItem('research-last-job',response.job.id); } catch { /* The task ID is also passed directly. */ }
+        await activate('research',{retainCurrent:true,jobId:response.job.id});
+      } catch (problem) {
+        if (originRevision === revision && controller === mountedController) throw problem;
+      }
     }};
-    if (name === 'manage') options.onEvidence = async evidence => {
-      if (activeModule !== 'manage' || controller !== mountedController) return;
+    if (['manage','research'].includes(name)) options.onEvidence = async evidence => {
+      if (activeModule !== name || controller !== mountedController) return;
       const origin = {controller:mountedController, request:revision};
       evidenceOrigin = origin;
       try { await bridge.onEvidence(evidence); }
@@ -128,11 +151,14 @@
   window.ResearchShell = Object.freeze({activate});
   document.querySelectorAll('[data-module]').forEach(button => button.addEventListener('click',()=>activate(button.dataset.module)));
   window.addEventListener('research:reader',()=>activate('reader', {
-    retainManage:activeModule === 'manage' && evidenceOrigin?.controller === controller && evidenceOrigin?.request === revision,
+    retainCurrent:['manage','research'].includes(activeModule) && evidenceOrigin?.controller === controller && evidenceOrigin?.request === revision,
   }));
-  returnButton?.addEventListener('click',()=>{
-    if (retainedManage && activeModule === 'reader') activate('manage',{restoreManage:true});
-  });
+  function returnToPrevious() {
+    const previous = returnHistory.at(-1);
+    if (previous) activate(previous.module,{restorePrevious:true});
+  }
+  returnButton?.addEventListener('click',returnToPrevious);
+  moduleReturnButton?.addEventListener('click',returnToPrevious);
   document.getElementById('modelSettingsButton').addEventListener('click',()=>window.ResearchModelSettings.open({api:bridge.api}));
   window.ResearchExamples?.mount({api:bridge.api, activate, onEvidence:bridge.onEvidence});
   window.addEventListener('research:model-configured',()=>{if(activeModule==='research') activate('research');});

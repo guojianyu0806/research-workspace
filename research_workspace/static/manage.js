@@ -745,7 +745,7 @@
               payload.selected_text = selection.text;
             }
             await onTranslate(payload);
-            showNotice(payload.selected_text ? "已发送所选文字的翻译请求，可在任务区查看结果。" : "已发送整块翻译请求，可在任务区查看结果。");
+            if (!suspended) showNotice(payload.selected_text ? "已发送所选文字的翻译请求，可在任务区查看结果。" : "已发送整块翻译请求，可在任务区查看结果。");
           }), "rm-button rm-primary");
           translate.addEventListener("mousedown", (event) => event.preventDefault());
           translate.disabled = typeof onTranslate !== "function";

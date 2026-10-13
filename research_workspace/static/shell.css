@@ -8,6 +8,8 @@
 .module-navigation button:focus-visible{outline:2px solid #fff;outline-offset:-4px}
 .module-navigation button[aria-pressed=true]:focus-visible{outline-color:var(--primary)}
 .module-root{flex:1;min-width:0;min-height:0;overflow:auto;background:var(--workspace);padding:0;scrollbar-width:thin;scrollbar-gutter:stable}
+.module-return-bar{display:flex;align-items:center;flex-shrink:0;padding:5px var(--shell-gutter);border-bottom:1px solid var(--section-line);background:var(--section-tint)}
+.module-return-bar .reader-control{color:var(--primary);background:var(--paper);border-color:var(--input-line)}
 /* Only page-level shells/headings are shared; each module owns its work area. */
 #moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell){width:100%;max-width:none;margin:0;padding:var(--shell-gutter);background:var(--workspace)}
 #moduleRoot>:is(.rm-shell,.rs-shell,.ex-shell)>:is(.rm-header,.rs-heading,.ex-heading){display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;margin:0 0 18px;padding-bottom:14px;border-bottom:1px solid var(--section-line)}

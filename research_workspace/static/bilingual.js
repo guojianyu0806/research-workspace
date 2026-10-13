@@ -70,7 +70,7 @@
     if (!blocks.length) {
       root.append(node("p", "rb-empty", "尚无可显示的双语文本块。翻译结果保存后会显示在这里。"));
       container.replaceChildren(root);
-      const empty = { destroy() { if (instances.get(container) === empty) instances.delete(container); }, getPosition() { return null; }, syncTo() { return false; } };
+      const empty = { destroy() { if (instances.get(container) === empty) instances.delete(container); }, getPosition() { return null; }, syncTo() { return false; }, suspend() {}, resume() {} };
       instances.set(container, empty);
       return empty;
     }
@@ -79,6 +79,8 @@
     const panes = {};
     const listeners = [];
     let destroyed = false;
+    let suspended = false;
+    let suspendedPosition = null;
     let lockedSide = null;
     let lastSource = "source";
     let syncFrame = 0;
@@ -162,7 +164,7 @@
     }
 
     function measure() {
-      if (destroyed) return;
+      if (destroyed || suspended) return;
       for (const side of ["source", "translation"]) {
         const pane = panes[side];
         const tailHeight = `${Math.max(pane.scroll.clientHeight - 12, 0)}px`;
@@ -193,7 +195,8 @@
       cancelAnimationFrame(releaseFrame);
       cancelAnimationFrame(releaseInnerFrame);
       releaseFrame = requestAnimationFrame(() => {
-        releaseInnerFrame = requestAnimationFrame(() => { lockedSide = null; });
+        if (destroyed || suspended) return;
+        releaseInnerFrame = requestAnimationFrame(() => { if (!destroyed && !suspended) lockedSide = null; });
       });
     }
 
@@ -213,7 +216,7 @@
     }
 
     function synchronize(sourceSide) {
-      if (destroyed) return;
+      if (destroyed || suspended) return;
       const anchor = position(sourceSide);
       if (anchor) align(sourceSide === "source" ? "translation" : "source", anchor);
     }
@@ -221,13 +224,14 @@
     for (const side of ["source", "translation"]) {
       const scroll = panes[side].scroll;
       listen(scroll, "scroll", () => {
-        if (destroyed || lockedSide === side) return;
+        if (destroyed || suspended || lockedSide === side) return;
         lastSource = side;
         cancelAnimationFrame(syncFrame);
         syncFrame = requestAnimationFrame(() => synchronize(side));
       }, { passive: true });
       // A deliberate gesture on the other column immediately takes ownership.
       const takeControl = () => {
+        if (destroyed || suspended) return;
         lockedSide = null;
         lastSource = side;
         cancelAnimationFrame(syncFrame);
@@ -236,23 +240,26 @@
     }
 
     function scheduleMeasure() {
+      if (destroyed || suspended) return;
       cancelAnimationFrame(measureFrame);
-      measureFrame = requestAnimationFrame(() => { measure(); synchronize(lastSource); });
+      measureFrame = requestAnimationFrame(() => { if (!destroyed && !suspended) { measure(); synchronize(lastSource); } });
     }
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(scheduleMeasure) : null;
-    if (observer) {
+    function observePanes() {
+      if (!observer) return;
       for (const side of ["source", "translation"]) {
         observer.observe(panes[side].scroll);
         observer.observe(panes[side].content);
       }
     }
+    observePanes();
     listen(window, "resize", scheduleMeasure, { passive: true });
     measure();
 
     const controller = {
-      getPosition() { return destroyed ? null : position(lastSource); },
+      getPosition() { return destroyed ? null : suspended ? suspendedPosition : position(lastSource); },
       syncTo(blockId, settings = {}) {
-        if (destroyed) return false;
+        if (destroyed || suspended) return false;
         measure();
         const side = settings.side === "translation" ? "translation" : "source";
         const anchor = { block_id: blockId, fraction: Number.isFinite(settings.fraction) ? settings.fraction : 0,
@@ -262,6 +269,22 @@
         align(side, anchor);
         align(side === "source" ? "translation" : "source", anchor);
         return true;
+      },
+      suspend() {
+        if (destroyed || suspended) return;
+        suspendedPosition = position(lastSource);
+        suspended = true;
+        observer?.disconnect();
+        for (const frame of [syncFrame, measureFrame, releaseFrame, releaseInnerFrame]) cancelAnimationFrame(frame);
+        lockedSide = null;
+      },
+      resume() {
+        if (destroyed || !suspended) return;
+        suspended = false;
+        measure();
+        if (suspendedPosition) controller.syncTo(suspendedPosition.block_id, suspendedPosition);
+        suspendedPosition = null;
+        observePanes();
       },
       destroy() {
         destroyed = true;
