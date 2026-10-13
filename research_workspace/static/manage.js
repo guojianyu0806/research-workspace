@@ -47,6 +47,8 @@
     let pageLoading = false;
     let selection = null;
     let invalidSelection = false;
+    let pagePreview = null;
+    let preserveLineBreaks = false;
     let activeTab = "metadata";
     const extensions = {};
     const pageCache = new Map();
@@ -450,19 +452,98 @@
 
     function renderTextControls(doc) {
       const root = panes.text;
-      root.replaceChildren(panelTitle("选择一段原文开始翻译", "可在单个文本块中选择片段，再点击翻译；没有选中文字时翻译整个文本块。"));
-      const toolbar = el("form", "rm-page-form");
+      pagePreview = null;
+      root.classList.toggle("rm-preserve-lines", preserveLineBreaks);
+      root.replaceChildren(panelTitle("对照原页，阅读与翻译", "正文自动换行。选中块内片段可单独翻译，点击“预览位置”可核对原页。"));
+      const toolbar = el("form", "rm-page-form rm-text-toolbar");
       const pageNumber = el("input", "rm-input rm-page-number");
       pageNumber.type = "number"; pageNumber.min = 1; pageNumber.max = doc.page_count; pageNumber.value = 1; pageNumber.required = true;
       pageNumber.setAttribute("aria-label", "原文页码");
       const load = btn("读取本页文字"); load.type = "submit";
-      toolbar.append(field("页码", pageNumber), el("span", "rm-muted", `/ ${doc.page_count} 页`), load);
+      const lineMode = el("label", "rm-line-mode");
+      const preserve = el("input"); preserve.type = "checkbox"; preserve.checked = preserveLineBreaks;
+      preserve.addEventListener("change", () => {
+        preserveLineBreaks = preserve.checked;
+        root.classList.toggle("rm-preserve-lines", preserveLineBreaks);
+      });
+      lineMode.append(preserve, el("span", "", "保留原文换行"));
+      toolbar.append(field("页码", pageNumber), el("span", "rm-muted", `/ ${doc.page_count} 页`), load, lineMode);
       toolbar.addEventListener("submit", (event) => { event.preventDefault(); loadPage(Number(pageNumber.value)); });
       const hint = el("p", "rm-selection-hint", "尚未选择文字；每个文本块都可以单独翻译。");
       hint.setAttribute("aria-live", "polite");
       const body = el("div", "rm-page-blocks");
       empty(body, "选择页码读取文字", "解析完成的页面可显示原文、定位区域和翻译入口。");
       root.append(toolbar, hint, body);
+    }
+    function createPagePreview(doc, result) {
+      const preview = el("aside", "rm-page-preview");
+      preview.setAttribute("aria-label", "原页位置预览");
+      const title = el("h4", "", "原页位置");
+      const caption = el("p", "rm-preview-caption", `第 ${result.page} 页`);
+      caption.setAttribute("aria-live", "polite");
+      const status = el("p", "rm-muted rm-preview-status", "正在加载原页缩略图…");
+      status.setAttribute("role", "status");
+      let activeBlock = null, loaded = false, failed = false;
+      const imageButton = btn("", () => {
+        const evidence = { document_id: doc.id, run_id: result.run_id, page: result.page,
+          block_id: activeBlock?.id, bbox: activeBlock?.bbox, text: activeBlock?.text };
+        Promise.resolve().then(() => onEvidence?.(evidence)).catch((error) => showNotice(error.message || String(error), true));
+      }, "rm-preview-page");
+      imageButton.setAttribute("aria-label", "在阅读器中打开当前文本块");
+      imageButton.title = "点击缩略图，在阅读器中查看原文";
+      imageButton.disabled = typeof onEvidence !== "function";
+      const image = el("img", "rm-preview-image");
+      image.alt = `第 ${result.page} 页原文缩略图`;
+      image.decoding = "async";
+      if (Number.isFinite(result.width) && result.width > 0 && Number.isFinite(result.height) && result.height > 0) {
+        image.width = Math.round(result.width); image.height = Math.round(result.height);
+        imageButton.style.aspectRatio = `${result.width} / ${result.height}`;
+      }
+      const highlight = el("span", "rm-preview-highlight");
+      highlight.hidden = true; highlight.setAttribute("aria-hidden", "true");
+      imageButton.append(image, highlight);
+      const retry = btn("重试预览", () => loadImage(), "rm-small-button"); retry.hidden = true;
+      const info = el("div", "rm-preview-info");
+      info.append(title, caption, status, retry);
+      preview.append(info, imageButton);
+      function renderHighlight() {
+        const box = activeBlock?.bbox;
+        const valid = Array.isArray(box) && box.length === 4 && box.every(value => Number.isFinite(value) && value >= 0 && value <= 1) && box[2] > box[0] && box[3] > box[1];
+        highlight.hidden = !loaded || !valid;
+        if (valid) {
+          highlight.style.left = `${box[0] * 100}%`; highlight.style.top = `${box[1] * 100}%`;
+          highlight.style.width = `${(box[2] - box[0]) * 100}%`; highlight.style.height = `${(box[3] - box[1]) * 100}%`;
+        }
+        status.textContent = failed ? "缩略图加载失败，可重试或使用“定位原文”。" : !loaded ? "正在加载原页缩略图…" : !activeBlock ? "本页暂无可定位文本块。" : valid ? "色框标出整块位置；点击小图可放大核对。" : "此文本块缺少可靠坐标，请打开原页核对。";
+      }
+      image.addEventListener("load", () => {
+        loaded = true; failed = false; retry.hidden = true; image.hidden = false;
+        imageButton.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
+        renderHighlight();
+      });
+      image.addEventListener("error", () => {
+        loaded = false; failed = true; retry.hidden = false; image.hidden = true; imageButton.hidden = true; renderHighlight();
+      });
+      function loadImage() {
+        loaded = false; failed = false; retry.hidden = true; image.hidden = false; imageButton.hidden = false; renderHighlight();
+        image.src = `${pathFor(doc.id)}/pages/${result.page}/image?scale=0.5`;
+      }
+      loadImage();
+      return {
+        element: preview,
+        setBlock(id, reveal = false) {
+          const index = result.blocks?.findIndex(block => block.id === id) ?? -1;
+          activeBlock = index >= 0 ? result.blocks[index] : null;
+          caption.textContent = activeBlock ? `第 ${result.page} 页 · 文本块 ${index + 1}` : `第 ${result.page} 页`;
+          for (const [blockId, text] of textElements) {
+            const article = text.closest(".rm-text-block");
+            article.classList.toggle("is-previewed", blockId === id);
+            article.querySelector(".rm-preview-block")?.setAttribute("aria-pressed", String(blockId === id));
+          }
+          renderHighlight();
+          if (reveal) preview.scrollIntoView({ block: "nearest", behavior: "auto" });
+        },
+      };
     }
     async function readPage(documentId, page, runId) {
       const key = `${documentId}:${runId || "default"}:${page}`;
@@ -479,7 +560,9 @@
       if (!Number.isInteger(page) || page < 1 || page > doc.page_count) { showNotice(`请输入1至${doc.page_count}之间的页码。`, true); return; }
       const epoch = ++pageEpoch;
       pageLoading = true;
+      currentPage = null; pagePreview = null;
       selection = null; invalidSelection = false; textElements.clear(); translateButtons.clear();
+      updateSelectionHint();
       const body = panes.text.querySelector(".rm-page-blocks");
       const input = panes.text.querySelector(".rm-page-number");
       if (input) input.value = page;
@@ -492,19 +575,29 @@
         if (!alive || epoch !== pageEpoch || doc.id !== selectedId) return;
         currentPage = result;
         body.replaceChildren();
+        const layout = el("div", "rm-text-layout");
+        const list = el("div", "rm-text-list");
+        pagePreview = createPagePreview(doc, result);
+        layout.append(list, pagePreview.element);
         if (result.notice) body.append(el("p", "rm-warning", result.notice));
         if (result.error) body.append(el("p", "rm-warning", result.error));
         if (!result.blocks?.length) {
           const message = result.status === "pending" ? "这一页尚未处理完成，请稍后刷新文献。" : "这一页没有可提取文字。请先检查解析或OCR结果。";
-          body.append(el("p", "rm-empty-inline", message));
+          list.append(el("p", "rm-empty-inline", message));
         }
         (result.blocks || []).forEach((block, index) => {
           const article = el("article", "rm-text-block");
           const heading = el("div", "rm-text-block-heading");
           const evidence = { document_id: doc.id, run_id: result.run_id, block_id: block.id, page: result.page, bbox: block.bbox, text: block.text };
-          heading.append(el("span", "rm-field-title", `第 ${result.page} 页 · 文本块 ${index + 1}`), evidenceButton(evidence));
+          const actions = el("div", "rm-block-actions");
+          const preview = btn("预览位置", () => pagePreview?.setBlock(block.id, true), "rm-small-button rm-preview-block");
+          preview.setAttribute("aria-pressed", "false");
+          preview.addEventListener("mousedown", (event) => event.preventDefault());
+          heading.append(el("span", "rm-field-title", `第 ${result.page} 页 · 文本块 ${index + 1}`), actions);
           const text = el("div", "rm-block-text", block.text);
           text.tabIndex = 0; text.setAttribute("aria-label", `可选择的原文文本块 ${index + 1}`);
+          text.addEventListener("focus", () => pagePreview?.setBlock(block.id));
+          text.addEventListener("click", () => pagePreview?.setBlock(block.id));
           textElements.set(block.id, text);
           const translate = btn("翻译整块", () => act(translate, async () => {
             if (typeof onTranslate !== "function") throw new Error("当前未连接翻译任务入口。");
@@ -521,8 +614,11 @@
           translate.addEventListener("mousedown", (event) => event.preventDefault());
           translate.disabled = typeof onTranslate !== "function";
           translateButtons.set(block.id, translate);
-          article.append(heading, text, translate); body.append(article);
+          actions.append(preview, evidenceButton(evidence, "定位原文"), translate);
+          article.append(heading, text); list.append(article);
         });
+        body.append(layout);
+        pagePreview.setBlock(result.blocks?.[0]?.id);
         updateSelectionHint();
       } catch (error) { if (alive && epoch === pageEpoch) empty(body, "无法读取本页文字", error.message || String(error)); }
       finally { if (alive && epoch === pageEpoch) pageLoading = false; }
@@ -537,7 +633,9 @@
     function selectionChanged() {
       if (!alive || activeTab !== "text") return;
       const selected = window.getSelection();
-      const value = selected?.toString().trim() || "";
+      // Keep the exact DOM substring: Selection.toString() collapses PDF line
+      // breaks in normal white-space mode, but the backend checks source text.
+      const value = selected?.rangeCount ? selected.getRangeAt(0).toString().trim() : "";
       selection = null; invalidSelection = false;
       if (value && selected?.rangeCount) {
         let startBlock = null, endBlock = null;
@@ -549,7 +647,10 @@
           if (!startBlock || startBlock !== endBlock) invalidSelection = true;
           else {
             const original = currentPage?.blocks?.find((block) => block.id === startBlock);
-            if (original?.text.includes(value)) selection = { blockId: startBlock, text: value };
+            if (original?.text.includes(value)) {
+              selection = { blockId: startBlock, text: value };
+              pagePreview?.setBlock(startBlock);
+            }
             else invalidSelection = true;
           }
         }
