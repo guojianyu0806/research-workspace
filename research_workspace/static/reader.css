@@ -67,7 +67,7 @@
 #readerPanel .reader-empty{min-height:0;padding:20px 12px}
 #readerDrawerBackdrop{display:none}
 
-body.reader-focus .app-header,body.reader-focus .module-navigation,body.reader-focus .app-notice{display:none}
+body.reader-focus .app-header,body.reader-focus .module-navigation{display:none}
 body.reader-focus #workspace{height:100dvh;flex:1}
 #readerPanel.reader-fullscreen,#readerPanel:fullscreen{position:fixed!important;inset:0!important;display:flex!important;width:100vw!important;height:100dvh!important;max-width:none!important;max-height:none!important;min-height:0!important;z-index:1000;background:var(--workspace)}
 #readerPanel.reader-fullscreen .reader-panel-toggle,#readerPanel:fullscreen .reader-panel-toggle{display:none}

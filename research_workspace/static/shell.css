@@ -1,12 +1,12 @@
 /* Shared frame: module selection must not change header, navigation or gutters. */
 :root{--shell-gutter:24px}
 .app-header{min-height:64px;padding:8px var(--shell-gutter);border-bottom-color:#a8bec9}
-.module-navigation{display:flex;gap:4px;flex-shrink:0;padding:0 var(--shell-gutter);border-bottom:1px solid #91aab7;background:var(--navigation);overflow-x:auto;min-height:44px;scrollbar-width:thin;scrollbar-color:#799ca9 var(--navigation)}
-.module-navigation button{font-size:16px;font-weight:600;line-height:1.5;padding:8px 20px;min-height:42px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--navigation-text);white-space:nowrap;border-radius:6px 6px 0 0;transition:background .15s,color .15s}
-.module-navigation button[aria-pressed=true]{color:var(--primary);border-color:var(--primary);background:var(--primary-soft)}
-.module-navigation button:hover{background:var(--primary-soft);color:var(--primary)}
+.module-navigation{display:flex;align-items:center;gap:4px;flex-shrink:0;padding:4px var(--shell-gutter);border-bottom:1px solid #91aab7;background:var(--navigation);overflow-x:auto;min-height:48px;scrollbar-width:thin;scrollbar-color:#799ca9 var(--navigation)}
+.module-navigation button{flex-shrink:0;font-size:16px;font-weight:600;line-height:24px;padding:6px 18px;min-height:38px;border:1px solid transparent;background:transparent;color:var(--navigation-text);white-space:nowrap;border-radius:6px;transition:background .15s,color .15s}
+.module-navigation button[aria-pressed=true]{color:var(--navigation-text);border-color:#88b8b4;background:var(--primary)}
+.module-navigation button:hover{background:#ffffff16;color:var(--navigation-text)}
 .module-navigation button:focus-visible{outline:2px solid #fff;outline-offset:-4px}
-.module-navigation button[aria-pressed=true]:focus-visible{outline-color:var(--primary)}
+.module-navigation button[aria-pressed=true]:focus-visible{outline-color:#fff}
 .module-root{flex:1;min-width:0;min-height:0;overflow:auto;background:var(--workspace);padding:0;scrollbar-width:thin;scrollbar-gutter:stable}
 .module-return-bar{display:flex;align-items:center;flex-shrink:0;padding:5px var(--shell-gutter);border-bottom:1px solid var(--section-line);background:var(--section-tint)}
 .module-return-bar .reader-control{color:var(--primary);background:var(--paper);border-color:var(--input-line)}
@@ -39,8 +39,7 @@
 @media(max-width:1199px){:root{--shell-gutter:20px}}
 @media(max-width:700px){
   :root{--shell-gutter:16px}
-  .module-navigation{gap:0}
-  .module-navigation button{padding:8px 14px;font-size:15px}
+  .module-navigation button{padding:6px 14px;font-size:15px}
   #accountButton{max-width:100%;white-space:nowrap}
   .account-dialog{padding:20px;width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
   .module-error{margin:16px;padding:16px}

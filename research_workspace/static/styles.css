@@ -43,10 +43,13 @@ h1,h2,h3,p{margin:0}
 .button-secondary:hover:not(:disabled){background:var(--workspace)}
 .icon-button{background:transparent;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border:1px solid transparent;border-radius:5px;padding:5px;flex-shrink:0}
 .icon-button:hover:not(:disabled){background:var(--workspace);border-color:var(--line)}
-.app-notice{min-height:42px;flex-shrink:0;background:var(--primary-soft);border-bottom:1px solid #cfdfdd;display:flex;align-items:center;gap:16px;padding:5px 25px;font-size:14px;line-height:1.6}
+.notice-stack{position:fixed;z-index:1000;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:min(560px,calc(100% - 24px));display:flex;flex-direction:column;gap:8px;pointer-events:none;max-height:calc(100dvh - 24px);overflow-y:auto;scrollbar-width:thin}
+.app-notice{min-height:48px;flex-shrink:0;background:var(--primary-soft);border:1px solid #9bbfbb;border-radius:9px;box-shadow:0 5px 20px #18343f24;display:flex;align-items:center;gap:12px;padding:8px 12px;font-size:14px;line-height:1.6;pointer-events:auto;animation:notice-enter .16s ease-out}
 .app-notice.is-error{background:#fff0f0;color:var(--error);border-color:#eed9da}
 .app-notice .icon-button{margin-left:auto}
-#noticeText{flex:1;min-width:0;overflow-wrap:anywhere}
+.notice-text{flex:1;min-width:0;overflow-wrap:anywhere}
+@keyframes notice-enter{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.app-notice{animation:none}}
 .workspace{display:grid;grid-template-columns:280px minmax(360px,1fr) 360px;flex:1;min-height:0}
 .panel{min-width:0;min-height:0;display:flex;flex-direction:column}
 .library-panel{background:#f8fafb;border-right:1px solid var(--line);position:relative}
