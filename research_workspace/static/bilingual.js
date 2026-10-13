@@ -122,15 +122,14 @@
         evidence.disabled = typeof options.onEvidence !== "function" || !Number.isInteger(block.page)
           || typeof block.document_id !== "string" || typeof block.run_id !== "string";
         listen(evidence, "click", async () => {
-          feedback.hidden = true;
+          window.ResearchNotices.show("", false, feedback);
           try {
             await options.onEvidence({ document_id: block.document_id, run_id: block.run_id,
               block_id: block.block_id, page: block.page, bbox: block.bbox,
               evidence_id: block.evidence_id });
           } catch {
             if (!destroyed) {
-              feedback.textContent = "暂时无法打开这条原文出处，请稍后重试。";
-              feedback.hidden = false;
+              window.ResearchNotices.show("暂时无法打开这条原文出处，请稍后重试。", true, feedback);
             }
           }
         });

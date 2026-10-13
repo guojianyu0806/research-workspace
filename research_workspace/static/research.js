@@ -165,9 +165,7 @@
     };
     const show = (message, error = false) => {
       if (destroyed) return;
-      notice.textContent = message || "";
-      notice.classList.toggle("rs-error", error);
-      notice.hidden = !message;
+      window.ResearchNotices.show(message, error, notice);
     };
     const svgBlob = async (path, init = {}) => {
       const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...init, signal: abort.signal });

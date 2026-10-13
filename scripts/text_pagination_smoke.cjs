@@ -15,7 +15,7 @@ const origin = 'http://127.0.0.1:8765';
 const baseline = process.argv.includes('--baseline');
 const output = path.join(root, 'artifacts/browser', `text-pagination-${baseline?'baseline-':''}${new Date().toISOString().replace(/[:.]/g,'-')}-${crypto.randomBytes(3).toString('hex')}`);
 fs.mkdirSync(output,{recursive:true});
-const names = ['styles.css','shell.css','manage.css','manage.js'];
+const names = ['notices.js','styles.css','shell.css','manage.css','manage.js'];
 const assets = new Map(names.map(name=>[name,fs.readFileSync(path.join(root,'research_workspace/static',name))]));
 const report = {startedAt:new Date().toISOString(),output,baseline,checks:[],screenshots:[],pageErrors:[],unexpectedRequests:[],source:{gitHead:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}).trim(),sha256:{}},limitations:['Synthetic pages test rendering and navigation only; no PDF extraction, model request or persisted user data is involved.']};
 for(const [name,body] of assets) report.source.sha256[name]=crypto.createHash('sha256').update(body).digest('hex');
@@ -28,7 +28,7 @@ function pageData(number){
 }
 const structure={headings:[{id:'fixture-chapter',title:'Jump to page four paragraph nine',level:1,evidence:{document_id:doc.id,run_id:'run-pagination',page:4,block_id:'p4-b8',bbox:[.1,.48,.9,.57]}}],references:[],citations:[],limitations:[]};
 const svg='<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="white"/><text x="50" y="100" fill="#173e41">Synthetic source page</text></svg>';
-const harness=`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${names.filter(n=>n.endsWith('.css')).map(n=>`<link rel="stylesheet" href="/static/${n}">`).join('')}</head><body><main id="moduleRoot" class="module-root"></main><script src="/static/manage.js"></script><script>
+const harness=`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${names.filter(n=>n.endsWith('.css')).map(n=>`<link rel="stylesheet" href="/static/${n}">`).join('')}</head><body><main id="moduleRoot" class="module-root"></main><script src="/static/notices.js"></script><script src="/static/manage.js"></script><script>
 window.fixtureTranslations=[];window.fixtureEvidence=[];
 window.fixtureController=ResearchManage.mount(document.querySelector('#moduleRoot'),{api:async(url,init)=>{if(init?.method&&init.method!=='GET')throw Error('Writes forbidden');const r=await fetch(url);if(!r.ok)throw Error('Synthetic page request failed');return r.json();},onTranslate:p=>fixtureTranslations.push(p),onEvidence:p=>fixtureEvidence.push(p)});window.fixtureReady=fixtureController.ready;
 </script></body></html>`;

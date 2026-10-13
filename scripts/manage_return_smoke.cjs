@@ -11,7 +11,7 @@ const root = path.resolve(__dirname,'..');
 const origin = 'http://127.0.0.1:8765';
 const output = path.join(root,'artifacts/browser',`manage-return-${new Date().toISOString().replace(/[:.]/g,'-')}-${crypto.randomBytes(3).toString('hex')}`);
 fs.mkdirSync(output,{recursive:true});
-const names = ['styles.css','shell.css','manage.css','shell.js','manage.js'];
+const names = ['notices.js','styles.css','shell.css','manage.css','shell.js','manage.js'];
 const assets = new Map(names.map(name=>[name,fs.readFileSync(path.join(root,'research_workspace/static',name))]));
 const report = {output,startedAt:new Date().toISOString(),mode:'offline actual manage/shell with synthetic reader bridge',checks:[],pageErrors:[],unexpectedRequests:[],sha256:{},limitations:['The reader bridge is a protocol fixture. Actual PDF rendering and model quality are outside this test.']};
 for(const [name,content] of assets) report.sha256[name]=crypto.createHash('sha256').update(content).digest('hex');
@@ -22,7 +22,7 @@ const harness = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><
 <nav class="module-navigation">${['reader','manage','research','discovery','graph','data'].map(name=>`<button data-module="${name}">${name}</button>`).join('')}</nav>
 <main id="workspace"><button id="readerReturnButton" hidden>返回文字核对</button><p id="fixtureEvidence">Synthetic reader</p></main><nav class="mobile-navigation"></nav><section id="moduleRoot" class="module-root" hidden></section>
 <dialog id="accountDialog"><button id="closeAccount">关闭</button><p id="accountDescription"></p><form id="accountForm"></form><p id="accountStatus"></p><button id="logoutButton">退出</button></dialog>
-<script src="/static/manage.js"></script><script>
+<script src="/static/notices.js"></script><script src="/static/manage.js"></script><script>
 window.fixture={mounts:0,destroys:0,suspends:0,resumes:0,requests:[],evidence:[],mode:'immediate',release:null};
 let navigation=0;
 const actualMount=ResearchManage.mount;
@@ -87,7 +87,7 @@ async function main(){
   await openSource();await selectModule('research');state=await snapshot();
   check('another module destroys retained manage context',state.module==='research' && state.destroys===1 && await page.locator('#readerReturnButton').isHidden(),state);
   await openText();check('entering management normally builds a fresh instance',(await snapshot()).mounts===2);
-  await page.evaluate(()=>fixture.mode='failure');await sourceButton().evaluate(button=>button.click());await page.waitForFunction(()=>document.querySelector('.rm-notice')?.textContent.includes('Synthetic evidence failure'));
+  await page.evaluate(()=>fixture.mode='failure');await sourceButton().evaluate(button=>button.click());await page.waitForFunction(()=>document.querySelector('.app-notice[data-notice-source="rm-notice"]')?.textContent.includes('Synthetic evidence failure'));
   check('failed source navigation stays in the current management page',(await snapshot()).module==='manage' && await page.locator('#readerReturnButton').isHidden());
   await page.evaluate(()=>{fixture.mode='deferred';fixture.oldEvidence=fixture.options.onEvidence;});await sourceButton().evaluate(button=>button.click());await page.waitForFunction(()=>typeof fixture.release==='function');
   await selectModule('data');await page.evaluate(()=>fixture.release());await page.waitForTimeout(50);

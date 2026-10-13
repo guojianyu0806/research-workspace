@@ -41,7 +41,7 @@
     const box = node("div", "ex-notice");
     box.hidden = true;
     box.setAttribute("role", "status");
-    return { box, show(text, error = false) { box.textContent = text; box.classList.toggle("is-error", error); box.hidden = false; } };
+    return { box, show(text, error = false) { window.ResearchNotices.show(text, error, box); } };
   }
   function heading(kicker, title, description) {
     const header = node("header", "ex-heading");
@@ -359,7 +359,7 @@
       if (!query.value.trim()) return;
       const request = ++searchSequence;
       searchButton.disabled = true;
-      notice.box.hidden = true;
+      notice.show("");
       empty(results, "正在检索公开论文", "正在查询 arXiv；连接较慢时可以保留关键词后重试。");
       try {
         const result = await api(`/api/discover/search?${new URLSearchParams({ q: query.value.trim(), field: field.value })}`);
@@ -688,7 +688,7 @@
       const request = ++requestSequence;
       rebuild.disabled = true;
       rebuild.textContent = "正在核对引用…";
-      notice.box.hidden = true;
+      notice.show("");
       try {
         const ids = typeof selectedIds === "function" ? selectedIds() : selectedIds;
         const params = new URLSearchParams();

@@ -59,7 +59,7 @@
     }
     function message(text, error = false) {
       if (destroyed) return;
-      status.textContent = text; status.classList.toggle("ms-error", error);
+      window.ResearchNotices.show(text, error, status);
     }
     async function api(path, init = {}) {
       if (typeof options.api === "function") return options.api(path, init);
@@ -105,6 +105,7 @@
           detail: { configured: true, provider: "DeepSeek", model: selectedModel },
         }));
         controller.destroy();
+        window.ResearchNotices.show("本次模型配置已保存。");
       } catch {
         message("配置未能保存。请确认已处于本机默认空间且没有运行中的模型任务，再重新输入密钥；必要时重启本机服务。", true);
       } finally {
@@ -119,9 +120,10 @@
       accessible = true;
       model.value = ["deepseek-flash", "deepseek-v4-pro"].includes(configuration.defaultModel) ? configuration.defaultModel : "deepseek-flash";
       model.disabled = false; key.disabled = false; save.disabled = false;
-      message(configuration.configured ? "本次服务已有配置。密钥不会回显；如需更换，请重新输入。" : "尚未配置。填写后即可在研究任务中使用真实模型。");
+      status.textContent = configuration.configured ? "本次服务已有配置。密钥不会回显；如需更换，请重新输入。" : "尚未配置。填写后即可在研究任务中使用真实模型。";
       key.focus();
     }).catch(() => {
+      status.textContent = "模型设置不可用，请关闭后重试。";
       message("无法读取模型设置。请确认本机服务可用，并退出登录回到本机默认空间后重试。", true);
     });
     return controller;

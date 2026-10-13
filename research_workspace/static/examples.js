@@ -47,7 +47,7 @@
     const body = node("div", "examples-body");
     dialog.append(header, notice, body); document.body.append(dialog);
     let catalog = null, documents = [], busy = false, loadRevision = 0, actionRevision = 0;
-    const show = (text, error = false) => { notice.textContent = text; notice.hidden = !text; notice.classList.toggle("is-error", error); };
+    const show = (text, error = false) => window.ResearchNotices.show(text, error, notice);
     const setBusy = value => {
       busy = value; dialog.setAttribute("aria-busy", String(value));
       for (const control of body.querySelectorAll("button")) control.disabled = value || control.dataset.unavailable === "true";

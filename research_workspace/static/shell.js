@@ -174,8 +174,10 @@
   const form = document.getElementById('accountForm');
   const status = document.getElementById('accountStatus');
   const logout = document.getElementById('logoutButton');
+  status.hidden = true;
+  const accountNotice = (text, error = false) => window.ResearchNotices.show(text, error, status);
   document.getElementById('closeAccount').addEventListener('click',()=>dialog.close());
-  dialog.addEventListener('close',()=>{form.reset();status.textContent='';});
+  dialog.addEventListener('close',()=>{form.reset();accountNotice('');});
   async function refreshAccount() {
     try {
       const {user}=await bridge.api('/api/account');
@@ -183,22 +185,22 @@
       document.getElementById('accountDescription').textContent=user.mode==='account'?`当前工作空间：${user.name}。文献、研究任务和偏好独立保存。`:'本机默认空间与各账号的文献、任务和偏好分别保存。';
       form.hidden=user.mode==='account';
       logout.hidden=user.mode!=='account';
-    } catch(problem) { status.textContent=problem.message; logout.hidden=false; }
+    } catch(problem) { accountNotice(problem.message, true); logout.hidden=false; }
   }
   document.getElementById('accountButton').addEventListener('click',()=>{refreshAccount();dialog.showModal();});
   form.addEventListener('submit',async(event)=>{
     event.preventDefault();
     const action=event.submitter?.value || 'login';
     const values=new FormData(form);
-    status.textContent='正在处理…';
+    accountNotice('正在处理…');
     try {
       await bridge.api(`/api/account/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:values.get('name'),password:values.get('password')})});
       form.reset();sessionStorage.removeItem('research-last-job');window.location.reload();
-    } catch(problem) { status.textContent=problem.message; }
+    } catch(problem) { accountNotice(problem.message, true); }
   });
   logout.addEventListener('click',async()=>{
     try {await bridge.api('/api/account/logout',{method:'POST'});sessionStorage.removeItem('research-last-job');window.location.reload();}
-    catch(problem){status.textContent=problem.message;}
+    catch(problem){accountNotice(problem.message, true);}
   });
   refreshAccount();
 })();

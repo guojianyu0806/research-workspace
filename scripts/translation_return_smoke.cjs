@@ -12,7 +12,7 @@ const root = path.resolve(__dirname, '..');
 const origin = 'http://127.0.0.1:8765';
 const output = path.join(root, 'artifacts/browser', `translation-return-${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`);
 fs.mkdirSync(output, {recursive: true});
-const names = ['styles.css', 'shell.css', 'manage.css', 'research.css', 'bilingual.css', 'manage.js', 'research.js', 'bilingual.js', 'shell.js'];
+const names = ['notices.js','styles.css', 'shell.css', 'manage.css', 'research.css', 'bilingual.css', 'manage.js', 'research.js', 'bilingual.js', 'shell.js'];
 const assets = new Map(names.map(name => [name, fs.readFileSync(path.join(root, 'research_workspace/static', name))]));
 const report = {output, startedAt: new Date().toISOString(), mode: 'offline real shell/manage/research/bilingual with synthetic reader bridge', checks: [], pageErrors: [], unexpectedRequests: [], sha256: {}, limitations: ['The reader bridge is a protocol fixture. Real PDF rendering, server execution and model quality are outside this test.']};
 for (const [name, bytes] of assets) report.sha256[name] = crypto.createHash('sha256').update(bytes).digest('hex');
@@ -33,7 +33,7 @@ const harness = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><
 <main id="workspace"><button id="readerReturnButton" hidden>返回文字核对</button><p id="fixtureEvidence">Synthetic reader</p></main><nav class="mobile-navigation"></nav>
 <div id="moduleReturnBar" hidden><button id="moduleReturnButton" type="button">返回文字核对</button></div><section id="moduleRoot" class="module-root" hidden></section>
 <dialog id="accountDialog"><button id="closeAccount">关闭</button><p id="accountDescription"></p><form id="accountForm"></form><p id="accountStatus"></p><button id="logoutButton">退出</button></dialog>
-${['manage.js', 'bilingual.js', 'research.js'].map(name => `<script src="/static/${name}"></script>`).join('')}
+${['notices.js', 'manage.js', 'bilingual.js', 'research.js'].map(name => `<script src="/static/${name}"></script>`).join('')}
 <script>
 window.fixture={counts:{manage:{mount:0,destroy:0,suspend:0,resume:0},research:{mount:0,destroy:0,suspend:0,resume:0}},requests:[],evidence:[],mode:'immediate',release:null,alerts:[]};
 window.alert=message=>fixture.alerts.push(message);
@@ -156,13 +156,13 @@ async function main() {
     check('ordinary task navigation does not inherit an old management return', await page.locator('#moduleReturnBar').isHidden());
     await readerFromTranslation(); await page.locator('#readerReturnButton').click(); await translationReady();
     check('a saved translation can independently return from PDF', (await state()).module === 'research' && await page.locator('#moduleReturnBar').isHidden() && posts.length === 2);
-    await page.evaluate(() => {fixture.mode = 'failure';}); await page.locator('.rb-panel-source .rb-evidence').first().evaluate(button => button.click()); await page.locator('.rb-feedback:not([hidden])').waitFor();
+    await page.evaluate(() => {fixture.mode = 'failure';}); await page.locator('.rb-panel-source .rb-evidence').first().evaluate(button => button.click()); await page.locator('.app-notice[data-notice-source="rb-feedback"]').waitFor();
     check('failed PDF navigation stays on the result without false return state', (await state()).module === 'research' && await page.locator('#readerReturnButton').isHidden());
     await page.evaluate(() => {fixture.mode = 'deferred'; fixture.oldEvidence = fixture.researchOptions.onEvidence;}); await page.locator('.rb-panel-source .rb-evidence').first().evaluate(button => button.click()); await page.waitForFunction(() => typeof fixture.release === 'function'); await selectModule('data'); await page.evaluate(() => fixture.release()); await page.waitForTimeout(50);
     check('late source response cannot overtake a newer module', (await state()).module === 'data' && await page.locator('#readerReturnButton').isHidden());
     await page.evaluate(() => {fixture.mode = 'immediate'; return fixture.oldEvidence({document_id: 'fixture-alpha', run_id: 'run-alpha', page: 2});});
     check('destroyed task evidence callbacks cannot reopen reader', (await state()).module === 'data');
-    await openText(); postMode = 'failure'; await translate(); await page.waitForFunction(() => fixture.alerts.some(message => message.includes('Synthetic task creation failure')) || document.querySelector('.rm-notice')?.textContent.includes('Synthetic task creation failure'));
+    await openText(); postMode = 'failure'; await translate(); await page.waitForFunction(() => fixture.alerts.some(message => message.includes('Synthetic task creation failure')) || document.querySelector('.app-notice[data-notice-source="rm-notice"]')?.textContent.includes('Synthetic task creation failure'));
     check('failed translation submission keeps original text accessible', (await state()).module === 'manage' && await page.locator('#moduleReturnBar').isHidden());
     postMode = 'deferred'; await translate(); await page.waitForFunction(() => fixture.requests.filter(item => item.method === 'POST').length === 4); await waitForNode(() => pendingPost, 'Synthetic translation POST did not arrive');
     await page.evaluate(() => {fixture.oldTranslate = fixture.manageOptions.onTranslate;}); await selectModule('data'); postMode = 'immediate'; pendingPost(); pendingPost = null; await page.waitForTimeout(100);

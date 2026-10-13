@@ -87,41 +87,8 @@
     return result;
   }
 
-  const notices = new Map();
   function notice(message, error = false) {
-    // Reuse the first card; concurrent messages have independent lifetimes.
-    const card = ui.appNotice.hidden ? ui.appNotice : ui.appNotice.cloneNode(true);
-    if (card !== ui.appNotice) {
-      card.removeAttribute("id");
-      card.querySelectorAll("[id]").forEach(node => node.removeAttribute("id"));
-      ui.appNotice.parentElement.append(card);
-    }
-    let controls = notices.get(card);
-    if (!controls) {
-      let timer;
-      const pause = () => { clearTimeout(timer); timer = null; };
-      const dismiss = () => {
-        pause();
-        if (card === ui.appNotice) card.hidden = true;
-        else { card.remove(); notices.delete(card); }
-      };
-      const resume = () => {
-        pause();
-        if (!card.hidden && !card.matches(":hover") && !card.contains(document.activeElement)) {
-          timer = setTimeout(dismiss, 2000);
-        }
-      };
-      card.addEventListener("mouseenter", pause);
-      card.addEventListener("mouseleave", resume);
-      card.addEventListener("focusin", pause);
-      card.addEventListener("focusout", event => { if (!card.contains(event.relatedTarget)) resume(); });
-      card.querySelector(".icon-button").addEventListener("click", dismiss);
-      controls = {resume}; notices.set(card, controls);
-    }
-    card.querySelector(".notice-text").textContent = message;
-    card.classList.toggle("is-error", error);
-    card.hidden = false;
-    controls.resume();
+    window.ResearchNotices.show(message, error);
   }
 
   function setConnection(connected) {

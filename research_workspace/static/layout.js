@@ -45,7 +45,7 @@
     }
     function show(message, error = false) {
       if (!alive) return;
-      notice.textContent = message; notice.classList.toggle("is-error", error); notice.hidden = !message;
+      window.ResearchNotices.show(message, error, notice);
     }
     function panel(title, description) {
       const card = element("section", "rm-card");

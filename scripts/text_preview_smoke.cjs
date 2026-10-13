@@ -21,7 +21,7 @@ const report = {
   source:{gitHead:execFileSync('git', ['rev-parse', 'HEAD'], {cwd:root, encoding:'utf8', windowsHide:true}).trim(), sha256:{}},
   limitations:['Synthetic source pages verify image geometry and UI behavior; this does not validate real PDF extraction or model translation quality.']
 };
-const names = ['styles.css', 'shell.css', 'manage.css', 'manage.js'];
+const names = ['notices.js','styles.css', 'shell.css', 'manage.css', 'manage.js'];
 const assets = new Map(names.map(name => [name, fs.readFileSync(path.join(root, 'research_workspace/static', name))]));
 for (const [name, content] of assets) report.source.sha256[name] = crypto.createHash('sha256').update(content).digest('hex');
 // The harness mounts the module directly; record the normal entrypoint as well
@@ -54,7 +54,7 @@ function structureData(documentId) {
 function pageSvg(label) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800"><rect width="600" height="800" fill="white"/><text x="45" y="50" font-size="21" fill="#173e41">SYNTHETIC ${label}</text>${Array.from({length:20}, (_,i) => `<rect x="60" y="${100+i*25}" width="${430-i%3*20}" height="6" fill="#526875"/>`).join('')}</svg>`;
 }
-const harness = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${names.filter(name => name.endsWith('.css')).map(name => `<link rel="stylesheet" href="/static/${name}">`).join('')}</head><body><main id="moduleRoot" class="module-root"></main><script src="/static/manage.js"></script><script>
+const harness = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${names.filter(name => name.endsWith('.css')).map(name => `<link rel="stylesheet" href="/static/${name}">`).join('')}</head><body><main id="moduleRoot" class="module-root"></main><script src="/static/notices.js"></script><script src="/static/manage.js"></script><script>
 window.fixtureTranslations=[];window.fixtureEvidence=[];
 window.fixtureController=ResearchManage.mount(document.querySelector('#moduleRoot'),{
  api:async(url,init)=>{if(init?.method && init.method!=='GET')throw new Error('Fixture forbids writes');const r=await fetch(url);if(!r.ok)throw new Error('Fixture request failed');return r.json();},

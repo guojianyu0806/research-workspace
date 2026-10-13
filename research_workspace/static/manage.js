@@ -108,9 +108,7 @@
 
     function showNotice(message, error = false) {
       if (!alive) return;
-      notice.textContent = message;
-      notice.classList.toggle("is-error", error);
-      notice.hidden = false;
+      window.ResearchNotices.show(message, error, notice);
     }
     function empty(target, title, message) {
       const box = el("div", "rm-empty");

@@ -102,7 +102,7 @@ async function main() {
   });
   const dialog = page.locator('#examplesDialog');
   const scenario = id => dialog.locator('.examples-scenario').filter({has:page.getByRole('heading',{name:catalog.scenarios.find(item => item.id === id).title,exact:true})}).getByRole('button',{name:'准备此任务',exact:true});
-  async function open() { await page.locator('#examplesButton').click(); await dialog.locator('.examples-paper').nth(2).waitFor(); }
+  async function open() { for (const close of await page.locator('.notice-stack .app-notice:visible .icon-button').all()) await close.click(); await page.locator('#examplesButton').click(); await dialog.locator('.examples-paper').nth(2).waitFor(); }
   async function closed() { await page.waitForFunction(() => !document.querySelector('#examplesDialog')?.open); }
   async function screenshot(name) {const file=name+'.png';await page.screenshot({path:path.join(output,file),fullPage:true});report.snapshots.push({name,file});}
   try {
@@ -134,8 +134,8 @@ async function main() {
     check('chart-display-keeps-source-and-downloads', await page.locator('.rs-chart-image').first().isVisible() && ['svg','py','json'].every(format => downloads.includes(`/api/charts/fixture-chart/${format}`)) && await page.locator('.rs-example-source a').getAttribute('href') === catalog.dataset.source_url, {downloads});
     await screenshot('1440-synthetic-chart-response');
     failCharts = 1; await open(); await chartButton.click();
-    await dialog.locator('.examples-notice.is-error').waitFor();
-    check('chart-failure-keeps-dialog-open-with-retry-enabled', await dialog.evaluate(el => el.open) && await chartButton.isEnabled() && (await dialog.locator('.examples-notice').textContent()).includes('SYNTHETIC chart failure'));
+    await dialog.locator('.app-notice.is-error').waitFor();
+    check('chart-failure-keeps-dialog-open-with-retry-enabled', await dialog.evaluate(el => el.open) && await chartButton.isEnabled() && (await dialog.locator('.app-notice').textContent()).includes('SYNTHETIC chart failure'));
     await chartButton.click(); await closed();
     check('chart-retry-reuses-existing-dataset', requestCount('POST','/api/datasets') === 0 && requestCount('POST','/charts') === 3);
     datasets = [{...dataset,id:'fixture-decoy',sha256:'0'.repeat(64)}];
@@ -151,11 +151,11 @@ async function main() {
     }
     docs = [...validDocs,oldAttention]; await open();
     docs = docs.map(doc => doc.id === 'fixture-bert' ? {...doc,archived_at:timestamp} : doc);
-    await scenario('bert-rag-compare').click(); await dialog.locator('.examples-notice.is-error').waitFor();
-    check('readiness-is-rechecked-after-dialog-was-opened', await dialog.evaluate(el => el.open) && (await dialog.locator('.examples-notice').textContent()).includes('BERT') && requestCount('POST','/api/research/tasks') === 0);
+    await scenario('bert-rag-compare').click(); await dialog.locator('.app-notice.is-error').waitFor();
+    check('readiness-is-rechecked-after-dialog-was-opened', await dialog.evaluate(el => el.open) && (await dialog.locator('.app-notice').textContent()).includes('BERT') && requestCount('POST','/api/research/tasks') === 0);
     await page.keyboard.press('Escape'); await closed(); docs = [...validDocs,oldAttention];
     failCatalog = 1; await page.locator('#examplesButton').click(); await dialog.getByRole('button',{name:'重新加载',exact:true}).waitFor();
-    check('catalog-fetch-failure-offers-retry', await dialog.locator('.examples-notice.is-error').isVisible());
+    check('catalog-fetch-failure-offers-retry', await dialog.locator('.app-notice.is-error').isVisible());
     await dialog.getByRole('button',{name:'重新加载',exact:true}).click(); await dialog.locator('.examples-paper').nth(2).waitFor();
     check('catalog-retry-restores-three-paper-cards', await dialog.locator('.examples-paper').count() === 3);
     for (const width of [390,320]) {

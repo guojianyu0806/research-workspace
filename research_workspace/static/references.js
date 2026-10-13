@@ -64,7 +64,7 @@
 
     function message(text, error = false) {
       if (!alive) return;
-      notice.textContent = text; notice.hidden = !text; notice.classList.toggle("is-error", error);
+      window.ResearchNotices.show(text, error, notice);
     }
     function controls() {
       if (!alive) return;
