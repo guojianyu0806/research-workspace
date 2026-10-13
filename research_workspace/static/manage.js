@@ -45,6 +45,8 @@
     let structureData = null;
     let currentPage = null;
     let pageLoading = false;
+    let pageReadSelection = null;
+    let pageReadError = "";
     let selection = null;
     let invalidSelection = false;
     let pagePreview = null;
@@ -54,6 +56,7 @@
     let activeTab = "metadata";
     const extensions = {};
     const pageCache = new Map();
+    const pendingPages = new Map();
     const referenceElements = new Map();
     const textElements = new Map();
     const translateButtons = new Map();
@@ -96,6 +99,11 @@
     content.append(...Object.values(panes));
     shell.append(header, notice, documentBar, tabs, content);
     container.replaceChildren(shell);
+    const discardPendingSelection = () => { if (pageLoading) pageReadSelection = null; };
+    // Inert can hide the old range. Restore it after failure only if the user
+    // has not started another pointer or keyboard interaction while waiting.
+    shell.addEventListener("pointerdown", discardPendingSelection, true);
+    shell.addEventListener("keydown", discardPendingSelection, true);
 
     function showNotice(message, error = false) {
       if (!alive) return;
@@ -209,6 +217,7 @@
       selectedId = id;
       selectedDocument = documents.find((doc) => doc.id === id) || null;
       currentPage = null; pageLoading = false; selection = null; invalidSelection = false; structureData = null;
+      pageReadSelection = null; pageReadError = "";
       pageCache.clear(); referenceElements.clear(); textElements.clear(); translateButtons.clear();
       if (!selectedDocument) return;
       const doc = selectedDocument;
@@ -682,10 +691,15 @@
     }
     async function readPage(documentId, page, runId) {
       const key = `${documentId}:${runId || "default"}:${page}`;
+      if (pendingPages.has(key)) return pendingPages.get(key);
       if (!pageCache.has(key)) {
         const query = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
-        const request = api(`${pathFor(documentId)}/pages/${page}${query}`).catch((error) => { pageCache.delete(key); throw error; });
+        const request = api(`${pathFor(documentId)}/pages/${page}${query}`).catch((error) => {
+          if (pageCache.get(key) === request) pageCache.delete(key);
+          throw error;
+        }).finally(() => { if (pendingPages.get(key) === request) pendingPages.delete(key); });
         pageCache.set(key, request);
+        pendingPages.set(key, request);
       }
       return pageCache.get(key);
     }
@@ -695,28 +709,46 @@
       if (!doc) return;
       if (!Number.isInteger(page) || page < 1 || page > doc.page_count) { showNotice(`请输入1至${doc.page_count}之间的页码。`, true); return; }
       const epoch = ++pageEpoch;
-      pageLoading = true;
-      currentPage = null; pagePreview = null;
-      selection = null; invalidSelection = false; textElements.clear(); translateButtons.clear();
-      updateSelectionHint();
       const body = panes.text.querySelector(".rm-page-blocks");
       const input = panes.text.querySelector(".rm-page-number");
+      const hint = panes.text.querySelector(".rm-selection-hint");
+      if (!pageLoading) {
+        const selected = window.getSelection();
+        pageReadSelection = selected?.rangeCount && body.contains(selected.anchorNode) && body.contains(selected.focusNode)
+          ? {anchor:selected.anchorNode, anchorOffset:selected.anchorOffset, focus:selected.focusNode, focusOffset:selected.focusOffset} : null;
+      }
+      pageLoading = true; pageReadError = "";
+      let failed = false;
+      const visibleHere = () => alive && !suspended && activeTab === "text" && body.isConnected && container.contains(shell) && !container.hidden;
+      const preserveScroll = operation => {
+        const restore = visibleHere(), top = container.scrollTop, left = container.scrollLeft;
+        operation();
+        if (restore) { container.scrollTop = top; container.scrollLeft = left; }
+      };
       if (input) input.value = page;
-      empty(body, `正在读取第 ${page} 页`, "原文将使用可用解析版本的页面记录。");
+      // Keep the previous page's height while loading. Clearing it here would
+      // force the browser to clamp the module scroll position to the top.
+      preserveScroll(() => {
+        body.setAttribute("aria-busy", "true"); body.inert = true;
+        hint.classList.remove("is-error");
+        hint.textContent = `正在读取第 ${page} 页…${currentPage ? ` 暂时保留第 ${currentPage.page} 页内容。` : ""}`;
+      });
       const runId = pageOptions.runId || (doc.available_run || doc.current_run)?.id;
       try {
-        // An explicit reread must see new persisted pages after worker progress.
-        pageCache.delete(`${doc.id}:${runId || "default"}:${page}`);
+        // Explicit rereads see parser progress; repeated clicks share an
+        // already pending request instead of launching duplicate reads.
+        const key = `${doc.id}:${runId || "default"}:${page}`;
+        if (!pendingPages.has(key)) pageCache.delete(key);
         const result = await readPage(doc.id, page, runId);
         if (!alive || epoch !== pageEpoch || doc.id !== selectedId) return;
-        currentPage = result;
-        body.replaceChildren();
+        const fragment = document.createDocumentFragment();
+        const nextTextElements = new Map(), nextTranslateButtons = new Map();
         const layout = el("div", "rm-text-layout");
         const list = el("div", "rm-text-list");
-        pagePreview = createPagePreview(doc, result);
-        layout.append(createTextOutline(), list, pagePreview.element);
-        if (result.notice) body.append(el("p", "rm-warning", result.notice));
-        if (result.error) body.append(el("p", "rm-warning", result.error));
+        const nextPreview = createPagePreview(doc, result);
+        layout.append(createTextOutline(), list, nextPreview.element);
+        if (result.notice) fragment.append(el("p", "rm-warning", result.notice));
+        if (result.error) fragment.append(el("p", "rm-warning", result.error));
         if (!result.blocks?.length) {
           const message = result.status === "pending" ? "这一页尚未处理完成，请稍后刷新文献。" : "这一页没有可提取文字。请先检查解析或OCR结果。";
           list.append(el("p", "rm-empty-inline", message));
@@ -734,7 +766,7 @@
           text.tabIndex = 0; text.setAttribute("aria-label", `可选择的原文文本块 ${index + 1}`);
           text.addEventListener("focus", () => pagePreview?.setBlock(block.id));
           text.addEventListener("click", () => pagePreview?.setBlock(block.id));
-          textElements.set(block.id, text);
+          nextTextElements.set(block.id, text);
           const translate = btn("翻译整块", () => act(translate, async () => {
             if (typeof onTranslate !== "function") throw new Error("当前未连接翻译任务入口。");
             if (invalidSelection) throw new Error("请只在同一个文本块内选择要翻译的文字。");
@@ -749,26 +781,53 @@
           }), "rm-button rm-primary");
           translate.addEventListener("mousedown", (event) => event.preventDefault());
           translate.disabled = typeof onTranslate !== "function";
-          translateButtons.set(block.id, translate);
+          nextTranslateButtons.set(block.id, translate);
           actions.append(preview, evidenceButton(evidence, "定位原文"), translate);
           article.append(heading, text); list.append(article);
         });
-        body.append(layout);
-        pagePreview.setBlock(result.blocks?.[0]?.id);
-        updateSelectionHint();
+        fragment.append(layout);
+        preserveScroll(() => {
+          const selected = window.getSelection();
+          if (selected?.rangeCount && body.contains(selected.getRangeAt(0).commonAncestorContainer)) selected.removeAllRanges();
+          currentPage = result; pagePreview = nextPreview;
+          selection = null; invalidSelection = false;
+          textElements.clear(); translateButtons.clear();
+          for (const [id, text] of nextTextElements) textElements.set(id, text);
+          for (const [id, button] of nextTranslateButtons) translateButtons.set(id, button);
+          body.replaceChildren(fragment);
+          pagePreview.setBlock(result.blocks?.[0]?.id);
+          updateSelectionHint();
+        });
         return result;
-      } catch (error) { if (alive && epoch === pageEpoch) empty(body, "无法读取本页文字", error.message || String(error)); }
-      finally { if (alive && epoch === pageEpoch) pageLoading = false; }
+      } catch (error) {
+        if (alive && epoch === pageEpoch && doc.id === selectedId) preserveScroll(() => {
+          failed = true;
+          pageReadError = `第 ${page} 页读取失败${currentPage ? `，仍显示第 ${currentPage.page} 页` : ""}。${error.message || String(error)} 请点击“读取本页文字”重试。`;
+          hint.classList.add("is-error");
+          hint.textContent = pageReadError;
+        });
+      } finally {
+        if (alive && epoch === pageEpoch) {
+          pageLoading = false; body.inert = false; body.setAttribute("aria-busy", "false");
+          const selected = window.getSelection();
+          if (failed && pageReadSelection && visibleHere() && !selected?.toString()) {
+            const {anchor, anchorOffset, focus, focusOffset} = pageReadSelection;
+            if (body.contains(anchor) && body.contains(focus)) selected.setBaseAndExtent(anchor, anchorOffset, focus, focusOffset);
+          }
+          pageReadSelection = null;
+          if (failed && visibleHere()) selectionChanged();
+        }
+      }
     }
     function updateSelectionHint() {
       const hint = panes.text.querySelector(".rm-selection-hint");
       if (!hint) return;
-      hint.classList.toggle("is-error", invalidSelection);
-      hint.textContent = invalidSelection ? "选区跨越了文本块，请在同一个块内重新选择。" : selection ? `已选择 ${selection.text.length} 个字符，将翻译对应文本块内的选定片段。` : "尚未选择文字；每个文本块都可以单独翻译。";
+      hint.classList.toggle("is-error", invalidSelection || Boolean(pageReadError));
+      hint.textContent = invalidSelection ? "选区跨越了文本块，请在同一个块内重新选择。" : pageReadError || (selection ? `已选择 ${selection.text.length} 个字符，将翻译对应文本块内的选定片段。` : "尚未选择文字；每个文本块都可以单独翻译。");
       for (const [id, button] of translateButtons) button.textContent = selection?.blockId === id ? "翻译所选文字" : "翻译整块";
     }
     function selectionChanged() {
-      if (!alive || suspended || sourceDialog || activeTab !== "text") return;
+      if (!alive || suspended || pageLoading || sourceDialog || activeTab !== "text") return;
       const selected = window.getSelection();
       // Keep the exact DOM substring: Selection.toString() collapses PDF line
       // breaks in normal white-space mode, but the backend checks source text.
@@ -808,7 +867,7 @@
         options.invalidateEvidenceNavigation?.();
         clearExtensions();
         document.removeEventListener("selectionchange", selectionChanged);
-        pageCache.clear(); shell.remove();
+        pageCache.clear(); pendingPages.clear(); shell.remove();
         if (instances.get(container) === controller) instances.delete(container);
       },
     };

@@ -197,6 +197,8 @@
 .rm-line-mode input{width:17px;height:17px;margin:0;accent-color:var(--primary)}
 .rm-line-mode span{white-space:nowrap}
 .rm-selection-hint{padding:8px 12px;margin:0 0 14px!important}
+.rm-page-blocks{overflow-anchor:none}
+.rm-page-blocks[aria-busy=true]{cursor:progress}
 .rm-text-layout{display:grid;grid-template-columns:minmax(0,1fr) 218px;gap:18px;align-items:start}
 .rm-text-list{min-width:0;display:flex;flex-direction:column;gap:14px}
 .rm-text-list>.rm-text-block{margin:0;padding:16px 18px;transition:border-color .15s,box-shadow .15s}

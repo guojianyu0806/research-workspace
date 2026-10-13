@@ -250,7 +250,7 @@ async function main() {
     // Force a fresh page request to complete only after a document switch.
     hold = item => item.documentId === 'fixture-alpha' && item.page === 3 && !item.image;
     await read(3);await waitPending();
-    check('loading another page clears old preview highlight',await page.locator('.rm-preview-highlight:visible').count() === 0);
+    check('loading another page preserves old preview while freezing stale actions',await page.locator('.rm-preview-highlight:visible').count() === 1 && await page.locator('.rm-page-blocks').evaluate(el=>el.inert && el.getAttribute('aria-busy')==='true') && (await page.locator('.rm-preview-caption').textContent()).includes('第 2 页'));
     await page.getByRole('combobox',{name:'选择文献，含已归档文献'}).selectOption('fixture-beta');
     await expectPage('fixture-beta',1);await preview(0);await imageReady();
     await releaseAll();
