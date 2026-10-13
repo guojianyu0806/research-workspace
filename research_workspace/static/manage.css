@@ -197,7 +197,9 @@
 .rm-line-mode input{width:17px;height:17px;margin:0;accent-color:var(--primary)}
 .rm-line-mode span{white-space:nowrap}
 .rm-selection-hint{padding:8px 12px;margin:0 0 14px!important}
-.rm-page-blocks{overflow-anchor:none}
+.rm-page-blocks{display:contents}
+.rm-text-layout{overflow-anchor:none}
+.rm-page-blocks>.rm-warning,.rm-page-blocks>.rm-empty{grid-column:2/-1}
 .rm-page-blocks[aria-busy=true]{cursor:progress}
 .rm-text-layout{display:grid;grid-template-columns:minmax(0,1fr) 218px;gap:18px;align-items:start}
 .rm-text-list{min-width:0;display:flex;flex-direction:column;gap:14px}
@@ -244,7 +246,8 @@
 .rm-text-outline{position:sticky;top:16px;min-width:0;padding:12px;border:1px solid var(--section-line);border-radius:8px;background:var(--surface)}
 .rm-text-outline>summary{font-size:16px;font-weight:600;cursor:pointer;color:var(--ink)}
 .rm-text-outline nav{margin-top:10px;max-height:60vh;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
-.rm-text-outline .rm-outline-item[aria-current]{background:var(--primary-soft);border-left-color:var(--primary);color:var(--primary);font-weight:600}
+.rm-text-outline .rm-outline-item{font-weight:500}
+.rm-text-outline .rm-outline-item[aria-current]{background:var(--primary-soft);border-left-color:var(--primary);color:var(--primary)}
 .rm-text-list .rm-text-block{scroll-margin-block:16px}
 .rm-source-dialog{width:min(1100px,calc(100vw - 32px));height:min(920px,calc(100dvh - 32px));max-width:none;max-height:none;padding:0;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:0 18px 70px #18343f40;overflow:hidden}
 .rm-source-dialog[open]{display:flex;flex-direction:column;animation:rm-source-open .16s ease-out}
@@ -266,6 +269,7 @@
 .rm-source-highlight{position:absolute;border:2px solid #ad6018;background:#efb35140;pointer-events:none}
 @keyframes rm-source-open{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @container(max-width:1080px){
+  .rm-page-blocks>.rm-warning,.rm-page-blocks>.rm-empty{grid-column:1/-1}
   .rm-text-layout{grid-template-columns:minmax(0,1fr) 200px}
   .rm-text-outline{position:static;grid-column:1/-1}
   .rm-text-outline nav{max-height:180px}

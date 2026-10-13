@@ -149,7 +149,15 @@
     }
   }
   window.ResearchShell = Object.freeze({activate});
-  document.querySelectorAll('[data-module]').forEach(button => button.addEventListener('click',()=>activate(button.dataset.module)));
+  document.querySelectorAll('[data-module]').forEach(button => button.addEventListener('click',()=>{
+    if (button.dataset.module !== activeModule) activate(button.dataset.module);
+    else {
+      bridge.invalidateEvidenceNavigation?.();
+      evidenceOrigin = null;
+      clearReturnHistory();
+      updateReturnButtons();
+    }
+  }));
   window.addEventListener('research:reader',()=>activate('reader', {
     retainCurrent:['manage','research'].includes(activeModule) && evidenceOrigin?.controller === controller && evidenceOrigin?.request === revision,
   }));

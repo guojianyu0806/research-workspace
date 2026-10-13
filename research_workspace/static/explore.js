@@ -93,8 +93,8 @@
     const layout = node("div", "ex-discovery-layout");
     const main = node("div", "ex-discovery-main");
     const tabs = node("div", "ex-tabs");
-    const searchTab = button("公开检索", () => switchView("search"), "ex-tab is-active");
-    const recommendTab = button("本地推荐", () => switchView("recommendations"), "ex-tab");
+    const searchTab = button("公开检索", () => { if (activeView !== "search") switchView("search"); }, "ex-tab is-active");
+    const recommendTab = button("本地推荐", () => { if (activeView !== "recommendations") switchView("recommendations"); }, "ex-tab");
     searchTab.setAttribute("aria-pressed", "true");
     recommendTab.setAttribute("aria-pressed", "false");
     tabs.append(searchTab, recommendTab);

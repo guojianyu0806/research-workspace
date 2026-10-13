@@ -38,6 +38,7 @@
     let refreshEpoch = 0;
     let documentEpoch = 0;
     let pageEpoch = 0;
+    let textNavigationEpoch = 0;
     let diffEpoch = 0;
     let documents = [];
     let selectedId = null;
@@ -147,6 +148,7 @@
     function switchTab(key, loadDefault = true) {
       sourceDialog?.close();
       options.invalidateEvidenceNavigation?.();
+      if (activeTab !== key) textNavigationEpoch++;
       activeTab = key;
       for (const name of Object.keys(panes)) {
         panes[name].hidden = name !== key;
@@ -214,6 +216,7 @@
       const epoch = ++documentEpoch;
       clearExtensions();
       pageEpoch++; diffEpoch++;
+      textNavigationEpoch++;
       selectedId = id;
       selectedDocument = documents.find((doc) => doc.id === id) || null;
       currentPage = null; pageLoading = false; selection = null; invalidSelection = false; structureData = null;
@@ -486,8 +489,18 @@
       const documentId = selectedId;
       if (evidence.document_id && evidence.document_id !== documentId) return;
       switchTab("text", false);
-      const result = await loadPage(evidence.page, { runId: evidence.run_id });
-      if (!result || !alive || activeTab !== "text" || selectedId !== documentId) return;
+      const navigation = ++textNavigationEpoch;
+      const runId = evidence.run_id || (selectedDocument.available_run || selectedDocument.current_run)?.id;
+      // Chapter links within the displayed page only change the reading target.
+      // Re-fetching here rebuilt both the text and the chapter list on every click.
+      const samePage = !pageLoading && currentPage?.page === evidence.page && (!runId || currentPage.run_id === runId);
+      if (samePage) {
+        panes.text.querySelector('.rm-page-number').value = evidence.page;
+        pageReadError = "";
+        updateSelectionHint();
+      }
+      const result = samePage ? currentPage : await loadPage(evidence.page, { runId, navigation });
+      if (!result || !alive || suspended || navigation !== textNavigationEpoch || activeTab !== "text" || selectedId !== documentId) return;
       const id = evidence.block_id || evidence.id;
       let block = result.blocks?.find(item => item.id === id);
       if (!block && Array.isArray(evidence.bbox) && evidence.bbox.length === 4) {
@@ -498,7 +511,7 @@
       if (block) {
         const text = textElements.get(block.id);
         text?.focus({ preventScroll: true });
-        text?.closest(".rm-text-block")?.scrollIntoView({ block: "start", behavior: "auto" });
+        text?.closest(".rm-text-block")?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
       } else {
         const hint = panes.text.querySelector(".rm-selection-hint");
         hint.textContent = `已打开第 ${result.page} 页，未能可靠匹配文字块。请对照原页确认位置。`;
@@ -617,7 +630,9 @@
       hint.setAttribute("aria-live", "polite");
       const body = el("div", "rm-page-blocks");
       empty(body, "选择页码读取文字", "解析完成的页面可显示原文、定位区域和翻译入口。");
-      root.append(toolbar, hint, body);
+      const layout = el("div", "rm-text-layout");
+      layout.append(createTextOutline(), body);
+      root.append(toolbar, hint, layout);
     }
     function createPagePreview(doc, result) {
       const preview = el("aside", "rm-page-preview");
@@ -680,8 +695,18 @@
             article.classList.toggle("is-previewed", blockId === id);
             article.querySelector(".rm-preview-block")?.setAttribute("aria-pressed", String(blockId === id));
           }
+          // Reading a paragraph under a heading keeps that chapter selected;
+          // otherwise each body click would remove the navigation marker.
+          let chapterId = null;
+          if (index >= 0) for (const heading of structureData?.headings || []) {
+            const source = heading.evidence;
+            if (!source?.page || source.page > result.page) continue;
+            const headingId = source.block_id || source.id;
+            const position = result.blocks.findIndex(block => block.id === headingId);
+            if (source.page < result.page || (position >= 0 && position <= index)) chapterId = headingId;
+          }
           for (const link of panes.text.querySelectorAll(".rm-text-outline .rm-outline-item")) {
-            if (id && link.dataset.blockId === id) link.setAttribute("aria-current", "location");
+            if (chapterId && link.dataset.blockId === chapterId) link.setAttribute("aria-current", "location");
             else link.removeAttribute("aria-current");
           }
           renderHighlight();
@@ -708,6 +733,7 @@
       const doc = selectedDocument;
       if (!doc) return;
       if (!Number.isInteger(page) || page < 1 || page > doc.page_count) { showNotice(`请输入1至${doc.page_count}之间的页码。`, true); return; }
+      if (!pageOptions.navigation) textNavigationEpoch++;
       const epoch = ++pageEpoch;
       const body = panes.text.querySelector(".rm-page-blocks");
       const input = panes.text.querySelector(".rm-page-number");
@@ -743,10 +769,8 @@
         if (!alive || epoch !== pageEpoch || doc.id !== selectedId) return;
         const fragment = document.createDocumentFragment();
         const nextTextElements = new Map(), nextTranslateButtons = new Map();
-        const layout = el("div", "rm-text-layout");
         const list = el("div", "rm-text-list");
         const nextPreview = createPagePreview(doc, result);
-        layout.append(createTextOutline(), list, nextPreview.element);
         if (result.notice) fragment.append(el("p", "rm-warning", result.notice));
         if (result.error) fragment.append(el("p", "rm-warning", result.error));
         if (!result.blocks?.length) {
@@ -785,7 +809,7 @@
           actions.append(preview, evidenceButton(evidence, "定位原文"), translate);
           article.append(heading, text); list.append(article);
         });
-        fragment.append(layout);
+        fragment.append(list, nextPreview.element);
         preserveScroll(() => {
           const selected = window.getSelection();
           if (selected?.rangeCount && body.contains(selected.getRangeAt(0).commonAncestorContainer)) selected.removeAllRanges();
@@ -858,7 +882,7 @@
     const controller = {
       ready: null,
       refresh,
-      suspend() { sourceDialog?.close(); suspended = true; },
+      suspend() { sourceDialog?.close(); suspended = true; textNavigationEpoch++; },
       resume() { suspended = false; },
       destroy() {
         if (!alive) return;

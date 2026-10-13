@@ -120,12 +120,23 @@
     return statusLabels[run.status] || "状态待确认";
   }
 
+  let libraryStamp = "";
   function renderLibrary() {
     ui.documentCount.textContent = String(state.documents.length);
     ui.documentList.setAttribute("aria-busy", "false");
-    ui.documentList.replaceChildren();
     const filter = ui.documentFilter.value.trim().toLocaleLowerCase();
     const documents = state.documents.filter((doc) => `${doc.title || ""} ${doc.filename || ""}`.toLocaleLowerCase().includes(filter));
+    const stamp = JSON.stringify([filter, documents]);
+    if (documents.length && stamp === libraryStamp && ui.documentList.querySelectorAll('.document-row').length === documents.length) {
+      for (const button of ui.documentList.querySelectorAll('.document-row')) {
+        const selected = button.dataset.documentId === state.selectedId;
+        button.classList.toggle('is-selected', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      }
+      return;
+    }
+    libraryStamp = stamp;
+    ui.documentList.replaceChildren();
     if (!documents.length) {
       const empty = element("div", "list-message");
       empty.append(element("strong", "", filter ? "没有匹配的文献" : "文献库还是空的"));
@@ -136,6 +147,7 @@
     documents.forEach((doc) => {
       const button = element("button", `document-row${doc.id === state.selectedId ? " is-selected" : ""}`);
       button.type = "button";
+      button.dataset.documentId = doc.id;
       button.title = doc.filename || documentName(doc);
       button.setAttribute("aria-pressed", String(doc.id === state.selectedId));
       const fileIcon = element("span", "document-file-icon");

@@ -337,15 +337,27 @@
         : taskKind === "draft" ? "生成的是待验证研究框架，不会把计划中的实验当成已完成结果。" : "";
     }
     function renderHistory() {
-      historyList.replaceChildren();
-      if (!state.jobs.length) { historyList.append(node("p", "rs-muted rs-small", "暂无研究任务。")); return; }
+      if (!state.jobs.length) { historyList.replaceChildren(node("p", "rs-muted rs-small", "暂无研究任务。")); return; }
+      const existing = new Map([...historyList.querySelectorAll('.rs-history-item')].map(entry => [entry.dataset.jobId, entry]));
+      const retained = new Set();
+      let index = 0;
       for (const job of state.jobs) {
-        const entry = button(""); entry.className = "rs-history-item";
+        let entry = existing.get(job.id);
+        if (!entry) {
+          entry = button(""); entry.className = "rs-history-item"; entry.dataset.jobId = job.id;
+          entry.append(node("strong", ""), node("span", ""));
+          entry.addEventListener("click", () => selectJob(job.id, true));
+        }
         entry.classList.toggle("is-selected", job.id === state.selectedJob?.id);
-        entry.append(node("strong", "", kindLabels[job.kind] || job.kind),
-          node("span", "", `${statusLabels[job.status] || job.status} · ${dateLabel(job.created_at)}`));
-        entry.addEventListener("click", () => selectJob(job.id, true)); historyList.append(entry);
+        entry.setAttribute("aria-pressed", String(job.id === state.selectedJob?.id));
+        const title = kindLabels[job.kind] || job.kind;
+        const summary = `${statusLabels[job.status] || job.status} · ${dateLabel(job.created_at)}`;
+        if (entry.firstChild.textContent !== title) entry.firstChild.textContent = title;
+        if (entry.lastChild.textContent !== summary) entry.lastChild.textContent = summary;
+        if (historyList.children[index] !== entry) historyList.insertBefore(entry, historyList.children[index] || null);
+        retained.add(entry); index++;
       }
+      for (const entry of [...historyList.children]) if (!retained.has(entry)) entry.remove();
     }
     function openEvidence(source) {
       if (typeof options.onEvidence !== "function") return Promise.resolve();
