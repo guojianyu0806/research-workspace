@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .library import Library, LibraryError
 
 
-PROMPT_VERSION = "research-evidence-v2"
+PROMPT_VERSION = "research-evidence-v3"
 PROMPT_DIRECTORY = Path(__file__).with_name("prompts")
 MAX_DOCUMENTS = 20
 MAX_EVIDENCE = 24
@@ -118,7 +118,8 @@ class RetrievalQueryPayload(StrictModel):
 
 class Citation(StrictModel):
     evidence_id: str = Field(min_length=1, max_length=80)
-    quote: str = Field(min_length=1, max_length=3000)
+    quote: str = Field(default="", max_length=3000)
+    quote_id: str | None = Field(default=None, pattern=r"^Q[1-9][0-9]*$")
 
 
 class Claim(StrictModel):
@@ -309,7 +310,8 @@ class ChatCompletionProvider:
                     # Do not retain a malformed output or copy its contents into logs.
                     messages = messages[:2] + [{"role": "user", "content":
                         "The previous result failed validation: " + issue + ". Return a complete, concise JSON object matching the schema exactly. "
-                        "Use fewer claims and short verbatim quotes. proposed_work is a string, not a list; citations is a list of objects. "
+                        "Use fewer claims. When citation_spans is supplied, choose evidence_id and quote_id and leave quote empty; never transcribe quotes. "
+                        "proposed_work is a string, not a list; citations is a list of objects. "
                         "Architecture edges contain source and target only. Do not repeat the schema or include markdown fences."}]
         raise ModelOutputError("未获得有效模型结果。")
 
@@ -318,12 +320,16 @@ def _prompt(name: str) -> str:
     return (PROMPT_DIRECTORY / f"{name}.txt").read_text(encoding="utf-8")
 
 
-def _normalized(text: str) -> str:
+def _quote_normalized(text: str) -> str:
     # PDF printing ligatures are typography; superscripts/subscripts are facts.
     # Full NFKC would incorrectly make x² and x₂ identical, so do not use it
     # for quote membership or the exact-quotation semantic-review shortcut.
     text = text.translate(str.maketrans({"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st"}))
-    return " ".join(text.casefold().split())
+    return " ".join(text.split())
+
+
+def _normalized(text: str) -> str:
+    return _quote_normalized(text).casefold()
 
 
 _STOP_WORDS = frozenset("the a an of to in on for and or is are was were what which how does do this that from with paper papers please compare 比较 对比 请问 什么 如何 论文 研究 的 了 是 和 与 在 对 请".split())
@@ -564,6 +570,20 @@ class IntelligenceService:
             accepted.append({"source_phrase": item.source_phrase, "text": term})
         return accepted, rejected
 
+    @staticmethod
+    def _needs_mechanism_expansion(question: str) -> bool:
+        """Expand multi-part English explanation requests, not routine lookups.
+
+        The rule uses request structure, never a named method or a known answer.
+        A trailing instruction to cite the paper is not an extra research facet.
+        """
+        request = re.sub(r"[.;,]?\s*(?:\b(?:and|then)\s+)?\b(?:please\s+)?(?:cite|quote|provide references)\b.*$", "", question,
+                         flags=re.I | re.S)
+        mechanism = re.search(r"\b(?:why|how|advantages?|benefits?|mechanisms?|trade[- ]?offs?)\b",
+                              request, re.I)
+        facets = re.search(r"\b(?:and|versus|vs|compared|relative to)\b|[,;]", request, re.I)
+        return bool(mechanism and facets)
+
     async def retrieve_for_question(self, question: str, document_ids: list[str], *, limit: int = 12,
                                    expansion: Literal["auto", "off", "always"] = "auto",
                                    check_cancel=None) -> dict:
@@ -571,7 +591,8 @@ class IntelligenceService:
 
         Auto expands Chinese questions over predominantly English source samples,
         or Greek-symbol questions whose symbols are absent from the source text.
-        Ordinary English lexical queries remain free of a query-generation call.
+        Multi-part English mechanism/advantage questions can also expand once;
+        ordinary English lexical queries remain free of a query-generation call.
         Every ranking uses one frozen, canonical document/run snapshot, including
         when a reparse completes while the optional model request is in flight.
         """
@@ -590,7 +611,9 @@ class IntelligenceService:
         missing_symbols = symbols and not any(symbol in block.text.casefold() for symbol in symbols for block in blocks)
         trigger = ("explicit_always" if expansion == "always" else
                    "chinese_question_english_sources" if has_chinese and english else
-                   "unmatched_mathematical_symbols" if missing_symbols and english else "not_needed")
+                   "unmatched_mathematical_symbols" if missing_symbols and english else
+                   "english_multifacet_mechanism" if english and not has_chinese
+                   and self._needs_mechanism_expansion(question) else "not_needed")
         eligible = bool(blocks and self.provider.configured and expansion != "off" and trigger != "not_needed")
         info = {"policy": expansion, "trigger": trigger, "status": "not_needed", "calls": 0,
                 "max_calls": 1, "max_output_tokens": MAX_EXPANSION_TOKENS, "rejected_terms": 0}
@@ -693,13 +716,13 @@ class IntelligenceService:
     def _validate_claims(claims: list[Claim], evidence: list[Evidence]) -> set[str]:
         allowed = {block.evidence_id: block for block in evidence}
         used = set()
-        for claim in claims:
-            for citation in claim.citations:
+        for claim_index, claim in enumerate(claims):
+            for citation_index, citation in enumerate(claim.citations):
                 source = allowed.get(citation.evidence_id)
                 if source is None:
                     raise ModelOutputError("模型引用了本次检索范围外的来源，结果已拒绝。")
-                if not citation.quote.strip() or _normalized(citation.quote) not in _normalized(source.text):
-                    raise ModelOutputError("模型引文与检索原文不一致，结果已拒绝。")
+                if not citation.quote.strip() or _quote_normalized(citation.quote) not in _quote_normalized(source.text):
+                    raise ModelOutputError(f"claim[{claim_index}].citations[{citation_index}] 模型引文与检索原文不一致，结果已拒绝。")
                 used.add(citation.evidence_id)
         return used
 
@@ -707,13 +730,52 @@ class IntelligenceService:
     def _trace(step: str, detail: str) -> dict:
         return {"step": step, "detail": detail}
 
+    @staticmethod
+    def _citation_spans(evidence: list[Evidence]) -> dict[str, dict[str, str]]:
+        """Number contiguous canonical passages; the model selects, never copies."""
+        catalog = {}
+        for block in evidence:
+            # Keep source characters exactly, including PDF hyphens and ligatures.
+            # Sentence-sized spans give the reviewer enough context and bound JSON.
+            units = re.split(r"(?<=[.!?。！？])(?=\s+(?:[A-Z\u3400-\u9fff]|$))", block.text)
+            spans = []
+            for unit in units:
+                remaining = unit.strip()
+                while len(remaining) > 1800:
+                    cut = remaining.rfind(" ", 0, 1800)
+                    if cut < 900:
+                        cut = 1800
+                    spans.append(remaining[:cut])
+                    remaining = remaining[cut:].strip()
+                if remaining:
+                    spans.append(remaining)
+            catalog[block.evidence_id] = {f"Q{index + 1}": text for index, text in enumerate(spans)}
+        return catalog
+
+    @staticmethod
+    def _resolve_citation_spans(claims: list[Claim], catalog: dict[str, dict[str, str]]) -> None:
+        for index, claim in enumerate(claims):
+            for citation in claim.citations:
+                if citation.quote_id is None:
+                    continue  # Legacy quote-only responses still face exact membership.
+                quote = catalog.get(citation.evidence_id, {}).get(citation.quote_id)
+                if quote is None:
+                    raise ModelOutputError(f"claim[{index}] 引用了无效的原文片段编号，结果已拒绝。")
+                if citation.quote.strip() and _quote_normalized(citation.quote) != _quote_normalized(quote):
+                    raise ModelOutputError(f"claim[{index}] 的原文片段编号与引句不一致，结果已拒绝。")
+                citation.quote = quote
+
     async def _generate_grounded(self, prompt: str, payload: dict, output_model: type[T],
                                  evidence: list[Evidence], *, check_cancel=None,
                                  required_documents: list[str] | None = None,
                                  required_sections: set[str] | None = None) -> tuple[T, set[str], dict]:
         """Bounded repair against one frozen retrieval snapshot; never waive checks."""
-        audit = {"prompt_version": "grounding-v1", "attempts": [], "model_checked": False,
+        audit = {"prompt_version": "grounding-v2", "attempts": [], "model_checked": False,
                  "limitation": "model_semantic_review_is_not_a_proof"}
+        catalog = self._citation_spans(evidence)
+        payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
+            {"quote_id": quote_id, "text": text} for quote_id, text in catalog[block.evidence_id].items()]}
+            for block in evidence]}
         current_payload = dict(payload)
         for attempt in range(2):
             await self._check_cancel(check_cancel)
@@ -722,6 +784,7 @@ class IntelligenceService:
                 claim for section in result.sections for claim in section.claims]
             problems = []
             try:
+                self._resolve_citation_spans(claims, catalog)
                 used = self._validate_claims(claims, evidence)
                 if result.status in {"answered", "generated"}:
                     if not claims:
@@ -737,11 +800,11 @@ class IntelligenceService:
             if not problems and claims:
                 # Exact quotation as the entire claim entails itself. All actual
                 # paraphrases, translations and multi-source conclusions need review.
-                direct = all(any(_normalized(claim.text) == _normalized(c.quote) for c in claim.citations)
+                direct = all(len(claim.citations) == 1 and _quote_normalized(claim.text) == _quote_normalized(claim.citations[0].quote)
                              for claim in claims)
                 if not direct:
                     await self._check_cancel(check_cancel)
-                    verdict = await self.provider.generate(_prompt("grounding_v1"), {
+                    verdict = await self.provider.generate(_prompt("grounding_v2"), {
                         "task": "verify_claim_support", "request": payload.get("question") or payload.get("instruction", ""),
                         "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(claims)],
                         "evidence": [block.model_dump() for block in evidence if block.evidence_id in used],
@@ -759,9 +822,16 @@ class IntelligenceService:
                 return result, used, audit
             if attempt == 1:
                 raise ModelOutputError("回答或引文复核未通过，纠正后仍缺乏可靠支持；结果已拒绝。" + problems[0][:200])
+            previous = result.model_dump()
+            previous_claims = previous.get("claims", []) + [claim for section in previous.get("sections", [])
+                                                           for claim in section.get("claims", [])]
+            for claim in previous_claims:
+                for citation in claim["citations"]:
+                    if citation.get("quote_id"):
+                        citation["quote"] = ""  # Keep the repair request on the ID-selection protocol.
             current_payload = {**payload, "correction": {
-                "previous_result": result.model_dump(), "problems": problems,
-                "rule": "Fix only against the original supplied evidence. Copy quotes verbatim, preserve qualifications and narrow claims. "
+                "previous_result": previous, "problems": problems,
+                "rule": "Fix only against the original supplied evidence. Select citation_spans by evidence_id and quote_id; leave quote empty. Preserve qualifications and narrow claims. "
                         "Use multiple citations when necessary. Do not fill gaps from memory; explicitly state missing aspects or return insufficient_evidence.",
             }}
         raise ModelOutputError("未获得可核验结果。")
@@ -789,7 +859,7 @@ class IntelligenceService:
                     "trace": trace + [self._trace("decline", "没有足够的匹配原文；未调用回答生成模型。")],
                     "verification": "no_matching_evidence"}
         await self._check_cancel(check_cancel)
-        result, used, grounding = await self._generate_grounded(_prompt("qa_v2"), {
+        result, used, grounding = await self._generate_grounded(_prompt("qa_v3"), {
             "task": mode, "question": question, "selected_document_ids": document_ids,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,
@@ -984,7 +1054,7 @@ class IntelligenceService:
                     "retrieval": retrieval_audit,
                     "future_work_verification": "evidence_insufficient" if kind == "future_work" else None}
         await self._check_cancel(check_cancel)
-        result, used, grounding = await self._generate_grounded(_prompt("synthesis_v2"), {
+        result, used, grounding = await self._generate_grounded(_prompt("synthesis_v3"), {
             "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
             "external_freshness_verified": False,
         }, SynthesisPayload, evidence, check_cancel=check_cancel,
@@ -1028,10 +1098,10 @@ class IntelligenceService:
                 "retrieval": retrieval_audit,
                 "grounding": grounding,
                 "trace": trace + [self._trace("model", "已调用模型生成分节内容。"),
-                    self._trace("validate", "已核验引文，并从实际本地文献记录生成来源清单。")],
+                    self._trace("validate", "已回填并核验原文引句，对改述论断执行支持度复核，来源清单取自本地文献记录。")],
                 "future_work_verification": "evidence_insufficient" if kind == "future_work" else None,
                 "search_time_range": None,
-                "verification": "citation_membership_and_quote_match; bibliographic_details_not_verified"}
+                "verification": "citation_membership_quote_match_and_bounded_semantic_review; bibliographic_details_not_verified"}
 
 
 _PRESERVATION_MARKER = re.compile(r"⟪K[a-f0-9]{12}_\d+⟫")

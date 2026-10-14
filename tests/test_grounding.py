@@ -99,7 +99,7 @@ def test_unicode_ligature_matches_but_changed_numeric_value_does_not():
         IntelligenceService._validate_claims(answer("x", "An efficient model scores 28.5.").claims, [source])
 
 
-@pytest.mark.parametrize("quote", ["x₂ = 4", "x2 = 4"])
+@pytest.mark.parametrize("quote", ["x₂ = 4", "x2 = 4", "X² = 4"])
 def test_quote_normalization_never_changes_mathematical_exponents(quote):
     source = evidence().model_copy(update={"text": "x² = 4"})
     with pytest.raises(ModelOutputError):
@@ -121,3 +121,42 @@ def test_provider_repair_reports_field_type_without_echoing_bad_value():
     feedback = requests[1]["messages"][-1]["content"]
     assert "claims:list_type" in feedback and "PRIVATE_BAD_VALUE" not in feedback
     assert result.status == "insufficient_evidence"
+
+
+def test_citation_span_selection_restores_exact_pdf_characters(tmp_path):
+    result = AnswerPayload(status="answered", claims=[{"text": "The score is 28.4.", "citations": [
+        {"evidence_id": "E_fixture", "quote_id": "Q3", "quote": ""}]}])
+    (saved, _, _), provider = generate(tmp_path, [result])
+    assert saved.claims[0].citations[0].quote == "The score is 28.4."
+    assert provider.calls[0][0]["evidence"][0]["citation_spans"][2]["quote_id"] == "Q3"
+
+
+def test_unknown_citation_span_cannot_bypass_grounding(tmp_path):
+    bad = AnswerPayload(status="answered", claims=[{"text": "Unsupported", "citations": [
+        {"evidence_id": "E_fixture", "quote_id": "Q99"}]}])
+    with pytest.raises(ModelOutputError, match="无效的原文片段"):
+        generate(tmp_path, [bad, bad])
+
+
+def test_span_and_supplied_quote_must_agree():
+    claim = answer("Claim", "The score is 28.5.").claims
+    claim[0].citations[0].quote_id = "Q3"
+    with pytest.raises(ModelOutputError, match="不一致"):
+        IntelligenceService._resolve_citation_spans(claim, IntelligenceService._citation_spans([evidence()]))
+
+
+def test_catalog_is_bounded_and_every_entry_is_an_exact_source_substring():
+    source = evidence().model_copy(update={"text": ("Conﬁguration x² = 4; long-\nrange dependencies. " * 160)})
+    spans = IntelligenceService._citation_spans([source])[source.evidence_id]
+    assert spans and all(text in source.text and len(text) <= 1800 for text in spans.values())
+
+
+def test_exact_claim_with_an_extra_irrelevant_citation_requires_semantic_review(tmp_path):
+    result = answer("The score is 28.4.", "The score is 28.4.")
+    result.claims[0].citations.append(result.claims[0].citations[0].model_copy(update={
+        "quote": "Figure 1: Model architecture."}))
+    corrected = answer("The score is 28.4.", "The score is 28.4.")
+    (_, _, audit), provider = generate(tmp_path, [result,
+        review("unsupported", "The extra caption citation is irrelevant to the numeric score."), corrected])
+    assert audit["model_checked"] and len(provider.calls) == 3
+    assert len(audit["attempts"]) == 2
