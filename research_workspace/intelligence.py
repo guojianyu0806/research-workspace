@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .library import Library, LibraryError
 
 
-PROMPT_VERSION = "research-evidence-v1"
+PROMPT_VERSION = "research-evidence-v2"
 PROMPT_DIRECTORY = Path(__file__).with_name("prompts")
 MAX_DOCUMENTS = 20
 MAX_EVIDENCE = 24
@@ -34,7 +34,7 @@ MAX_EVIDENCE_CHARS = 5000
 MAX_BLOCK_CHARS = 16000
 MAX_TRANSLATION_TEXT_CHARS = 200000
 MAX_OUTPUT_TOKENS = 8192
-RETRIEVAL_PROMPT_VERSION = "retrieval-query-v1"
+RETRIEVAL_PROMPT_VERSION = "retrieval-query-v2"
 MAX_EXPANSION_TERMS = 6
 MAX_EXPANSION_TOKENS = 512
 T = TypeVar("T", bound=BaseModel)
@@ -144,6 +144,16 @@ class TranslationPayload(StrictModel):
     translated_text: str = Field(min_length=1, max_length=64000)
 
 
+class ClaimReview(StrictModel):
+    claim_index: int = Field(ge=0)
+    verdict: Literal["supported", "unsupported"]
+    reason: str = Field(default="", max_length=600)
+
+
+class GroundingPayload(StrictModel):
+    reviews: list[ClaimReview] = Field(max_length=180)
+
+
 class Section(StrictModel):
     heading: str = Field(min_length=1, max_length=200)
     claims: list[Claim] = Field(default_factory=list, max_length=15)
@@ -239,6 +249,7 @@ class ChatCompletionProvider:
                 # structured tasks use the documented non-thinking mode explicitly.
                 if urlsplit(endpoint).hostname == 'api.deepseek.com':
                     request_body['thinking'] = {'type': 'disabled'}
+                issue = "response_envelope"
                 try:
                     response = await client.post(
                         endpoint, headers={"Authorization": f"Bearer {self.config.api_key}"},
@@ -274,17 +285,32 @@ class ChatCompletionProvider:
                     envelope = response.json()
                     choice = envelope["choices"][0]
                     if choice.get("finish_reason") not in {None, "stop"}:
+                        issue = "output_truncated" if choice.get("finish_reason") == "length" else "output_not_completed"
                         raise ValueError("Incomplete response")
                     content = choice["message"]["content"]
                     if not isinstance(content, str):
                         raise ValueError("Expected text content")
+                    issue = "json_or_schema"
                     return output_model.model_validate_json(content)
-                except (ValueError, TypeError, KeyError, IndexError, ValidationError):
+                except (ValueError, TypeError, KeyError, IndexError, ValidationError) as error:
+                    if isinstance(error, ValidationError):
+                        # Only schema field names/types, never the offending values,
+                        # model response, provider body, or custom validator message.
+                        known_fields = set(re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)"\s*:',
+                            json.dumps(output_model.model_json_schema())))
+                        def safe_location(location):
+                            return ".".join(str(part) if isinstance(part, int) or part in known_fields else "?"
+                                            for part in location) or "root"
+                        issue = "; ".join(safe_location(item["loc"]) + ":" + item["type"]
+                                          for item in error.errors(include_input=False, include_context=False)[:6])
                     if attempt + 1 == attempts:
-                        raise ModelOutputError("模型输出被截断或未通过结构校验；未将其作为完整有效结果展示。") from None
+                        reason = "模型输出被截断" if issue == "output_truncated" else "模型输出未通过完整性或结构校验"
+                        raise ModelOutputError(f"{reason}（{issue}）；未展示无效结果。") from None
                     # Do not retain a malformed output or copy its contents into logs.
                     messages = messages[:2] + [{"role": "user", "content":
-                        "The previous result was incomplete or invalid JSON/schema. Return a complete JSON object matching the schema exactly."}]
+                        "The previous result failed validation: " + issue + ". Return a complete, concise JSON object matching the schema exactly. "
+                        "Use fewer claims and short verbatim quotes. proposed_work is a string, not a list; citations is a list of objects. "
+                        "Architecture edges contain source and target only. Do not repeat the schema or include markdown fences."}]
         raise ModelOutputError("未获得有效模型结果。")
 
 
@@ -293,6 +319,10 @@ def _prompt(name: str) -> str:
 
 
 def _normalized(text: str) -> str:
+    # PDF printing ligatures are typography; superscripts/subscripts are facts.
+    # Full NFKC would incorrectly make x² and x₂ identical, so do not use it
+    # for quote membership or the exact-quotation semantic-review shortcut.
+    text = text.translate(str.maketrans({"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st"}))
     return " ".join(text.casefold().split())
 
 
@@ -366,49 +396,118 @@ class IntelligenceService:
         return self._validate_documents(document_ids)
 
     @staticmethod
+    def _search_terms(text: str) -> list[str]:
+        """Normalize PDF typography for matching only; never change quoted text."""
+        text = unicodedata.normalize("NFKC", text).replace("\u00ad", "")
+        text = re.sub(r"(?<=[A-Za-z])-\s*\n\s*(?=[a-z])", "", text)
+        # Compounds must match both 'encoder-decoder' and 'encoder / decoder'.
+        text = re.sub(r"(?<=[A-Za-z])[-–](?=[A-Za-z])", " ", text)
+        terms = []
+        for term in tokenize(text):
+            # Conservative English plural variants; do not stem numeric indices
+            # or mathematical names such as loss, analysis, corpus, or beta_1.
+            if re.fullmatch(r"[a-z]+", term) and len(term) > 4:
+                if term.endswith("ies"):
+                    term = term[:-3] + "y"
+                elif term.endswith("s") and not term.endswith(("ss", "us", "is")):
+                    term = term[:-1]
+            terms.append(term)
+        return terms
+
+    @staticmethod
+    def _evidence_quality(block: Evidence, question: str, reference_blocks=()) -> float:
+        """Prefer explanatory passages without deleting legitimate short evidence."""
+        text = " ".join(block.text.split())
+        words = IntelligenceService._search_terms(text)
+        if not words:
+            return 0.0
+        if block.block_id in reference_blocks and not re.search(
+                r"参考文献|引用文献|书目|\b(?:references|bibliography|cited works)\b", question, re.I):
+            return 0.08
+        bibliographic = re.search(r"作者|机构|单位|隶属|\bauthors?\b|\baffiliations?\b", question, re.I)
+        numeric_question = re.search(
+            r"公式|方程|参数|数值|得分|分数|准确率|表格|[=α-ω]|\b(?:equation|formula|parameter|value|score|bleu|accuracy|table)\b",
+            question, re.I)
+        numeric_source = re.search(r"\d|[=α-ω]", text, re.I)
+        if bibliographic:
+            return 1.0
+        if re.match(r"^(?:figure|fig\.?|table|图|表)\s*\d+\s*[:.：]", text, re.I):
+            return 0.25 if len(words) < 18 else 0.85
+        if re.match(r"^(?:this|the|following) section (?:describes|discusses|presents|provides)\b", text, re.I) and len(words) < 18:
+            return 0.35  # A section signpost is not the promised explanation.
+        if numeric_question and numeric_source and not re.fullmatch(r"\d+(?:\.\d+)*\s+[A-Za-z -]+", text):
+            return 1.0
+        if len(set(words)) <= 2 and len(words) <= 8:
+            return 0.06  # Repeated model names and isolated figure labels.
+        if len(words) < 8 and not re.search(r"[.!?。！？]$", text):
+            return 0.3  # Section headings can help, but do not explain the section.
+        return 1.0
+
+    @staticmethod
     def _lexical_index(blocks: list[Evidence]) -> tuple:
-        counts = [Counter(tokenize(block.text)) for block in blocks]
+        counts = [Counter(IntelligenceService._search_terms(block.text)) for block in blocks]
         lengths = [sum(count.values()) for count in counts]
         average = max(sum(lengths) / len(lengths), 1) if lengths else 1
-        return counts, lengths, average
+        # Parsed bibliography fragments often match many technical search words.
+        # Mark the section without removing it: explicit reference questions can
+        # still retrieve it, and appendix headings end the down-weighted region.
+        in_references, reference_blocks = {}, set()
+        for block in blocks:
+            text = " ".join(block.text.split())
+            if re.fullmatch(r"(?:\d+\s+)?(?:references|bibliography|参考文献)", text, re.I):
+                in_references[block.document_id] = True
+            elif len(text) < 120 and re.match(r"^(?:Appendix\b|Appendices\b|[A-Z](?:\.\d+)*\s)", text):
+                in_references[block.document_id] = False
+            if in_references.get(block.document_id):
+                reference_blocks.add(block.block_id)
+        return counts, lengths, average, reference_blocks
 
     @staticmethod
     def _rank_lexical(question: str, blocks: list[Evidence], index: tuple) -> list[Evidence]:
-        terms = set(tokenize(question))
+        terms = set(IntelligenceService._search_terms(question))
         if not terms or not blocks:
             return []
-        counts, lengths, average = index
+        counts, lengths, average, reference_blocks = index
         document_frequency = Counter(term for count in counts for term in terms if count[term])
         candidates = []
         for block, count, length in zip(blocks, counts, lengths):
             score = 0.0
+            matches = 0
             for term in terms:
                 frequency = count[term]
                 if not frequency:
                     continue
+                matches += 1
                 inverse = math.log(1 + (len(blocks) - document_frequency[term] + 0.5)
                                    / (document_frequency[term] + 0.5))
                 score += inverse * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * length / average))
+            score *= math.sqrt(matches / max(sum(bool(document_frequency[term]) for term in terms), 1))
+            score *= IntelligenceService._evidence_quality(block, question, reference_blocks)
             if score > 0:
                 candidates.append(block.model_copy(update={"score": round(score, 6)}))
-        candidates.sort(key=lambda block: (-block.score, block.document_id, block.page, block.block_id))
+        candidates.sort(key=lambda block: (
+            IntelligenceService._evidence_quality(block, question, reference_blocks) < 0.5,
+            -block.score, block.document_id, block.page, block.block_id))
         return candidates
 
     @staticmethod
     def _fair_blocks(candidates: list[Evidence], document_ids: list[str], limit: int) -> list[Evidence]:
-        selected: list[Evidence] = []
-        # Give each selected document a matching block before allocating extras.
-        for document_id in document_ids:
-            candidate = next((block for block in candidates if block.document_id == document_id), None)
-            if candidate and len(selected) < limit:
-                selected.append(candidate)
-        selected_ids = {block.block_id for block in selected}
+        # Deduplicate repeated extraction labels within a paper, never across
+        # papers: identical statements in two sources still need both identities.
+        queues = {document_id: [] for document_id in document_ids}
+        seen = set()
         for block in candidates:
-            if len(selected) >= limit:
-                break
-            if block.block_id not in selected_ids:
-                selected.append(block)
-                selected_ids.add(block.block_id)
+            key = (block.document_id, _normalized(unicodedata.normalize("NFKC", block.text)))
+            if block.document_id in queues and key not in seen:
+                queues[block.document_id].append(block)
+                seen.add(key)
+        selected: list[Evidence] = []
+        # Allocate each successive slot fairly, rather than guaranteeing only
+        # one hit and letting a name-heavy paper consume every remaining slot.
+        while len(selected) < limit and any(queues.values()):
+            for document_id in document_ids:
+                if queues[document_id] and len(selected) < limit:
+                    selected.append(queues[document_id].pop(0))
         return selected
 
     @staticmethod
@@ -501,10 +600,11 @@ class IntelligenceService:
             await self._check_cancel(check_cancel)
             try:
                 info["calls"] = 1
-                generated = await self.provider.generate(_prompt("retrieval_query_v1"), {
+                generated = await self.provider.generate(_prompt("retrieval_query_v2"), {
                     "task": "bilingual_retrieval_terms", "question": question,
                     "source_language_hint": "predominantly_english" if english else "mixed_or_unknown",
                     "max_terms": MAX_EXPANSION_TERMS,
+                    "coverage": "cover_each_subquestion_with_specific_terms; prioritize_mechanism_for_why_questions",
                     "purpose": "query_terms_only_not_an_answer",
                 }, RetrievalQueryPayload)
                 payload = RetrievalQueryPayload.model_validate(
@@ -528,7 +628,10 @@ class IntelligenceService:
         rankings = [self._fair_blocks(original, document_ids, MAX_EVIDENCE)]
         rankings.extend(self._fair_blocks(self._rank_lexical(item["text"], blocks, index), document_ids, MAX_EVIDENCE)
                         for item in queries[1:])
-        weights = [1.0] + [1.0 / max(len(queries) - 1, 1)] * (len(queries) - 1)
+        # Each translated facet gets a vote. Dividing all expansion weights by
+        # their count lets Latin paper names in a Chinese question overwhelm
+        # the translated architecture, objectives, and evaluation concepts.
+        weights = [1.0] + [1.0] * (len(queries) - 1)
         bibliographic = bool(re.search(r"作者|机构|单位|隶属|\bauthors?\b|\baffiliations?\b", question, re.I))
         if bibliographic and blocks:
             opening = []
@@ -546,11 +649,37 @@ class IntelligenceService:
             for ranking, weight in zip(rankings, weights):
                 for rank, block in enumerate(ranking, 1):
                     scores[block.block_id] = scores.get(block.block_id, 0.0) + weight / (60 + rank)
-            fused = [canonical[block_id].model_copy(update={"score": round(score, 8)}) for block_id, score in scores.items()]
+            fused = [canonical[block_id].model_copy(update={
+                "score": round(score * self._evidence_quality(canonical[block_id], question, index[3]), 8)})
+                for block_id, score in scores.items()]
             fused.sort(key=lambda block: (-block.score, block.document_id, block.page, block.block_id))
-            selected = self._fair_blocks(fused, document_ids, limit)
+            # Reserve the available per-paper budget for distinct translated
+            # subquestions; a high-frequency model name cannot crowd out a rare
+            # training objective or explanatory mechanism. Any remaining slots
+            # still follow fused relevance. All candidates remain original blocks.
+            facets = {}
+            for query, ranking in zip(queries[1:], rankings[1:len(queries)]):
+                if _normalized(query["text"]) == _normalized(query["source_phrase"]):
+                    continue
+                facets.setdefault(_normalized(query["source_phrase"]), []).extend(ranking)
+            reserved = []
+            reserved_ids = set()
+            per_document = max(1, math.ceil(limit / max(len(document_ids), 1)))
+            for document_id in document_ids:
+                count = 0
+                for ranking in facets.values():
+                    if count >= per_document:
+                        break
+                    candidate = next((item for item in ranking if item.document_id == document_id
+                                      and item.block_id not in reserved_ids
+                                      and self._evidence_quality(item, question, index[3]) >= 0.85), None)
+                    if candidate:
+                        reserved.append(next(item for item in fused if item.block_id == candidate.block_id))
+                        reserved_ids.add(candidate.block_id)
+                        count += 1
+            selected = self._fair_blocks(reserved + fused, document_ids, limit)
             mode = "bilingual_query_expansion_bm25_rrf" if len(queries) > 1 else "bm25_with_bibliographic_candidates"
-            trace.append(self._trace("rank_fusion", f"对{len(rankings)}组候选进行RRF融合并优先覆盖每篇有候选的文献；选出{len(selected)}个真实原文块。"))
+            trace.append(self._trace("rank_fusion", f"对{len(rankings)}组候选进行RRF融合，去除篇内重复文本，兼顾正文质量、子问题和各篇文献；选出{len(selected)}个真实原文块。"))
         return {"evidence": self._excerpts(selected), "mode": mode, "queries": queries,
                 # Internal snapshot data, excluded from persisted/public audit.
                 "_opening_candidates": self._excerpts(list(opening_by_document.values())),
@@ -578,6 +707,65 @@ class IntelligenceService:
     def _trace(step: str, detail: str) -> dict:
         return {"step": step, "detail": detail}
 
+    async def _generate_grounded(self, prompt: str, payload: dict, output_model: type[T],
+                                 evidence: list[Evidence], *, check_cancel=None,
+                                 required_documents: list[str] | None = None,
+                                 required_sections: set[str] | None = None) -> tuple[T, set[str], dict]:
+        """Bounded repair against one frozen retrieval snapshot; never waive checks."""
+        audit = {"prompt_version": "grounding-v1", "attempts": [], "model_checked": False,
+                 "limitation": "model_semantic_review_is_not_a_proof"}
+        current_payload = dict(payload)
+        for attempt in range(2):
+            await self._check_cancel(check_cancel)
+            result = await self.provider.generate(prompt, current_payload, output_model)
+            claims = result.claims if isinstance(result, AnswerPayload) else [
+                claim for section in result.sections for claim in section.claims]
+            problems = []
+            try:
+                used = self._validate_claims(claims, evidence)
+                if result.status in {"answered", "generated"}:
+                    if not claims:
+                        raise ModelOutputError("生成结果没有可核验的来源依据，已拒绝。")
+                    if required_documents and {block.document_id for block in evidence if block.evidence_id in used} != set(required_documents):
+                        raise ModelOutputError("生成结果缺少选定文献的原文依据。")
+                    if required_sections and not required_sections.issubset(
+                            {_normalized(section.heading) for section in result.sections}):
+                        raise ModelOutputError("论文框架缺少规定章节：Abstract、Introduction、Related Work。")
+            except ModelOutputError as error:
+                problems.append(str(error))
+            reviews = []
+            if not problems and claims:
+                # Exact quotation as the entire claim entails itself. All actual
+                # paraphrases, translations and multi-source conclusions need review.
+                direct = all(any(_normalized(claim.text) == _normalized(c.quote) for c in claim.citations)
+                             for claim in claims)
+                if not direct:
+                    await self._check_cancel(check_cancel)
+                    verdict = await self.provider.generate(_prompt("grounding_v1"), {
+                        "task": "verify_claim_support", "request": payload.get("question") or payload.get("instruction", ""),
+                        "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(claims)],
+                        "evidence": [block.model_dump() for block in evidence if block.evidence_id in used],
+                    }, GroundingPayload)
+                    audit["model_checked"] = True
+                    if sorted(item.claim_index for item in verdict.reviews) != list(range(len(claims))):
+                        raise ModelOutputError("引文支持度复核未完整覆盖全部论断，结果已拒绝。")
+                    reviews = [item.model_dump() for item in verdict.reviews]
+                    problems.extend(f"claim[{item.claim_index}]: {item.reason or 'The quoted evidence does not support the whole claim.'}"
+                                    for item in verdict.reviews if item.verdict == "unsupported")
+            audit["attempts"].append({"attempt": attempt + 1, "problems": problems, "reviews": reviews})
+            await self._check_cancel(check_cancel)
+            if not problems:
+                audit["status"] = "passed" if claims else "no_asserted_claims"
+                return result, used, audit
+            if attempt == 1:
+                raise ModelOutputError("回答或引文复核未通过，纠正后仍缺乏可靠支持；结果已拒绝。" + problems[0][:200])
+            current_payload = {**payload, "correction": {
+                "previous_result": result.model_dump(), "problems": problems,
+                "rule": "Fix only against the original supplied evidence. Copy quotes verbatim, preserve qualifications and narrow claims. "
+                        "Use multiple citations when necessary. Do not fill gaps from memory; explicitly state missing aspects or return insufficient_evidence.",
+            }}
+        raise ModelOutputError("未获得可核验结果。")
+
     async def answer(self, question: str, document_ids: list[str], *,
                      mode: Literal["qa", "compare"] = "qa", check_cancel=None) -> dict:
         self._require_model()
@@ -601,11 +789,11 @@ class IntelligenceService:
                     "trace": trace + [self._trace("decline", "没有足够的匹配原文；未调用回答生成模型。")],
                     "verification": "no_matching_evidence"}
         await self._check_cancel(check_cancel)
-        result = await self.provider.generate(_prompt("qa_v1"), {
+        result, used, grounding = await self._generate_grounded(_prompt("qa_v2"), {
             "task": mode, "question": question, "selected_document_ids": document_ids,
             "evidence": [block.model_dump() for block in evidence],
-        }, AnswerPayload)
-        used = self._validate_claims(result.claims, evidence)
+        }, AnswerPayload, evidence, check_cancel=check_cancel,
+            required_documents=document_ids if mode == "compare" else None)
         if mode == "compare" and result.status == "answered":
             cited_documents = {block.document_id for block in evidence if block.evidence_id in used}
             if cited_documents != set(document_ids):
@@ -618,9 +806,10 @@ class IntelligenceService:
                 "sources": [block.model_dump() for block in evidence if block.evidence_id in used],
                 "missing_document_ids": missing, "prompt_version": PROMPT_VERSION,
                 "retrieval": retrieval_audit,
+                "grounding": grounding,
                 "trace": trace + [self._trace("model", "已调用配置的模型生成结构化回答。"),
-                    self._trace("validate", "已核验引文属于检索集且引文文本存在于对应来源。")],
-                "verification": "citation_membership_and_quote_match; semantic_entailment_not_guaranteed"}
+                    self._trace("validate", "已核验来源与原文引句，并对改述论断执行模型支持度复核；复核不等于正确性证明。")],
+                "verification": "citation_membership_quote_match_and_bounded_semantic_review; correctness_not_guaranteed"}
 
     def list_translation_blocks(self, document_id: str, *, run_id: str | None = None,
                                 page: int | None = None, block_ids: list[str] | None = None) -> dict:
@@ -691,11 +880,25 @@ class IntelligenceService:
         outputs = []
         segments = []
         for index, chunk in enumerate(chunks):
-            result = await self.provider.generate(_prompt("translation_v1"), {
+            request = {
                 "target_language": target_language, "text": chunk,
                 "segment": index + 1, "total_segments": len(chunks),
-            }, TranslationPayload)
-            validate_preserved_tokens(chunk, result.translated_text)
+            }
+            for attempt in range(2):
+                result = await self.provider.generate(_prompt("translation_v1"), request, TranslationPayload)
+                validate_preserved_tokens(chunk, result.translated_text)
+                try:
+                    validate_translation_language(chunk, result.translated_text, target_language)
+                except ModelOutputError:
+                    if attempt:
+                        raise
+                    request["translation_feedback"] = (
+                        "The previous response left source-language prose untranslated. Translate all prose "
+                        "into the requested target language, retaining every opaque marker unchanged. "
+                        "Do not add explanations or facts."
+                    )
+                else:
+                    break
             outputs.append(result.translated_text)
             translated = restore_text(result.translated_text, replacements)
             segment = {"segment": index + 1, "total_segments": len(chunks),
@@ -711,8 +914,8 @@ class IntelligenceService:
         return {"status": "completed", "source_text": text, "translated_text": translated_text,
                 "target_language": target_language, "segments": segments, "prompt_version": PROMPT_VERSION,
                 "trace": [self._trace("protect", "对可识别的代码、公式、引用标记及数字进行原样保留。"),
-                    self._trace("translate", f"已调用模型翻译{len(chunks)}个片段，并核验保留标记与数字。")],
-                "verification": "protected_spans_and_numeric_preservation; translation_quality_not_guaranteed"}
+                    self._trace("translate", f"已调用模型翻译{len(chunks)}个片段，并核验保留标记、数字及目标语言。")],
+                "verification": "protected_spans_and_numeric_preservation; target_language_sanity; translation_quality_not_guaranteed"}
 
     async def translate_block(self, block: Evidence | dict, *,
                               target_language: Literal["zh", "en"] = "zh") -> dict:
@@ -781,10 +984,12 @@ class IntelligenceService:
                     "retrieval": retrieval_audit,
                     "future_work_verification": "evidence_insufficient" if kind == "future_work" else None}
         await self._check_cancel(check_cancel)
-        result = await self.provider.generate(_prompt("synthesis_v1"), {
+        result, used, grounding = await self._generate_grounded(_prompt("synthesis_v2"), {
             "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
             "external_freshness_verified": False,
-        }, SynthesisPayload)
+        }, SynthesisPayload, evidence, check_cancel=check_cancel,
+            required_documents=document_ids if kind == "review" else None,
+            required_sections={"abstract", "introduction", "related work"} if kind == "draft" else None)
         claims = [claim for section in result.sections for claim in section.claims]
         used = self._validate_claims(claims, evidence)
         if result.status == "generated":
@@ -821,6 +1026,7 @@ class IntelligenceService:
                 "architecture_status": "proposed_design_not_experimental_evidence" if result.architecture and kind == "draft" else None,
                 "limitations": limitations, "prompt_version": PROMPT_VERSION,
                 "retrieval": retrieval_audit,
+                "grounding": grounding,
                 "trace": trace + [self._trace("model", "已调用模型生成分节内容。"),
                     self._trace("validate", "已核验引文，并从实际本地文献记录生成来源清单。")],
                 "future_work_verification": "evidence_insufficient" if kind == "future_work" else None,
@@ -829,13 +1035,26 @@ class IntelligenceService:
 
 
 _PRESERVATION_MARKER = re.compile(r"⟪K[a-f0-9]{12}_\d+⟫")
+# Undelimited mathematics must be bounded by its syntax, never by the line:
+# a paragraph containing E = mc^2 still has prose that needs translation.
+_MATH_NAME = r"(?:\\[A-Za-z]+|[A-Za-zα-ωΑ-Ω][A-Za-z0-9_α-ωΑ-Ω₀-₉²³]*|[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
+_MATH_OPERATOR = r"[+\-*/^=<>≤≥≈≠±×÷⋅]"
+_MATH_SIMPLE = rf"{_MATH_NAME}(?:[ \t]*{_MATH_OPERATOR}[ \t]*{_MATH_NAME})*"
+_MATH_GROUP = rf"(?:\({_MATH_SIMPLE}(?:[ \t]*,[ \t]*{_MATH_SIMPLE})*\)|\{{{_MATH_SIMPLE}\}})"
+_MATH_ATOM = rf"(?:{_MATH_NAME}(?:{_MATH_GROUP})+|{_MATH_GROUP}|{_MATH_NAME})"
+_RAW_MATH = (
+    rf"(?<![A-Za-z0-9_]){_MATH_ATOM}(?:[ \t]*{_MATH_OPERATOR}[ \t]*{_MATH_ATOM})+"
+    rf"|[∑∏∫√][ \t]*{_MATH_ATOM}"
+)
+_NON_MATH_SPAN = re.compile(
+    r"\\[A-Za-z]+(?:\{[^{}]*\})*|[α-ωΑ-Ω∑∏∫√≤≥±]|"
+    r"[+-]?\d+(?:[.,]\d+)*(?:[eE][+-]?\d+)?(?:%|‰)?"
+)
 _PROTECTED_SPAN = re.compile(
     r"```[\s\S]*?```|`[^`\n]+`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|"
     r"\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|"
-    r"^[^\n]*(?:=|[∑∏∫√≤≥±])[^\n]*$|"
     r"https?://[^\s)]+|\[[^\]\n]{1,300}\]|"
-    r"\\[A-Za-z]+(?:\{[^{}]*\})*|[α-ωΑ-Ω]|"
-    r"[+-]?\d+(?:[.,]\d+)*(?:[eE][+-]?\d+)?(?:%|‰)?",
+    rf"(?P<raw_math>{_RAW_MATH})|{_NON_MATH_SPAN.pattern}",
     re.MULTILINE,
 )
 
@@ -844,8 +1063,15 @@ def protect_text(text: str) -> tuple[str, dict[str, str]]:
     namespace = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
     replacements = {}
     def replace(match):
+        span = match.group(0)
+        if (match.lastgroup == "raw_math" and not re.search(r"[=+<>≤≥≈≠±×÷⋅*/^∑∏∫√]", span)
+                and not re.search(r"[ \t]-[ \t]", span)
+                and any(len(word) > 1 for word in re.findall(r"[A-Za-z]+", span))):
+            # A hyphenated term such as state-of-the-art is prose. Still
+            # protect embedded values in terms such as model-12.
+            return _NON_MATH_SPAN.sub(replace, span)
         token = f"⟪K{namespace}_{len(replacements)}⟫"
-        replacements[token] = match.group(0)
+        replacements[token] = span
         return token
     if _PRESERVATION_MARKER.search(text):
         raise LibraryError("原文包含翻译保留标记格式，请先处理该内容以避免标记冲突。")
@@ -861,6 +1087,28 @@ def validate_preserved_tokens(source: str, translated: str) -> None:
         raise ModelOutputError("翻译丢失、重复或改变了受保护的代码、公式、引用或数字，结果已拒绝。")
     if re.search(r"\d", _PRESERVATION_MARKER.sub("", translated)):
         raise ModelOutputError("翻译新增了原文未提供的数字，结果已拒绝。")
+
+
+def validate_translation_language(source: str, translated: str, target_language: str) -> None:
+    """Reject obvious untranslated prose; this is not a semantic quality score."""
+    source_prose = _PRESERVATION_MARKER.sub("", source)
+    translated_prose = _PRESERVATION_MARKER.sub("", translated)
+    source_han = re.findall(r"[\u3400-\u9fff]", source_prose)
+    translated_han = re.findall(r"[\u3400-\u9fff]", translated_prose)
+    source_words = re.findall(r"\b[A-Za-z]{2,}\b", source_prose)
+    if not source_han and not source_words:
+        return  # Formula/code-only content is valid without translated prose.
+    if not re.search(r"[A-Za-z\u3400-\u9fff]", translated_prose):
+        raise ModelOutputError("翻译未返回可用的正文，结果已拒绝。")
+    if target_language == "en" and source_han:
+        # A few named entities can remain; most Chinese prose must not.
+        if len(translated_han) >= max(2, math.ceil(len(source_han) * 0.2)):
+            raise ModelOutputError("译文仍含较多未翻译的中文，未满足英文目标语言要求，结果已拒绝。")
+    has_english_prose = bool(re.search(
+        r"\b(?:the|is|are|was|were|has|have|with|for|and|from|we|our|this|that|"
+        r"use|uses|using|can|not|in|on|to|as|it|by|at|of)\b", source_prose, re.I))
+    if target_language == "zh" and len(source_words) >= 3 and has_english_prose and not translated_han:
+        raise ModelOutputError("译文未包含中文正文，未满足中文目标语言要求，结果已拒绝。")
 
 
 def split_protected_text(text: str, *, max_chars: int = 4000) -> list[str]:

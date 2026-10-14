@@ -202,7 +202,11 @@ def test_comparison_requires_evidence_from_each_selected_document(library):
 
 def translation_echo(request):
     payload = json.loads(json.loads(request.content)["messages"][1]["content"])
-    return envelope({"translated_text": payload["text"]})
+    text = payload["text"]
+    if payload["target_language"] == "zh":
+        text = (text.replace("Real source has ", "原文包含 ").replace(" layers ", " 层 ")
+                .replace("First source text", "第一段原文").replace("Second source text", "第二段原文"))
+    return envelope({"translated_text": text})
 
 
 def test_translation_preserves_code_math_references_and_numbers(library):
