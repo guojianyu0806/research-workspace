@@ -23,10 +23,13 @@ from .intelligence import StrictModel
 
 
 PROMPT_VERSION = "future-verification-v2"
-QUERY_PROMPT_VERSION = "future-query-v1"
+QUERY_PROMPT_VERSION = "future-query-v2"
 MAX_QUERIES = 3
 MAX_PLANNING_DIRECTIONS = 12
 MAX_QUERY_CHARS = 180
+MAX_TOPIC_TERMS = 2
+MAX_CONDITION_TERMS = 3
+MAX_QUERY_TERMS = 5
 RESULTS_PER_QUERY = 5
 MAX_ABSTRACT_CHARS = 12000
 _STOP_WORDS = set("""
@@ -160,6 +163,7 @@ def _query_plan(candidates: list[dict], synthesis: dict, translated: dict | None
                 candidate["query_limitation"] = "query_budget_exhausted"
                 continue
             plan = {"query_id": f"query-{len(plans) + 1}", "query": query,
+                    "term_count": len(_keywords(query)),
                     "direction_ids": [candidate["direction_id"]], "field": "all",
                     "limit": RESULTS_PER_QUERY, "sort_by": "submittedDate",
                     "strategy": candidate["query_strategy"],
@@ -180,14 +184,18 @@ def _checked_query_concepts(item: DirectionQueryConcepts, candidate: dict) -> di
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9 -]*", concept.english_terms):
             raise ValueError("Invalid query terms")
         terms = _keywords(concept.english_terms)
-        if not 1 <= len(terms) <= 6:
+        if not 1 <= len(terms) <= MAX_CONDITION_TERMS:
             raise ValueError("Invalid query term count")
     topic_words = set(_keywords(item.topic.english_terms))
+    if len(topic_words) > MAX_TOPIC_TERMS:
+        raise ValueError("Topic is too broad or contains multiple conditions")
     seen = set()
     for condition in item.conditions:
         condition_words = set(_keywords(condition.english_terms))
         if len(condition_words) < 2 or not condition_words - topic_words:
             raise ValueError("A topic label alone does not preserve a research condition")
+        if not 3 <= len(topic_words | condition_words) <= MAX_QUERY_TERMS:
+            raise ValueError("Query must contain three to five core terms")
         normalized = _normalized(condition.source_text)
         if normalized == _normalized(item.topic.source_text) or normalized in seen:
             raise ValueError("Duplicate or topic-only query condition")
@@ -203,20 +211,24 @@ async def _translate_query_conditions(provider, candidates: list[dict], check_ca
     audit = {"prompt_version": QUERY_PROMPT_VERSION, "model_called": False,
              "status": "not_needed", "generation_call_limit": 1,
              "direction_limit": MAX_PLANNING_DIRECTIONS,
-             "condition_limit_per_direction": 3, "max_query_characters": MAX_QUERY_CHARS}
+             "condition_limit_per_direction": 3, "max_query_characters": MAX_QUERY_CHARS,
+             "max_topic_terms": MAX_TOPIC_TERMS, "max_condition_terms": MAX_CONDITION_TERMS,
+             "min_query_terms": 3, "max_query_terms": MAX_QUERY_TERMS}
     if not eligible or not getattr(provider, "configured", False):
         return {}, audit
     selected = eligible[:MAX_PLANNING_DIRECTIONS]
     audit["direction_ids"] = [item["direction_id"] for item in selected]
     await _check_cancel(check_cancel)
     try:
-        prompt = Path(__file__).with_name("prompts").joinpath("future_query_v1.txt").read_text(encoding="utf-8")
+        prompt = Path(__file__).with_name("prompts").joinpath("future_query_v2.txt").read_text(encoding="utf-8")
         audit["model_called"] = True
         generated = await provider.generate(prompt, {
             "task": "translate_future_direction_search_conditions",
             "directions": [{"direction_id": item["direction_id"], "heading": item["heading"],
                             "proposed_work": item["proposed_work"]} for item in selected],
             "global_search_query_limit": MAX_QUERIES,
+            "query_term_limits": {"topic": [1, MAX_TOPIC_TERMS], "condition": [2, MAX_CONDITION_TERMS],
+                                  "combined": [3, MAX_QUERY_TERMS]},
         }, FutureQueryPayload)
         payload = FutureQueryPayload.model_validate(
             generated.model_dump() if isinstance(generated, FutureQueryPayload) else generated)

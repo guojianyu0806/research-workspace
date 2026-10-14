@@ -537,3 +537,79 @@ def test_explicit_condition_quotes_can_support_only_a_provisional_exclusion():
     assert result["future_verification"]["status"] == "completed"
     assert result["excluded_directions"][0]["requires_full_text_confirmation"] is True
     assert result["future_verification"]["novelty_proven"] is False
+
+
+def editing_direction_fixture():
+    # Saved live direction reduced to its substantive proposal. Model planning
+    # below is an explicit offline fixture, not another real model invocation.
+    value = synthesis()
+    value["sections"] = [{"heading": "知识更新与事实来源：原文结论", "proposed_work":
+        "提出一个尚未执行的受控实验：在固定生成器与检索器的条件下，仅通过编辑文档索引来注入与删除事实，"
+        "并在同一批知识密集型问答与生成任务上评估更新后的事实准确性与来源可追溯性，"
+        "以检验索引编辑式知识更新的有效边界。"}]
+    return value
+
+
+def concise_editing_plan(data, payload):
+    data["directions"][0].update(topic={"source_text": "检索器", "english_terms": "retrieval"},
+        conditions=[{"source_text": "编辑文档索引来注入与删除事实", "english_terms": "index editing"},
+                    {"source_text": "知识密集型问答", "english_terms": "knowledge intensive QA"},
+                    {"source_text": "事实准确性与来源可追溯性", "english_terms": "factual provenance accuracy"}])
+    return data
+
+
+def test_saved_live_direction_uses_three_short_queries_without_dropping_conditions():
+    provider, discovery = QueryPlanningProvider(concise_editing_plan), FakeDiscovery(items=[])
+    result = run(verify_future_work(None, provider, editing_direction_fixture(), discovery=discovery))
+    audit = result["future_verification"]
+    assert [item["query"] for item in discovery.calls] == [
+        "retrieval index editing", "retrieval knowledge intensive qa", "retrieval factual provenance accuracy"]
+    assert len(discovery.calls) == 3
+    assert all(3 <= item["term_count"] <= 5 for item in audit["queries"])
+    assert audit["query_planning"]["prompt_version"] == "future-query-v2"
+    assert audit["query_planning"]["max_query_terms"] == 5
+    assert len(audit["directions"][0]["query_concepts"]["conditions"]) == 3
+    assert len(audit["directions"][0]["required_queries"]) == 3
+    assert audit["status"] == "evidence_insufficient"  # Empty results remain insufficient.
+    assert audit["assessment_model_called"] is False
+
+
+@pytest.mark.parametrize("part,terms", [
+    ("topic", "knowledge updating fact provenance"),
+    ("topic", "knowledge updating provenance"),
+    ("condition", "document index editing fact injection deletion"),
+    ("condition", "factual consistency provenance accuracy"),
+])
+def test_overlong_live_style_keyword_lists_are_rejected_not_silently_truncated(part, terms):
+    def mutate(data, payload):
+        data = concise_editing_plan(data, payload)
+        target = data["directions"][0]["topic"] if part == "topic" else data["directions"][0]["conditions"][0]
+        target["english_terms"] = terms
+        return data
+    provider, discovery = QueryPlanningProvider(mutate), FakeDiscovery(items=[])
+    result = run(verify_future_work(None, provider, editing_direction_fixture(), discovery=discovery))
+    audit = result["future_verification"]
+    assert audit["query_planning"]["status"] == "failed"
+    assert audit["status"] == "evidence_insufficient"
+    assert audit["assessment_model_called"] is False
+    assert len(discovery.calls) <= 3
+    assert all(item["strategy"] != "translated_direction_conditions" for item in audit["queries"])
+
+
+def test_short_query_transport_failure_is_preserved_without_extra_searches():
+    class ThirdSearchFails(FakeDiscovery):
+        def search(self, query, **kwargs):
+            result = super().search(query, **kwargs)
+            if len(self.calls) == 3:
+                raise RuntimeError("provider body must not enter audit")
+            return result
+    provider, discovery = QueryPlanningProvider(concise_editing_plan), ThirdSearchFails(items=[])
+    result = run(verify_future_work(None, provider, editing_direction_fixture(), discovery=discovery))
+    audit = result["future_verification"]
+    assert len(discovery.calls) == 3
+    assert [item["status"] for item in audit["queries"]] == ["completed", "completed", "failed"]
+    assert audit["errors"][-1]["code"] == "search_failed"
+    assert audit["errors"][-1]["query_id"] == "query-3"
+    assert audit["assessment_model_called"] is False
+    assert audit["status"] == "evidence_insufficient"
+    assert "provider body" not in str(result)
