@@ -291,12 +291,26 @@ def test_split_does_not_cut_protected_marker():
     assert "".join(restore_text(chunk, replacements) for chunk in chunks) == source
 
 
+@pytest.mark.parametrize("schema_name,budget,reply", [
+    ("ClaimSupportPayload", 1024, {"verdict": "supported", "reason": ""}),
+    ("CoveragePayload", 2048, {"unverified_statements": [], "missing_aspects": []}),
+])
+def test_short_review_uses_bounded_output_budget(schema_name, budget, reply):
+    from research_workspace import intelligence
+    requests = []
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return envelope(reply)
+    run(provider(handler).generate("fixture", {}, getattr(intelligence, schema_name)))
+    assert requests[0]["max_tokens"] == budget
+
+
 def synthesis_reply(request):
     payload = json.loads(json.loads(request.content)["messages"][1]["content"])
-    if payload["task"] == "verify_claim_support":
-        return envelope({"reviews": [{"claim_index": item["claim_index"], "verdict": "supported", "reason": ""}
-                                      for item in payload["claims"]],
-                         "unverified_statements": [], "missing_aspects": []})
+    if payload["task"] == "verify_single_claim":
+        return envelope({"verdict": "supported", "reason": ""})
+    if payload["task"] == "verify_response_coverage":
+        return envelope({"unverified_statements": [], "missing_aspects": []})
     source = payload["evidence"][0]
     claim = {"text": source["text"], "citations": [{"evidence_id": source["evidence_id"], "quote": source["text"]}]}
     headings = ["Abstract", "Introduction", "Related Work"] if payload["task"] == "draft" else ["Supported background"]

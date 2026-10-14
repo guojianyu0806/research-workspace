@@ -26,7 +26,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .library import Library, LibraryError
 
 
-PROMPT_VERSION = "research-evidence-v4"
+PROMPT_VERSION = "research-evidence-v5"
+MAX_ISOLATED_CLAIMS = 24
 PROMPT_DIRECTORY = Path(__file__).with_name("prompts")
 MAX_DOCUMENTS = 20
 MAX_EVIDENCE = 24
@@ -145,14 +146,12 @@ class TranslationPayload(StrictModel):
     translated_text: str = Field(min_length=1, max_length=64000)
 
 
-class ClaimReview(StrictModel):
-    claim_index: int = Field(ge=0)
+class ClaimSupportPayload(StrictModel):
     verdict: Literal["supported", "unsupported"]
     reason: str = Field(default="", max_length=600)
 
 
-class GroundingPayload(StrictModel):
-    reviews: list[ClaimReview] = Field(max_length=180)
+class CoveragePayload(StrictModel):
     unverified_statements: list[str] = Field(max_length=12)
     missing_aspects: list[str] = Field(max_length=12)
 
@@ -236,6 +235,10 @@ class ChatCompletionProvider:
         query_expansion = output_model is RetrievalQueryPayload
         attempts = 1 if query_expansion else self.config.max_attempts
         max_tokens = MAX_EXPANSION_TOKENS if query_expansion else MAX_OUTPUT_TOKENS
+        if output_model is ClaimSupportPayload:
+            max_tokens = 1024
+        elif output_model is CoveragePayload:
+            max_tokens = 2048
         messages = [
             {"role": "system", "content": prompt + "\nReturn only a JSON object matching this schema:\n"
              + json.dumps(output_model.model_json_schema(), ensure_ascii=False)},
@@ -895,8 +898,11 @@ class IntelligenceService:
                                  required_documents: list[str] | None = None,
                                  required_sections: set[str] | None = None) -> tuple[T, set[str], dict]:
         """Bounded repair against one frozen retrieval snapshot; never waive checks."""
-        audit = {"prompt_version": "grounding-v3", "attempts": [], "model_checked": False,
+        audit = {"prompt_version": "claim-support-v1", "coverage_prompt_version": "coverage-v1",
+                 "mode": "isolated_claim_citations", "attempts": [], "model_checked": False,
+                 "claim_model_calls": 0, "coverage_model_calls": 0, "cache_hits": 0,
                  "limitation": "model_semantic_review_is_not_a_proof"}
+        support_cache: dict[str, ClaimSupportPayload] = {}
         catalog = self._citation_spans(evidence)
         payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
             {"quote_id": quote_id, "text": text} for quote_id, text in catalog[block.evidence_id].items()]}
@@ -925,29 +931,55 @@ class IntelligenceService:
             if not problems and claims:
                 # Exact quotation as the entire claim entails itself. All actual
                 # paraphrases, translations and multi-source conclusions need review.
-                direct = all(len(claim.citations) == 1 and _quote_normalized(claim.text) == _quote_normalized(claim.citations[0].quote)
-                             for claim in claims)
+                direct = [len(claim.citations) == 1 and _quote_normalized(claim.text) == _quote_normalized(claim.citations[0].quote)
+                          for claim in claims]
+                if sum(not item for item in direct) > MAX_ISOLATED_CLAIMS:
+                    raise ModelOutputError("单次结果超过 24 条需独立复核的结论，请缩小生成范围；结果已拒绝。")
+                for index, claim in enumerate(claims):
+                    await self._check_cancel(check_cancel)
+                    claim_data = claim.model_dump()
+                    cache_key = json.dumps(claim_data, sort_keys=True, ensure_ascii=False)
+                    if direct[index]:
+                        verdict = ClaimSupportPayload(verdict="supported", reason="Exact source quotation.")
+                        method = "exact_quote"
+                    elif cache_key in support_cache:
+                        verdict = support_cache[cache_key]
+                        audit["cache_hits"] += 1
+                        method = "cached_isolated_review"
+                    else:
+                        # The judge must not see neighbouring claims, titles, the
+                        # question, or unquoted parts of the source block. These
+                        # could supply precisely the support missing from this card.
+                        verdict = await self.provider.generate(_prompt("claim_support_v1"), {
+                            "task": "verify_single_claim", "claim_index": index, "claim": claim_data,
+                        }, ClaimSupportPayload)
+                        await self._check_cancel(check_cancel)
+                        support_cache[cache_key] = verdict
+                        audit["claim_model_calls"] += 1
+                        audit["model_checked"] = True
+                        method = "isolated_review"
+                    reviews.append({"claim_index": index, **verdict.model_dump(), "method": method})
+                    if verdict.verdict == "unsupported":
+                        problems.append(f"claim[{index}]: {verdict.reason or 'The quoted evidence does not support the whole claim.'}")
                 proposed = [section.model_dump(include={"heading", "proposed_work"})
                             for section in getattr(result, "sections", [])]
-                direct = direct and not result.message and not any(item["proposed_work"] for item in proposed)
-                if not direct:
+                all_direct = all(direct) and not result.message and not any(item["proposed_work"] for item in proposed)
+                # Overall coverage is separate and cannot override a rejected card.
+                if not problems and not all_direct:
                     await self._check_cancel(check_cancel)
-                    verdict = await self.provider.generate(_prompt("grounding_v3"), {
-                        "task": "verify_claim_support", "request": payload.get("question") or payload.get("instruction", ""),
+                    coverage = await self.provider.generate(_prompt("coverage_v1"), {
+                        "task": "verify_response_coverage", "request": payload.get("question") or payload.get("instruction", ""),
                         "response_kind": payload["task"], "response_message": result.message,
                         "proposed_sections": proposed,
                         "selected_document_ids": payload.get("selected_document_ids", required_documents or []),
                         "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(claims)],
                         "evidence": [block.model_dump() for block in evidence],
-                    }, GroundingPayload)
+                    }, CoveragePayload)
+                    await self._check_cancel(check_cancel)
                     audit["model_checked"] = True
-                    if sorted(item.claim_index for item in verdict.reviews) != list(range(len(claims))):
-                        raise ModelOutputError("引文支持度复核未完整覆盖全部论断，结果已拒绝。")
-                    reviews = [item.model_dump() for item in verdict.reviews]
-                    problems.extend(f"claim[{item.claim_index}]: {item.reason or 'The quoted evidence does not support the whole claim.'}"
-                                    for item in verdict.reviews if item.verdict == "unsupported")
-                    problems.extend("Uncited statement outside claims: " + item for item in verdict.unverified_statements)
-                    problems.extend("Unanswered request aspect: " + item for item in verdict.missing_aspects)
+                    audit["coverage_model_calls"] += 1
+                    problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
+                    problems.extend("Unanswered request aspect: " + item for item in coverage.missing_aspects)
             audit["attempts"].append({"attempt": attempt + 1, "problems": problems, "reviews": reviews})
             await self._check_cancel(check_cancel)
             if not problems:
@@ -965,7 +997,9 @@ class IntelligenceService:
             current_payload = {**payload, "correction": {
                 "previous_result": previous, "problems": problems,
                 "rule": "Fix only against the original supplied evidence. Select citation_spans by evidence_id and quote_id; leave quote empty. Preserve qualifications and narrow claims. "
-                        "Use multiple citations when necessary. Do not fill gaps from memory; explicitly state missing aspects or return insufficient_evidence.",
+                        "Each claim is checked in isolation using ONLY its own quotations. Add missing supporting passage IDs to that claim itself, "
+                        "including explicit model attribution, or narrow/split the claim. Adjacent claims cannot lend their citations. "
+                        "Preserve unchanged supported claims. Use multiple citations when necessary. Do not fill gaps from memory; explicitly state missing aspects or return insufficient_evidence.",
             }}
         raise ModelOutputError("未获得可核验结果。")
 
@@ -992,7 +1026,7 @@ class IntelligenceService:
                     "trace": trace + [self._trace("decline", "没有足够的匹配原文；未调用回答生成模型。")],
                     "verification": "no_matching_evidence"}
         await self._check_cancel(check_cancel)
-        result, used, grounding = await self._generate_grounded(_prompt("qa_v4"), {
+        result, used, grounding = await self._generate_grounded(_prompt("qa_v5"), {
             "task": mode, "question": question, "selected_document_ids": document_ids,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,
@@ -1171,7 +1205,7 @@ class IntelligenceService:
                     "retrieval": retrieval_audit,
                     "future_work_verification": "evidence_insufficient" if kind == "future_work" else None}
         await self._check_cancel(check_cancel)
-        result, used, grounding = await self._generate_grounded(_prompt("synthesis_v4"), {
+        result, used, grounding = await self._generate_grounded(_prompt("synthesis_v5"), {
             "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
             "external_freshness_verified": False,
         }, SynthesisPayload, evidence, check_cancel=check_cancel,

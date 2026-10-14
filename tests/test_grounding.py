@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from research_workspace.intelligence import (
-    AnswerPayload, ChatCompletionProvider, Evidence, GroundingPayload,
+    AnswerPayload, ChatCompletionProvider, ClaimSupportPayload, CoveragePayload, Evidence,
     IntelligenceService, ModelConfig, ModelOutputError,
 )
 from research_workspace.library import Library
@@ -45,16 +45,19 @@ def generate(tmp_path, replies, **kwargs):
     return result, provider
 
 
-def review(verdict, reason="", *, unverified=(), missing=()):
-    return GroundingPayload(reviews=[{"claim_index": 0, "verdict": verdict, "reason": reason}],
-                            unverified_statements=list(unverified), missing_aspects=list(missing))
+def review(verdict, reason=""):
+    return ClaimSupportPayload(verdict=verdict, reason=reason)
+
+
+def coverage(*, unverified=(), missing=()):
+    return CoveragePayload(unverified_statements=list(unverified), missing_aspects=list(missing))
 
 
 def test_caption_matching_quote_is_not_enough_and_is_repaired(tmp_path):
     unsupported = answer("模型采用编码器和解码器。", "Figure 1: Model architecture.")
     corrected = answer("模型采用编码器和解码器。", "The model uses an encoder and a decoder.")
     (result, used, audit), provider = generate(tmp_path, [unsupported,
-        review("unsupported", "Caption does not specify encoder/decoder."), corrected, review("supported")])
+        review("unsupported", "Caption does not specify encoder/decoder."), corrected, review("supported"), coverage()])
     assert result == corrected and used == {"E_fixture"}
     assert audit["status"] == "passed" and len(audit["attempts"]) == 2
     assert provider.calls[2][0]["correction"]["problems"]
@@ -65,13 +68,15 @@ def test_caption_matching_quote_is_not_enough_and_is_repaired(tmp_path):
 def test_repeated_semantic_failure_is_rejected_after_one_repair(tmp_path):
     bad = answer("模型得分为 99。", "The score is 28.4.")
     with pytest.raises(ModelOutputError, match="复核未通过"):
-        generate(tmp_path, [bad, review("unsupported", "Wrong number"), bad, review("unsupported", "Wrong number")])
+        generate(tmp_path, [bad, review("unsupported", "Wrong number"), bad])
 
 
-def test_missing_semantic_verdict_fails_closed(tmp_path):
-    with pytest.raises(ModelOutputError, match="完整覆盖"):
-        generate(tmp_path, [answer("模型得分为28.4。", "The score is 28.4."),
-                           GroundingPayload(reviews=[],unverified_statements=[],missing_aspects=[])])
+def test_coverage_schema_cannot_replace_the_single_claim_verdict():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        ClaimSupportPayload.model_validate(coverage().model_dump())
+    with pytest.raises(ValidationError):
+        CoveragePayload.model_validate({**coverage().model_dump(), "verdict": "supported"})
 
 
 def test_bad_quote_can_be_repaired_but_cannot_skip_source_check(tmp_path):
@@ -169,7 +174,7 @@ def test_uncited_message_cannot_bypass_review_even_with_an_exact_claim(tmp_path)
     result.message = "The score on another task is 99.9."
     corrected = answer("The score is 28.4.", "The score is 28.4.")
     (saved, _, audit), provider = generate(tmp_path, [result,
-        review("supported", unverified=["Uncited numerical result in response_message"]), corrected])
+        coverage(unverified=["Uncited numerical result in response_message"]), corrected])
     assert not saved.message and audit["model_checked"] and len(provider.calls) == 3
     assert provider.calls[1][0]["response_message"] == result.message
 
@@ -179,6 +184,103 @@ def test_unacknowledged_missing_aspect_is_sent_back_for_repair(tmp_path):
     corrected = answer("模型得分为28.4。", "The score is 28.4.")
     corrected.message = "Selected excerpts do not support the requested objective."
     (_, _, audit), provider = generate(tmp_path, [result,
-        review("supported", missing=["The requested training objective is not addressed"]), corrected, review("supported")])
-    assert "Unanswered request aspect" in provider.calls[2][0]["correction"]["problems"][0]
+        review("supported"), coverage(missing=["The requested training objective is not addressed"]), corrected, coverage()])
+    assert "Unanswered request aspect" in provider.calls[3][0]["correction"]["problems"][0]
     assert len(audit["attempts"]) == 2
+    assert len([call for call in provider.calls if call[1] is ClaimSupportPayload]) == 1
+
+
+def test_adjacent_claim_and_uncited_source_text_are_isolated_until_cited(tmp_path):
+    """The old batch reviewer could see the missing attribution in another card."""
+    generic = evidence().model_copy(update={
+        "text": "Most competitive models use an encoder and decoder. Hidden full-block detail is not a citation."})
+    attribution = evidence().model_copy(update={
+        "evidence_id": "E_attribution", "block_id": "attribution",
+        "document_title": "Forbidden title context",
+        "text": "Model Delta follows this encoder-decoder architecture."})
+    initial = AnswerPayload(status="answered", claims=[
+        {"text": "Model Delta uses an encoder and decoder.", "citations": [
+            {"evidence_id": "E_fixture", "quote_id": "Q1"}]},
+        {"text": attribution.text, "citations": [
+            {"evidence_id": "E_attribution", "quote_id": "Q1"}]},
+    ])
+    corrected = initial.model_copy(deep=True)
+    corrected.claims[0].citations.append(corrected.claims[1].citations[0].model_copy(deep=True))
+    provider = SequenceProvider([initial, review("unsupported", "The claim's quotations do not identify Model Delta."),
+                                 corrected, review("supported"), coverage()])
+    service = IntelligenceService(Library(tmp_path), provider)
+    result, _, audit = asyncio.run(service._generate_grounded(
+        "fixture", {"task": "review", "instruction": "Untrusted request contains extra facts."},
+        AnswerPayload, [generic, attribution]))
+
+    support_calls = [payload for payload, model in provider.calls if model is ClaimSupportPayload]
+    assert len(support_calls) == 2
+    assert all(set(payload) == {"task", "claim_index", "claim"} for payload in support_calls)
+    first = support_calls[0]
+    assert first["task"] == "verify_single_claim" and first["claim_index"] == 0
+    assert first["claim"]["citations"][0]["quote"] == "Most competitive models use an encoder and decoder."
+    first_json = json.dumps(first, ensure_ascii=False)
+    assert attribution.text not in first_json
+    assert "Hidden full-block" not in first_json
+    assert attribution.document_title not in first_json
+    assert "Untrusted request" not in first_json
+    assert len(support_calls[1]["claim"]["citations"]) == 2
+    assert support_calls[1]["claim"]["citations"][1]["quote"] == attribution.text
+    assert len(result.claims[0].citations) == 2
+    assert all(citation.quote for citation in result.claims[0].citations)
+    assert audit["attempts"][0]["reviews"][0]["verdict"] == "unsupported"
+    assert audit["attempts"][1]["reviews"][0]["verdict"] == "supported"
+    # Whole-response coverage is reached only after all individual claims pass.
+    assert [model for _, model in provider.calls].count(CoveragePayload) == 1
+    assert provider.calls[-1][1] is CoveragePayload
+
+
+def test_unchanged_unsupported_claim_is_cached_but_never_accepted(tmp_path):
+    bad = answer("模型得分为99。", "The score is 28.4.")
+    provider = SequenceProvider([bad, review("unsupported", "Wrong number"), bad.model_copy(deep=True)])
+    service = IntelligenceService(Library(tmp_path), provider)
+    with pytest.raises(ModelOutputError, match="复核未通过"):
+        asyncio.run(service._generate_grounded("fixture", {"task": "qa"}, AnswerPayload, [evidence()]))
+    assert len(provider.calls) == 3
+    assert sum(model is ClaimSupportPayload for _, model in provider.calls) == 1
+    assert all(model is not CoveragePayload for _, model in provider.calls)
+
+
+def test_changed_claim_text_cannot_reuse_a_supported_verdict(tmp_path):
+    initial = answer("模型得分为28.4。", "The score is 28.4.")
+    changed = answer("模型得分为99。", "The score is 28.4.")
+    provider = SequenceProvider([initial, review("supported"), coverage(missing=["Explain the score"]),
+                                 changed, review("unsupported", "The numeric value changed")])
+    service = IntelligenceService(Library(tmp_path), provider)
+    with pytest.raises(ModelOutputError, match="复核未通过"):
+        asyncio.run(service._generate_grounded("fixture", {"task": "qa"}, AnswerPayload, [evidence()]))
+    assert sum(model is ClaimSupportPayload for _, model in provider.calls) == 2
+    assert sum(model is CoveragePayload for _, model in provider.calls) == 1
+
+
+def test_cancellation_between_claims_stops_remaining_review_and_coverage(tmp_path):
+    result = answer("模型采用编码器和解码器。", "The model uses an encoder and a decoder.")
+    result.claims.extend(answer("模型得分为28.4。", "The score is 28.4.").claims)
+    provider = SequenceProvider([result, review("supported")])
+    service = IntelligenceService(Library(tmp_path), provider)
+    class Cancelled(Exception):
+        pass
+    def cancel():
+        if len(provider.calls) >= 2:
+            raise Cancelled()
+    with pytest.raises(Cancelled):
+        asyncio.run(service._generate_grounded("fixture", {"task": "qa"}, AnswerPayload, [evidence()],
+                                             check_cancel=cancel))
+    assert len(provider.calls) == 2
+    assert provider.calls[-1][0]["claim_index"] == 0
+
+
+def test_excessive_semantic_review_count_is_rejected_without_partial_approval(tmp_path):
+    result = AnswerPayload(status="answered", claims=[
+        {"text": f"Claim {index}: 模型得分为28.4。", "citations": [
+            {"evidence_id": "E_fixture", "quote": "The score is 28.4."}]} for index in range(25)])
+    provider = SequenceProvider([result])
+    service = IntelligenceService(Library(tmp_path), provider)
+    with pytest.raises(ModelOutputError):
+        asyncio.run(service._generate_grounded("fixture", {"task": "qa"}, AnswerPayload, [evidence()]))
+    assert len(provider.calls) == 1
