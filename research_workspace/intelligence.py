@@ -950,25 +950,8 @@ class IntelligenceService:
         outputs = []
         segments = []
         for index, chunk in enumerate(chunks):
-            request = {
-                "target_language": target_language, "text": chunk,
-                "segment": index + 1, "total_segments": len(chunks),
-            }
-            for attempt in range(2):
-                result = await self.provider.generate(_prompt("translation_v1"), request, TranslationPayload)
-                validate_preserved_tokens(chunk, result.translated_text)
-                try:
-                    validate_translation_language(chunk, result.translated_text, target_language)
-                except ModelOutputError:
-                    if attempt:
-                        raise
-                    request["translation_feedback"] = (
-                        "The previous response left source-language prose untranslated. Translate all prose "
-                        "into the requested target language, retaining every opaque marker unchanged. "
-                        "Do not add explanations or facts."
-                    )
-                else:
-                    break
+            result = await translate_protected_chunk(self.provider, chunk, target_language,
+                                                     index + 1, len(chunks))
             outputs.append(result.translated_text)
             translated = restore_text(result.translated_text, replacements)
             segment = {"segment": index + 1, "total_segments": len(chunks),
@@ -1157,6 +1140,34 @@ def validate_preserved_tokens(source: str, translated: str) -> None:
         raise ModelOutputError("翻译丢失、重复或改变了受保护的代码、公式、引用或数字，结果已拒绝。")
     if re.search(r"\d", _PRESERVATION_MARKER.sub("", translated)):
         raise ModelOutputError("翻译新增了原文未提供的数字，结果已拒绝。")
+
+
+async def translate_protected_chunk(provider, chunk: str, target_language: str,
+                                    segment: int, total_segments: int, check_cancel=None) -> TranslationPayload:
+    """Shared direct/queued translation protocol with one bounded language repair."""
+    request = {"target_language": target_language, "text": chunk,
+               "segment": segment, "total_segments": total_segments}
+    for attempt in range(2):
+        if check_cancel is not None:
+            value = check_cancel()
+            if inspect.isawaitable(value):
+                await value
+        result = await provider.generate(_prompt("translation_v1"), request, TranslationPayload)
+        # Corrupt markers must fail immediately, never be silently repaired.
+        validate_preserved_tokens(chunk, result.translated_text)
+        try:
+            validate_translation_language(chunk, result.translated_text, target_language)
+        except ModelOutputError:
+            if attempt:
+                raise
+            request["translation_feedback"] = (
+                "The previous response left source-language prose untranslated. Translate all prose "
+                "into the requested target language, retaining every opaque marker unchanged. "
+                "Do not add explanations or facts."
+            )
+        else:
+            return result
+    raise ModelOutputError("翻译未通过目标语言校验，结果已拒绝。")
 
 
 def validate_translation_language(source: str, translated: str, target_language: str) -> None:

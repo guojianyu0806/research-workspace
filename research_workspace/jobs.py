@@ -154,10 +154,9 @@ class JobStore:
         self.event(job_id,status,'已保存当前片段并停止后续调用。' if cancelled else '已保存当前片段，等待下一轮继续。')
 
     async def _text_step(self,service,job):
-        """Use the service's preservation protocol, issuing only one segment call."""
+        """Save one segment per step; share the service's bounded language repair."""
         from .intelligence import (MAX_TRANSLATION_TEXT_CHARS, PROMPT_VERSION, ModelOutputError,
-            TranslationPayload, _prompt, protect_text, restore_text, split_protected_text,
-            validate_preserved_tokens)
+            protect_text, restore_text, split_protected_text, translate_protected_chunk)
         service._require_model()
         payload,job_id = job['payload'],job['id']
         source = payload['text']
@@ -174,9 +173,8 @@ class JobStore:
             if index in done:
                 continue
             self.check_cancel(job_id)
-            output = await service.provider.generate(_prompt('translation_v1'),{
-                'target_language':language,'text':chunk,'segment':index,'total_segments':len(chunks)},TranslationPayload)
-            validate_preserved_tokens(chunk,output.translated_text)
+            output = await translate_protected_chunk(service.provider,chunk,language,index,len(chunks),
+                                                     check_cancel=lambda:self.check_cancel(job_id))
             item = {'segment':index,'total_segments':len(chunks),
                     'source_text':restore_text(chunk,replacements),
                     'translated_text':restore_text(output.translated_text,replacements)}
@@ -192,8 +190,8 @@ class JobStore:
             raise ModelOutputError('翻译改变了原文数字，结果已拒绝。')
         return {'status':'completed','source_text':source,'translated_text':translated,
                 'target_language':language,'segments':segments,'prompt_version':PROMPT_VERSION,
-                'verification':'protected_spans_and_numeric_preservation; translation_quality_not_guaranteed',
-                'trace':[service._trace('translate',f'已完成并持久保存{len(chunks)}个片段；可从已保存片段继续。')]}
+                'verification':'protected_spans_and_numeric_preservation; target_language_sanity; translation_quality_not_guaranteed',
+                'trace':[service._trace('translate',f'已核验目标语言并持久保存{len(chunks)}个片段；可从已保存片段继续。')]}
 
     async def process_next(self, service=None):
         from .intelligence import IntelligenceService

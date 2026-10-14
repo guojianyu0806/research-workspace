@@ -10,6 +10,7 @@ from research_workspace.intelligence import (
     restore_text, validate_translation_language,
 )
 from research_workspace.library import Library
+from research_workspace.jobs import JobStore
 
 
 SOURCE_WITH_FORMULA = (
@@ -145,3 +146,47 @@ def test_preservation_corruption_is_not_bypassed_by_language_retry(tmp_path):
     with pytest.raises(ModelOutputError, match="受保护"):
         asyncio.run(IntelligenceService(Library(tmp_path), provider).translate_text(SOURCE_WITH_FORMULA))
     assert len(provider.requests) == 1
+
+
+def test_queued_text_translation_uses_same_language_repair(tmp_path):
+    library = Library(tmp_path)
+    store = JobStore(library)
+    job = store.create("translate_text", {"text": SOURCE_WITH_FORMULA, "target_language": "en"})
+    provider = FixtureProvider(lambda req, count: req["text"] if count == 1 else translate_formula_fixture(req, count))
+    asyncio.run(store.process_next(IntelligenceService(library, provider)))
+    saved = store.get(job["id"])
+    assert saved["status"] == "completed"
+    assert len(provider.requests) == 2
+    assert "no experiments have been conducted" in saved["result"]["translated_text"]
+    assert "E = mc^2" in saved["result"]["translated_text"]
+    assert "target_language_sanity" in saved["result"]["verification"]
+
+
+@pytest.mark.parametrize("wrong_result", ["wrong_language", "corrupt_marker"])
+def test_queued_translation_rejects_invalid_results(tmp_path, wrong_result):
+    library = Library(tmp_path)
+    store = JobStore(library)
+    job = store.create("translate_text", {"text": SOURCE_WITH_FORMULA, "target_language": "en"})
+    provider = FixtureProvider(lambda req, count: req["text"] if wrong_result == "wrong_language" else "A translation.")
+    asyncio.run(store.process_next(IntelligenceService(library, provider)))
+    saved = store.get(job["id"])
+    assert saved["status"] == "failed"
+    assert saved["result"] is None and saved["completed_items"] == []
+    assert len(provider.requests) == (2 if wrong_result == "wrong_language" else 1)
+
+
+def test_queued_cancellation_prevents_buying_language_repair(tmp_path):
+    library = Library(tmp_path)
+    store = JobStore(library)
+    job = store.create("translate_text", {"text": SOURCE_WITH_FORMULA, "target_language": "en"})
+
+    def cancelled_response(request, count):
+        store.cancel(job["id"])
+        return request["text"]  # The in-flight response needs repair, but cancellation wins.
+
+    provider = FixtureProvider(cancelled_response)
+    asyncio.run(store.process_next(IntelligenceService(library, provider)))
+    saved = store.get(job["id"])
+    assert saved["status"] == "cancelled"
+    assert len(provider.requests) == 1
+    assert saved["result"] is None and saved["completed_items"] == []
