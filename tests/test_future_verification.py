@@ -84,7 +84,7 @@ def test_real_sources_are_bound_and_original_synthesis_is_preserved():
     assert result["content"] == before["content"]
     assert result["prompt_version"] == "research-evidence-v1"
     audit = result["future_verification"]
-    assert audit["prompt_version"] == "future-verification-v1"
+    assert audit["prompt_version"] == "future-verification-v2"
     assert audit["status"] == "completed"
     assert audit["model_called"] is True
     assert audit["full_text_reviewed"] is False
@@ -281,17 +281,22 @@ def test_no_proposals_and_unconfigured_provider_make_no_requests():
     assert OLD_LIMITATION in result["limitations"]
 
 
-def test_chinese_direction_uses_disclosed_title_topic_or_remains_unverified():
+def test_failed_chinese_query_planning_can_search_topic_but_cannot_mark_it_verified():
     value = synthesis()
     value["sections"] = [{"heading": "未来方向", "proposed_work": "研究更稳健的图预测方法。"}]
     discovery = FakeDiscovery()
     result = run(verify_future_work(None, FakeProvider(), value, discovery=discovery))
     assert discovery.calls[0]["query"] == "graph prediction"
     assert result["future_verification"]["queries"][0]["strategy"] == "topic_only"
+    assert result["future_verification"]["query_planning"]["status"] == "failed"
+    assert result["future_verification"]["assessment_model_called"] is False
+    assert result["retained_directions"][0]["status"] == "evidence_insufficient"
     value["references"][0]["title"] = "图预测"
     provider, discovery = FakeProvider(), FakeDiscovery()
     result = run(verify_future_work(None, provider, value, discovery=discovery))
-    assert discovery.calls == provider.calls == []
+    assert discovery.calls == []
+    assert len(provider.calls) == 1
+    assert provider.calls[0]["task"] == "translate_future_direction_search_conditions"
     assert result["retained_directions"][0]["query_limitation"] == "no_usable_english_keywords"
     assert result["retained_directions"][0]["status"] == "evidence_insufficient"
 
@@ -343,3 +348,192 @@ def test_other_synthesis_kind_is_not_silently_modified():
     value["kind"] = "review"
     with pytest.raises(ValueError, match="Future Work"):
         run(verify_future_work(None, FakeProvider(), value, discovery=FakeDiscovery()))
+
+
+def chinese_synthesis():
+    value = synthesis()
+    value["sections"] = [{"heading": "待验证方向", "proposed_work":
+        "系统评估 RAG 在知识更新场景下的表现，检索语料库随时间变化时，测量生成答案的事实一致性。"}]
+    value["references"] = [{"title": "Retrieval-Augmented Generation"}]
+    return value
+
+
+def translated_concepts(direction_id="direction-1"):
+    return {"direction_id": direction_id,
+            "topic": {"source_text": "RAG", "english_terms": "RAG"},
+            "conditions": [{"source_text": "知识更新", "english_terms": "knowledge update"},
+                           {"source_text": "语料库随时间变化", "english_terms": "temporal corpus"},
+                           {"source_text": "事实一致性", "english_terms": "factual consistency"}]}
+
+
+class QueryPlanningProvider(FakeProvider):
+    def __init__(self, planning_transform=None, **kwargs):
+        super().__init__(**kwargs)
+        self.planning_transform = planning_transform
+
+    async def generate(self, prompt, payload, output_model):
+        if payload["task"] != "translate_future_direction_search_conditions":
+            return await super().generate(prompt, payload, output_model)
+        self.calls.append(deepcopy(payload))
+        data = {"directions": [translated_concepts(item["direction_id"]) for item in payload["directions"]]}
+        if self.planning_transform:
+            data = self.planning_transform(data, payload)
+        return output_model.model_validate(data)
+
+
+def test_chinese_scientific_conditions_survive_into_distinct_bounded_queries():
+    provider, discovery = QueryPlanningProvider(), FakeDiscovery(cached=True)
+    result = run(verify_future_work(None, provider, chinese_synthesis(), discovery=discovery))
+    audit = result["future_verification"]
+    assert [item["query"] for item in discovery.calls] == [
+        "rag knowledge update", "rag temporal corpus", "rag factual consistency"]
+    assert len(provider.calls) == audit["generation_calls"] == audit["generation_call_limit"] == 2
+    assert audit["query_planning"]["model_called"] is True
+    assert audit["query_planning"]["status"] == "completed"
+    assert audit["query_planning"]["concepts"]["direction-1"]["conditions"][1]["source_text"] == "语料库随时间变化"
+    assert audit["assessment_model_called"] is True
+    assert audit["novelty_proven"] is False
+    assert all(item["cached"] for item in audit["queries"])
+    assert all(item["strategy"] == "translated_direction_conditions" for item in audit["queries"])
+    assert len(provider.calls[1]["directions"][0]["query_ids"]) == 3
+
+
+def test_translation_is_not_tied_to_a_hardcoded_rag_topic():
+    value = chinese_synthesis()
+    value["sections"][0]["proposed_work"] = "研究图预测方法在传感器噪声场景的稳健性。"
+    def replace(data, payload):
+        data["directions"][0].update(topic={"source_text": "图预测", "english_terms": "graph prediction"},
+            conditions=[{"source_text": "传感器噪声", "english_terms": "sensor noise"}])
+        return data
+    provider, discovery = QueryPlanningProvider(replace), FakeDiscovery()
+    result = run(verify_future_work(None, provider, value, discovery=discovery))
+    assert discovery.calls[0]["query"] == "graph prediction sensor noise"
+    assert result["future_verification"]["query_planning"]["status"] == "completed"
+
+
+@pytest.mark.parametrize("mutation", ["unbound", "url", "operator", "chinese", "too_long",
+                                     "too_many_words", "topic_only", "generic_only", "duplicate",
+                                     "missing", "foreign_id", "extra_field", "too_many_conditions"])
+def test_invalid_query_planning_never_promotes_topic_fallback_to_completed(mutation):
+    def mutate(data, payload):
+        direction = data["directions"][0]
+        concept = direction["conditions"][0]
+        if mutation == "unbound":
+            concept["source_text"] = "一个原设想中不存在的研究条件"
+        elif mutation == "url":
+            concept["english_terms"] = "https://example.invalid/query"
+        elif mutation == "operator":
+            concept["english_terms"] = "all:RAG OR ti:graph"
+        elif mutation == "chinese":
+            concept["english_terms"] = "知识 update"
+        elif mutation == "too_long":
+            concept["english_terms"] = "token " * 20
+        elif mutation == "too_many_words":
+            concept["english_terms"] = "knowledge update temporal corpus factual consistency calibrated uncertainty"
+        elif mutation == "topic_only":
+            concept.update(source_text="RAG", english_terms="RAG")
+        elif mutation == "generic_only":
+            concept["english_terms"] = "future research"
+        elif mutation == "duplicate":
+            data["directions"].append(deepcopy(direction))
+        elif mutation == "missing":
+            data["directions"] = []
+        elif mutation == "foreign_id":
+            direction["direction_id"] = "direction-99"
+        elif mutation == "extra_field":
+            direction["novelty_proven"] = True
+        elif mutation == "too_many_conditions":
+            direction["conditions"] *= 2
+        return data
+    provider, discovery = QueryPlanningProvider(mutate), FakeDiscovery()
+    result = run(verify_future_work(None, provider, chinese_synthesis(), discovery=discovery))
+    audit = result["future_verification"]
+    assert audit["query_planning"]["status"] == "failed"
+    assert audit["assessment_model_called"] is False
+    assert audit["status"] == "evidence_insufficient"
+    assert len(provider.calls) == 1
+    assert result["excluded_directions"] == []
+
+
+def test_query_budget_exhaustion_does_not_hide_unsearched_conditions():
+    value = chinese_synthesis()
+    value["sections"].append({"heading": "传感器条件", "proposed_work": "评估图预测方法在传感器噪声下的稳健性。"})
+    def replace_second(data, payload):
+        data["directions"][1].update(topic={"source_text": "图预测", "english_terms": "graph prediction"},
+            conditions=[{"source_text": "传感器噪声", "english_terms": "sensor noise"}])
+        return data
+    provider, discovery = QueryPlanningProvider(replace_second), FakeDiscovery()
+    result = run(verify_future_work(None, provider, value, discovery=discovery))
+    assert [item["query"] for item in discovery.calls] == [
+        "rag knowledge update", "graph prediction sensor noise", "rag temporal corpus"]
+    direction = result["retained_directions"][0]
+    assert direction["direction_id"] == "direction-1"
+    assert direction["query_limitation"] == "query_budget_exhausted"
+    assert direction["status"] == "evidence_insufficient"
+    assert len(direction["required_queries"]) == 3
+    assert [item["direction_id"] for item in provider.calls[1]["directions"]] == ["direction-2"]
+
+
+@pytest.mark.parametrize("checkpoint", [1, 2])
+def test_cancel_before_query_planning_or_before_search_never_starts_next_operation(checkpoint):
+    class TaskCancelled(Exception):
+        pass
+    checkpoints = []
+    def cancel():
+        checkpoints.append(True)
+        if len(checkpoints) == checkpoint:
+            raise TaskCancelled()
+    provider, discovery = QueryPlanningProvider(), FakeDiscovery()
+    with pytest.raises(TaskCancelled):
+        run(verify_future_work(None, provider, chinese_synthesis(), discovery=discovery, check_cancel=cancel))
+    assert len(provider.calls) == checkpoint - 1
+    assert discovery.calls == []
+
+
+def test_query_planning_failure_records_no_raw_provider_error():
+    def fail(data, payload):
+        raise RuntimeError("fixture-secret-key and private provider response")
+    provider = QueryPlanningProvider(fail)
+    result = run(verify_future_work(None, provider, chinese_synthesis(), discovery=FakeDiscovery()))
+    assert "fixture-secret-key" not in str(result)
+    assert "private provider" not in str(result)
+    assert result["future_verification"]["generation_calls"] == 1
+
+
+def test_english_topic_without_a_specific_condition_is_not_marked_verified():
+    value = synthesis()
+    value["sections"] = [{"heading": "Graph Prediction", "proposed_work": "Study graph prediction."}]
+    provider = FakeProvider()
+    result = run(verify_future_work(None, provider, value, discovery=FakeDiscovery()))
+    assert provider.calls == []
+    assert result["future_verification"]["status"] == "evidence_insufficient"
+    assert result["retained_directions"][0]["query_quality"] == "insufficient"
+
+
+@pytest.mark.parametrize("status,coverage", [("potentially_addressed", "explicit_direction_coverage"),
+                                           ("not_found_in_search", "related_only")])
+def test_generic_topic_citation_does_not_verify_specific_chinese_conditions(status, coverage):
+    generic = "Retrieval augmented generation is a useful method for language models."
+    def mutate(data, payload):
+        data["directions"][0].update(status=status, coverage=coverage)
+        data["directions"][0]["citations"][0]["quote"] = generic
+        return data
+    provider = QueryPlanningProvider(transform=mutate)
+    result = run(verify_future_work(None, provider, chinese_synthesis(),
+                                  discovery=FakeDiscovery([paper(summary=generic)])))
+    assert result["future_verification"]["status"] == "evidence_insufficient"
+    assert result["excluded_directions"] == []
+    assert "具体检索条件" in result["retained_directions"][0]["reason"]
+
+
+def test_explicit_condition_quotes_can_support_only_a_provisional_exclusion():
+    quote = "We study knowledge update over a temporal corpus and measure factual consistency."
+    def mutate(data, payload):
+        data["directions"][0]["citations"][0]["quote"] = quote
+        return data
+    provider = QueryPlanningProvider(transform=mutate)
+    result = run(verify_future_work(None, provider, chinese_synthesis(),
+                                  discovery=FakeDiscovery([paper(summary=quote)])))
+    assert result["future_verification"]["status"] == "completed"
+    assert result["excluded_directions"][0]["requires_full_text_confirmation"] is True
+    assert result["future_verification"]["novelty_proven"] is False
