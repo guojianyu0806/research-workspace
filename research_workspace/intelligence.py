@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .library import Library, LibraryError
 
 
-PROMPT_VERSION = "research-evidence-v3"
+PROMPT_VERSION = "research-evidence-v4"
 PROMPT_DIRECTORY = Path(__file__).with_name("prompts")
 MAX_DOCUMENTS = 20
 MAX_EVIDENCE = 24
@@ -153,6 +153,8 @@ class ClaimReview(StrictModel):
 
 class GroundingPayload(StrictModel):
     reviews: list[ClaimReview] = Field(max_length=180)
+    unverified_statements: list[str] = Field(max_length=12)
+    missing_aspects: list[str] = Field(max_length=12)
 
 
 class Section(StrictModel):
@@ -437,6 +439,8 @@ class IntelligenceService:
         numeric_source = re.search(r"\d|[=α-ω]", text, re.I)
         if bibliographic:
             return 1.0
+        if re.match(r"^(?:former|latter|layer|word|tion|ture)\b", text) and len(words) < 55:
+            return 0.35  # A page/column continuation cannot identify its subject.
         if re.match(r"^(?:figure|fig\.?|table|图|表)\s*\d+\s*[:.：]", text, re.I):
             return 0.25 if len(words) < 18 else 0.85
         if re.match(r"^(?:this|the|following) section (?:describes|discusses|presents|provides)\b", text, re.I) and len(words) < 18:
@@ -471,6 +475,11 @@ class IntelligenceService:
     @staticmethod
     def _rank_lexical(question: str, blocks: list[Evidence], index: tuple) -> list[Evidence]:
         terms = set(IntelligenceService._search_terms(question))
+        objective_search = "objective" in terms or "训练目标" in question
+        objective_terms = {"objective", "loss", "prediction", "predict", "predicted", "probability", "likelihood"}
+        if objective_search:
+            # Task-neutral search synonyms, not asserted training facts.
+            terms.update(objective_terms)
         if not terms or not blocks:
             return []
         counts, lengths, average, reference_blocks = index
@@ -493,6 +502,7 @@ class IntelligenceService:
                 candidates.append(block.model_copy(update={"score": round(score, 6)}))
         candidates.sort(key=lambda block: (
             IntelligenceService._evidence_quality(block, question, reference_blocks) < 0.5,
+            objective_search and not objective_terms.intersection(IntelligenceService._search_terms(block.text)),
             -block.score, block.document_id, block.page, block.block_id))
         return candidates
 
@@ -515,6 +525,103 @@ class IntelligenceService:
                 if queues[document_id] and len(selected) < limit:
                     selected.append(queues[document_id].pop(0))
         return selected
+
+    @staticmethod
+    def _heading(block: Evidence) -> tuple[str, bool, str] | None:
+        lines = [line.strip() for line in block.text.splitlines() if line.strip()]
+        if not lines:
+            return None
+        compact = " ".join(lines)
+        if len(compact) < 120 and re.match(r"^(?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)\s+[A-Z]", compact) and not re.search(r"[.!?]$", compact):
+            return re.sub(r"^\S+\s+", "", compact), True, ""
+        first = lines[0]
+        if first.endswith(":") and len(lines) > 1:
+            first += " " + lines[1]
+        enumerated = re.match(r"^([A-Z][A-Za-z -]{0,20})\s*#?\d+\s*[:.]", first)
+        if enumerated:
+            return first, False, enumerated[1].strip().casefold()
+        words = re.findall(r"[A-Za-z][A-Za-z/-]*", first)
+        if (len(lines) > 1 and 2 <= len(words) <= 6 and len(first) < 70
+                and not re.search(r"[.!?,;]", first)
+                and sum(word[0].isupper() for word in words) >= len(words) - 1):
+            return first, False, ""
+        return None
+
+    def _section_candidates(self, query: str, blocks: list[Evidence], index: tuple,
+                            document_id: str) -> list[Evidence]:
+        """Retrieve real paragraphs under matching headings, including subparts.
+
+        This is bounded structural recall, not text concatenation or synthetic
+        evidence. Two-column pages are read down each column before moving right.
+        """
+        source = [item for item in blocks if item.document_id == document_id]
+        two_column = set()
+        for page in {item.page for item in source}:
+            bodies = [item for item in source if item.page == page and len(item.text) > 150
+                      and item.bbox[2] - item.bbox[0] < 0.55]
+            if any(item.bbox[0] < 0.4 for item in bodies) and any(item.bbox[0] > 0.45 for item in bodies):
+                two_column.add(page)
+        source.sort(key=lambda item: (item.page, int(item.bbox[0] > 0.45) if item.page in two_column else 0,
+                                      item.bbox[1], item.bbox[0]))
+        query_terms = set(self._search_terms(query))
+        if not query_terms.intersection({"architecture", "encoder", "decoder", "objective", "training", "method",
+                                         "algorithm", "procedure", "mechanism", "framework", "design", "implementation"}):
+            return []
+        headings = []
+        for position, item in enumerate(source):
+            heading = self._heading(item)
+            if not heading or item.block_id in index[3]:
+                continue
+            title, standalone, enumeration = heading
+            terms = set(self._search_terms(title))
+            overlap = len(query_terms & terms)
+            if overlap:
+                score = overlap / math.sqrt(max(len(terms), 1)) + (0.15 if standalone else 0)
+                headings.append((score, position, heading))
+        if not headings:
+            return []
+        headings.sort(key=lambda item: (-item[0], source[item[1]].page, item[1]))
+        _, start, (_, standalone, enumeration) = headings[0]
+        window = []
+        for position in range(start, min(start + 24, len(source))):
+            item = source[position]
+            if item.page > source[start].page + 1:
+                break
+            heading = self._heading(item)
+            if position > start and heading and heading[1]:
+                break
+            if (position > start and not standalone and heading and not enumeration
+                    and not heading[2]):
+                break
+            window.append(item)
+        # An enumerated heading can be one of several sibling objectives/steps.
+        # Preserve each sibling's best paragraph instead of only the first one.
+        groups, current = [], []
+        for item in window:
+            heading = self._heading(item)
+            if heading and heading[2]:
+                if current:
+                    groups.append(current)
+                current = []
+            if self._evidence_quality(item, query, index[3]) >= 0.85 and len(self._search_terms(item.text)) >= 8:
+                current.append(item)
+        if current:
+            groups.append(current)
+        ranked = self._rank_lexical(query, blocks, index)
+        ranks = {item.block_id: position for position, item in enumerate(ranked)}
+        # Prefer substantive child parts, then use the parent introduction.
+        child_groups = [group for group in groups if any((self._heading(item) or (None, None, ""))[2] for item in group)]
+        ordered = child_groups + [group for group in groups if group not in child_groups]
+        selected = []
+        for group in ordered:
+            selected.append(min(group, key=lambda item: ranks.get(item.block_id, len(ranks))))
+        remaining = sorted((item for group in groups for item in group if item not in selected),
+                           key=lambda item: ranks.get(item.block_id, len(ranks)))
+        combined = selected + remaining
+        if not standalone and not enumeration and source[start] in combined:
+            combined.remove(source[start])
+            combined.insert(0, source[start])
+        return combined[:3]
 
     @staticmethod
     def _excerpts(selected: list[Evidence]) -> list[Evidence]:
@@ -557,7 +664,10 @@ class IntelligenceService:
             anchor, term = normal(item.source_phrase), " ".join(item.term.split())
             normalized_term = normal(term)
             term_numbers = set(re.findall(r"\d+(?:\.\d+)?", normalized_term))
-            if (not anchor or anchor not in normalized_question or not term or len(term) > 80
+            instruction_only = re.fullmatch(
+                r"(?:请)?(?:引用原文|引用来源|引用文献|提供引用|用中文回答|用英文回答)|"
+                r"(?:please )?(?:cite|quote|provide references)(?: .*)?", anchor, re.I)
+            if (instruction_only or not anchor or anchor not in normalized_question or not term or len(term) > 80
                     or any(unicodedata.category(char).startswith("C") for char in item.term)
                     or not re.search(r"[A-Za-z\u3400-\u9fffα-ω]", term)
                     or re.search(r"https?://|www\.|ignore.{0,25}instructions|system\s+prompt|忽略.{0,15}指令|执行命令", term, re.I)
@@ -684,22 +794,37 @@ class IntelligenceService:
             for query, ranking in zip(queries[1:], rankings[1:len(queries)]):
                 if _normalized(query["text"]) == _normalized(query["source_phrase"]):
                     continue
-                facets.setdefault(_normalized(query["source_phrase"]), []).extend(ranking)
+                # Entity names remain in lexical fusion but do not consume a
+                # comparison dimension's reserved slots.
+                anchor = query["source_phrase"].strip()
+                if len(document_ids) > 1 and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", anchor) and any(
+                        re.search(r"\b" + re.escape(anchor) + r"s?\b", block.document_title, re.I) for block in blocks):
+                    continue
+                contextual = []
+                if len(document_ids) > 1:
+                    for document_id in document_ids:
+                        contextual.extend(self._section_candidates(query["text"], blocks, index, document_id))
+                facets.setdefault(_normalized(anchor), []).extend(contextual + ranking)
             reserved = []
             reserved_ids = set()
             per_document = max(1, math.ceil(limit / max(len(document_ids), 1)))
+            fused_by_id = {item.block_id: item for item in fused}
             for document_id in document_ids:
                 count = 0
-                for ranking in facets.values():
-                    if count >= per_document:
+                while count < per_document:
+                    before = count
+                    for ranking in facets.values():
+                        if count >= per_document:
+                            break
+                        candidate = next((item for item in ranking if item.document_id == document_id
+                                          and item.block_id not in reserved_ids
+                                          and self._evidence_quality(item, question, index[3]) >= 0.85), None)
+                        if candidate:
+                            reserved.append(fused_by_id.get(candidate.block_id, candidate))
+                            reserved_ids.add(candidate.block_id)
+                            count += 1
+                    if len(document_ids) == 1 or count == before:
                         break
-                    candidate = next((item for item in ranking if item.document_id == document_id
-                                      and item.block_id not in reserved_ids
-                                      and self._evidence_quality(item, question, index[3]) >= 0.85), None)
-                    if candidate:
-                        reserved.append(next(item for item in fused if item.block_id == candidate.block_id))
-                        reserved_ids.add(candidate.block_id)
-                        count += 1
             selected = self._fair_blocks(reserved + fused, document_ids, limit)
             mode = "bilingual_query_expansion_bm25_rrf" if len(queries) > 1 else "bm25_with_bibliographic_candidates"
             trace.append(self._trace("rank_fusion", f"对{len(rankings)}组候选进行RRF融合，去除篇内重复文本，兼顾正文质量、子问题和各篇文献；选出{len(selected)}个真实原文块。"))
@@ -770,7 +895,7 @@ class IntelligenceService:
                                  required_documents: list[str] | None = None,
                                  required_sections: set[str] | None = None) -> tuple[T, set[str], dict]:
         """Bounded repair against one frozen retrieval snapshot; never waive checks."""
-        audit = {"prompt_version": "grounding-v2", "attempts": [], "model_checked": False,
+        audit = {"prompt_version": "grounding-v3", "attempts": [], "model_checked": False,
                  "limitation": "model_semantic_review_is_not_a_proof"}
         catalog = self._citation_spans(evidence)
         payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
@@ -802,12 +927,18 @@ class IntelligenceService:
                 # paraphrases, translations and multi-source conclusions need review.
                 direct = all(len(claim.citations) == 1 and _quote_normalized(claim.text) == _quote_normalized(claim.citations[0].quote)
                              for claim in claims)
+                proposed = [section.model_dump(include={"heading", "proposed_work"})
+                            for section in getattr(result, "sections", [])]
+                direct = direct and not result.message and not any(item["proposed_work"] for item in proposed)
                 if not direct:
                     await self._check_cancel(check_cancel)
-                    verdict = await self.provider.generate(_prompt("grounding_v2"), {
+                    verdict = await self.provider.generate(_prompt("grounding_v3"), {
                         "task": "verify_claim_support", "request": payload.get("question") or payload.get("instruction", ""),
+                        "response_kind": payload["task"], "response_message": result.message,
+                        "proposed_sections": proposed,
+                        "selected_document_ids": payload.get("selected_document_ids", required_documents or []),
                         "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(claims)],
-                        "evidence": [block.model_dump() for block in evidence if block.evidence_id in used],
+                        "evidence": [block.model_dump() for block in evidence],
                     }, GroundingPayload)
                     audit["model_checked"] = True
                     if sorted(item.claim_index for item in verdict.reviews) != list(range(len(claims))):
@@ -815,6 +946,8 @@ class IntelligenceService:
                     reviews = [item.model_dump() for item in verdict.reviews]
                     problems.extend(f"claim[{item.claim_index}]: {item.reason or 'The quoted evidence does not support the whole claim.'}"
                                     for item in verdict.reviews if item.verdict == "unsupported")
+                    problems.extend("Uncited statement outside claims: " + item for item in verdict.unverified_statements)
+                    problems.extend("Unanswered request aspect: " + item for item in verdict.missing_aspects)
             audit["attempts"].append({"attempt": attempt + 1, "problems": problems, "reviews": reviews})
             await self._check_cancel(check_cancel)
             if not problems:
@@ -859,7 +992,7 @@ class IntelligenceService:
                     "trace": trace + [self._trace("decline", "没有足够的匹配原文；未调用回答生成模型。")],
                     "verification": "no_matching_evidence"}
         await self._check_cancel(check_cancel)
-        result, used, grounding = await self._generate_grounded(_prompt("qa_v3"), {
+        result, used, grounding = await self._generate_grounded(_prompt("qa_v4"), {
             "task": mode, "question": question, "selected_document_ids": document_ids,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,
@@ -939,7 +1072,7 @@ class IntelligenceService:
                 block_id=row["id"], page=row["page"], bbox=json.loads(row["bbox"]), text=row["text"])
 
     async def translate_text(self, text: str, *, target_language: Literal["zh", "en"] = "en",
-                             progress: Callable[[dict], Any] | None = None) -> dict:
+                             progress: Callable[[dict], Any] | None = None, check_cancel=None) -> dict:
         self._require_model()
         if target_language not in {"zh", "en"}:
             raise LibraryError("当前翻译目标仅支持zh或en。")
@@ -951,7 +1084,7 @@ class IntelligenceService:
         segments = []
         for index, chunk in enumerate(chunks):
             result = await translate_protected_chunk(self.provider, chunk, target_language,
-                                                     index + 1, len(chunks))
+                                                     index + 1, len(chunks), check_cancel=check_cancel)
             outputs.append(result.translated_text)
             translated = restore_text(result.translated_text, replacements)
             segment = {"segment": index + 1, "total_segments": len(chunks),
@@ -971,10 +1104,11 @@ class IntelligenceService:
                 "verification": "protected_spans_and_numeric_preservation; target_language_sanity; translation_quality_not_guaranteed"}
 
     async def translate_block(self, block: Evidence | dict, *,
-                              target_language: Literal["zh", "en"] = "zh") -> dict:
+                              target_language: Literal["zh", "en"] = "zh", check_cancel=None) -> dict:
         self._require_model()
         source = self._canonical_block(block)
-        translated = await self.translate_text(source.text, target_language=target_language)
+        translated = await self.translate_text(source.text, target_language=target_language,
+                                               check_cancel=check_cancel)
         return {**translated, "document_id": source.document_id, "run_id": source.run_id,
                 "block_id": source.block_id, "evidence_id": source.evidence_id,
                 "page": source.page, "bbox": source.bbox}
@@ -1037,7 +1171,7 @@ class IntelligenceService:
                     "retrieval": retrieval_audit,
                     "future_work_verification": "evidence_insufficient" if kind == "future_work" else None}
         await self._check_cancel(check_cancel)
-        result, used, grounding = await self._generate_grounded(_prompt("synthesis_v3"), {
+        result, used, grounding = await self._generate_grounded(_prompt("synthesis_v4"), {
             "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
             "external_freshness_verified": False,
         }, SynthesisPayload, evidence, check_cancel=check_cancel,

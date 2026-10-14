@@ -3,6 +3,7 @@
 import asyncio
 import re
 
+import pymupdf
 import pytest
 
 from research_workspace.intelligence import (
@@ -186,6 +187,35 @@ def test_queued_cancellation_prevents_buying_language_repair(tmp_path):
 
     provider = FixtureProvider(cancelled_response)
     asyncio.run(store.process_next(IntelligenceService(library, provider)))
+    saved = store.get(job["id"])
+    assert saved["status"] == "cancelled"
+    assert len(provider.requests) == 1
+    assert saved["result"] is None and saved["completed_items"] == []
+
+
+@pytest.mark.parametrize("selected", [False, True], ids=["whole_block", "selected_text"])
+def test_document_translation_cancel_stops_language_repair_and_rejects_bad_fragment(tmp_path, selected):
+    library = Library(tmp_path)
+    selected_text = "The model obtains 28.4 BLEU on the benchmark [1]."
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((40, 80), selected_text + "\nAnother source sentence.")
+        document = library.import_document(pdf.tobytes(), "translation-cancel.pdf")["document"]
+    library.process_next_job()
+    store = JobStore(library)
+    payload = {"document_id": document["id"], "target_language": "zh"}
+
+    def cancelled_response(request, count):
+        store.cancel(job["id"])
+        return request["text"]
+
+    provider = FixtureProvider(cancelled_response)
+    service = IntelligenceService(library, provider)
+    block = service.list_translation_blocks(document["id"])["blocks"][0]
+    payload.update({"run_id": block["run_id"], "block_ids": [block["block_id"]]})
+    if selected:
+        payload["selected_text"] = selected_text
+    job = store.create("translate", payload)
+    asyncio.run(store.process_next(service))
     saved = store.get(job["id"])
     assert saved["status"] == "cancelled"
     assert len(provider.requests) == 1

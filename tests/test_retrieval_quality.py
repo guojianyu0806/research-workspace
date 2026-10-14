@@ -102,3 +102,52 @@ def test_duplicate_text_retains_both_independent_document_identities():
     blocks = [block("one", "a", text), block("one", "b", text), block("two", "c", text)]
     found = IntelligenceService._fair_blocks(blocks, ["one", "two"], 12)
     assert [item.block_id for item in found] == ["a", "c"]
+
+
+def test_comparison_recalls_section_bodies_and_sibling_objectives_within_fixed_budget():
+    blocks = [
+        block("Prism", "design", "1\nEncoder and Decoder Design"),
+        block("Prism", "encoder", "Encoder: The encoder maps observed signals into continuous representations using local transformations."),
+        block("Prism", "decoder", "Decoder: The decoder attends to encoder representations and predicts output symbols using causal masking."),
+        block("Prism", "objective", "The output softmax produces predicted next-symbol probabilities for training and generation."),
+        block("Prism", "prism-evaluation", "Evaluation reports error rate on a translation benchmark with separate training data."),
+        block("Vale", "architecture", "Model Architecture\nVale uses a stack of bidirectional encoders to represent complete input sequences for downstream applications."),
+        block("Vale", "train-heading", "2\nTraining Objectives", 2),
+        block("Vale", "denoising", "Task #1: Denoising\nThe denoising objective reconstructs corrupted symbols with a prediction loss over their vocabulary." , 2),
+        block("Vale", "contrastive", "Task #2: Contrastive Matching\nThe second task predicts whether two observations belong together using paired classification examples.", 2),
+        block("Vale", "vale-evaluation", "3\nEvaluation\nEvaluation reports classification accuracy on a distinct benchmark of paired observations.", 3),
+    ]
+    # Physical order is explicit, while IDs remain unrelated to ranking.
+    for i, item in enumerate(blocks):
+        item.bbox = [0.1, i / 30, 0.9, i / 30 + 0.02]
+    blocks.extend(block("Prism", "noise" + str(i),
+                        "Prism sequence processing is discussed in a generic language modeling survey of earlier systems.")
+                  for i in range(15))
+    service = service_with(blocks, [
+        ("编码器/解码器结构", "encoder decoder architecture"),
+        ("训练目标", "training objective denoising"),
+        ("Prism", "Prism sequence processing"),
+        ("Vale", "Vale denoising representations"),
+        ("评估差异", "evaluation metric benchmark"),
+    ])
+    found = asyncio.run(service.retrieve_for_question(
+        "比较 Prism 与 Vale 的编码器/解码器结构和训练目标，说明评估差异", ["Prism", "Vale"], limit=12))
+    ids = {item.block_id for item in found["evidence"]}
+    assert {"encoder", "decoder", "objective", "architecture", "denoising", "contrastive"} <= ids
+    assert len(found["evidence"]) <= 12
+    assert Counter(item.document_id for item in found["evidence"]) == {"Prism": 6, "Vale": 5}
+    for item in found["evidence"]:
+        original = next(source for source in blocks if source.document_id == item.document_id and source.block_id == item.block_id)
+        assert item.text == original.text and item.run_id == original.run_id and item.bbox == original.bbox
+
+
+def test_output_and_citation_instructions_are_not_substantive_query_anchors():
+    payload = RetrievalQueryPayload(terms=[
+        {"source_phrase": "Cite the supplied paper", "term": "invented paper title"},
+        {"source_phrase": "引用原文", "term": "cite original text"},
+        {"source_phrase": "latency", "term": "response delay"},
+    ])
+    terms, rejected = IntelligenceService._expansion_terms(
+        payload, "Explain latency. Cite the supplied paper. 引用原文")
+    assert terms == [{"source_phrase": "latency", "text": "response delay"}]
+    assert rejected == 2

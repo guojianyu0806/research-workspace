@@ -226,12 +226,14 @@ class JobStore:
                             selected = payload['selected_text']
                             if not isinstance(selected,str) or not selected.strip() or len(selected)>16000 or selected not in source.text:
                                 raise ValueError('选中文字不属于该文献版本的原文文本块。')
-                            translated = await service.translate_text(selected,target_language=payload.get('target_language','zh'))
+                            translated = await service.translate_text(selected,target_language=payload.get('target_language','zh'),
+                                                                       check_cancel=lambda:self.check_cancel(job_id))
                             translated.update({'document_id':source.document_id,'run_id':source.run_id,
                                 'block_id':source.block_id,'evidence_id':source.evidence_id,
                                 'page':source.page,'bbox':source.bbox,'source_scope':'selected_text_within_block'})
                         else:
-                            translated = await service.translate_block(block,target_language=payload.get('target_language','zh'))
+                            translated = await service.translate_block(block,target_language=payload.get('target_language','zh'),
+                                                                        check_cancel=lambda:self.check_cancel(job_id))
                         self.save_item(job_id,block['block_id'],translated,len(selection['blocks']))
                         done[block['block_id']] = translated
                         if len(done)<len(selection['blocks']):

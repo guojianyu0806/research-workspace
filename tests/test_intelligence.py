@@ -293,6 +293,10 @@ def test_split_does_not_cut_protected_marker():
 
 def synthesis_reply(request):
     payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+    if payload["task"] == "verify_claim_support":
+        return envelope({"reviews": [{"claim_index": item["claim_index"], "verdict": "supported", "reason": ""}
+                                      for item in payload["claims"]],
+                         "unverified_statements": [], "missing_aspects": []})
     source = payload["evidence"][0]
     claim = {"text": source["text"], "citations": [{"evidence_id": source["evidence_id"], "quote": source["text"]}]}
     headings = ["Abstract", "Introduction", "Related Work"] if payload["task"] == "draft" else ["Supported background"]
