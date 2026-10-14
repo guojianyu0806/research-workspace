@@ -21,7 +21,7 @@ const report = {
   source:{gitHead:execFileSync('git', ['rev-parse', 'HEAD'], {cwd:root, encoding:'utf8', windowsHide:true}).trim(), sha256:{}},
   limitations:['Synthetic source pages verify image geometry and UI behavior; this does not validate real PDF extraction or model translation quality.']
 };
-const names = ['notices.js','styles.css', 'shell.css', 'manage.css', 'manage.js'];
+const names = ['notices.js','styles.css', 'shell.css', 'manage.css', 'modern-theme.css', 'manage.js'];
 const assets = new Map(names.map(name => [name, fs.readFileSync(path.join(root, 'research_workspace/static', name))]));
 for (const [name, content] of assets) report.source.sha256[name] = crypto.createHash('sha256').update(content).digest('hex');
 // The harness mounts the module directly; record the normal entrypoint as well

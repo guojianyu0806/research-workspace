@@ -57,7 +57,7 @@ async function main() {
   const output = path.join(root, 'artifacts/browser', `future-fixture-${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(4).toString('hex')}`);
   fs.mkdirSync(output, { recursive: true });
   const report = { syntheticFixture: true, notice: SYNTHETIC, output, checks: [], pageErrors: [], consoleErrors: [], networkRequests: [], sourceSha256: {} };
-  for (const name of ['notices.js', 'research.js', 'research.css']) report.sourceSha256[name] = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'research_workspace/static', name))).digest('hex');
+  for (const name of ['notices.js', 'research.js', 'research.css', 'modern-theme.css']) report.sourceSha256[name] = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'research_workspace/static', name))).digest('hex');
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   await context.route('**/*', route => { report.networkRequests.push(route.request().url()); return route.abort(); });
@@ -69,6 +69,7 @@ async function main() {
     await page.locator('#fixture-banner').evaluate((element, text) => { element.textContent = text + ' / 合成界面测试，非真实研究结果'; }, SYNTHETIC);
     await page.addStyleTag({ content: ':root{--ink:#173842;--muted:#657b83;--line:#d3e2e5;--primary:#146269;--paper:#fff;--body:Arial,"Microsoft YaHei",sans-serif}*{box-sizing:border-box}body{margin:0;padding:24px;background:#edf4f5;color:var(--ink);font-family:var(--body)}#fixture-banner{padding:16px;border:2px solid #a55e0d;background:#fff2cf;font-weight:bold;margin-bottom:20px}#fixture-root{max-width:1440px;margin:auto}' });
     await page.addStyleTag({ path: path.join(root, 'research_workspace/static/research.css') });
+    await page.addStyleTag({ path: path.join(root, 'research_workspace/static/modern-theme.css') });
     await page.addScriptTag({ path: path.join(root, 'research_workspace/static/notices.js') });
     await page.addScriptTag({ path: path.join(root, 'research_workspace/static/research.js') });
     await page.evaluate(async job => {

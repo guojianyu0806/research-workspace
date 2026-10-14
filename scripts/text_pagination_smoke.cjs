@@ -15,7 +15,7 @@ const origin = 'http://127.0.0.1:8765';
 const baseline = process.argv.includes('--baseline');
 const output = path.join(root, 'artifacts/browser', `text-pagination-${baseline?'baseline-':''}${new Date().toISOString().replace(/[:.]/g,'-')}-${crypto.randomBytes(3).toString('hex')}`);
 fs.mkdirSync(output,{recursive:true});
-const names = ['notices.js','styles.css','shell.css','manage.css','manage.js'];
+const names = ['notices.js','styles.css','shell.css','manage.css','modern-theme.css','manage.js'];
 const assets = new Map(names.map(name=>[name,fs.readFileSync(path.join(root,'research_workspace/static',name))]));
 const report = {startedAt:new Date().toISOString(),output,baseline,checks:[],screenshots:[],pageErrors:[],unexpectedRequests:[],source:{gitHead:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}).trim(),sha256:{}},limitations:['Synthetic pages test rendering and navigation only; no PDF extraction, model request or persisted user data is involved.']};
 for(const [name,body] of assets) report.source.sha256[name]=crypto.createHash('sha256').update(body).digest('hex');

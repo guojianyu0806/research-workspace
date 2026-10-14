@@ -12,7 +12,7 @@ const root = path.resolve(__dirname, '..');
 const origin = 'http://127.0.0.1:8765';
 const output = path.join(root, 'artifacts/browser', `translation-return-${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`);
 fs.mkdirSync(output, {recursive: true});
-const names = ['notices.js','styles.css', 'shell.css', 'manage.css', 'research.css', 'bilingual.css', 'manage.js', 'research.js', 'bilingual.js', 'shell.js'];
+const names = ['notices.js','styles.css', 'shell.css', 'manage.css', 'research.css', 'bilingual.css', 'modern-theme.css', 'manage.js', 'research.js', 'bilingual.js', 'shell.js'];
 const assets = new Map(names.map(name => [name, fs.readFileSync(path.join(root, 'research_workspace/static', name))]));
 const report = {output, startedAt: new Date().toISOString(), mode: 'offline real shell/manage/research/bilingual with synthetic reader bridge', checks: [], pageErrors: [], unexpectedRequests: [], sha256: {}, limitations: ['The reader bridge is a protocol fixture. Real PDF rendering, server execution and model quality are outside this test.']};
 for (const [name, bytes] of assets) report.sha256[name] = crypto.createHash('sha256').update(bytes).digest('hex');
