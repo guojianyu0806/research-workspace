@@ -272,7 +272,15 @@ class JobStore:
             self.finish(job_id,'cancelled')
         except Exception as exc:
             # Only service-level sanitized messages may reach the browser.
-            from .intelligence import ModelServiceError
+            from .intelligence import ModelServiceError, ModelOutputError
             error = str(exc) if isinstance(exc,(ModelServiceError,ValueError)) else '任务失败，请检查本机服务日志与输入资料后重试。'
+            diagnostics = getattr(exc, 'review_diagnostics', None)
+            if isinstance(exc, ModelOutputError) and isinstance(diagnostics, dict):
+                # Keep failed review evidence as a diagnostic checkpoint, never
+                # as a generated result or a completed progress item.
+                with self.library._connection() as db:
+                    db.execute('INSERT OR REPLACE INTO research_job_items(job_id,item_key,payload) VALUES(?,?,?)',
+                        (job_id, 'review_validation', json.dumps({'stage':'review_validation',
+                            'result':diagnostics}, ensure_ascii=False)))
             self.finish(job_id,'failed',error=error[:600])
         return True

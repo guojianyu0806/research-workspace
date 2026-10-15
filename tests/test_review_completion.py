@@ -106,6 +106,11 @@ def test_unsupported_addition_is_filtered_then_actual_new_fact_is_required(tmp_p
     assert [attempt["attempt"] for attempt in audit["attempts"]] == [1, 2, 3, 4]
     assert audit["review_coverage"][-1]["claim_catalog"][0]["claim_id"] == original
     assert audit["claim_model_calls"] == 2
+    completion_requests = [payload for model, payload in provider.calls if model is ReviewCompletionPayload]
+    feedback = completion_requests[1]["previous_rejected_fact_feedback"]
+    assert any("Wrong quantity" in problem for item in feedback for problem in item["problems"])
+    assert any("99" in claim["text"] for item in feedback for claim in item["rejected_claims"])
+    assert all(claim["citations"] for item in feedback for claim in item["rejected_claims"])
 
 
 def test_gap_only_result_cannot_be_reported_as_complete(tmp_path):
@@ -128,8 +133,43 @@ def test_public_review_also_requires_completing_partial_result(tmp_path, monkeyp
         return {"evidence": SOURCES[:1], "trace": [], "queries": [],
                 "_snapshot_blocks": SOURCES, "_opening_candidates": SOURCES[:1]}
     monkeypatch.setattr(service, "retrieve_for_question", retrieve)
-    with pytest.raises(ModelOutputError, match="未将局部结果标作完整综述"):
+    with pytest.raises(ModelOutputError, match="未将局部结果标作完整综述") as caught:
         asyncio.run(service.synthesize("review", ["doc"], instruction="architecture and training objectives"))
+    diagnostic = caught.value.review_diagnostics
+    assert diagnostic["status"] == "validation_failed" and diagnostic["diagnostic_only"]
+    assert diagnostic["grounding"]["review_completion"]["rounds"]
+    assert diagnostic["source_snapshot"] and "sections" not in diagnostic
+
+
+def test_failed_review_audit_is_saved_without_an_answer_or_completed_progress(tmp_path):
+    from research_workspace.jobs import JobStore
+    error = ModelOutputError("Incomplete review fixture.")
+    error.review_diagnostics = {"status": "validation_failed", "diagnostic_only": True,
+                                "grounding": {"attempts": [{"problems": ["Missing objective."]}]}}
+    class FailedService:
+        async def synthesize(self, *args, **kwargs):
+            raise error
+    store = JobStore(Library(tmp_path))
+    job = store.create("review", {"document_ids": ["doc"]})
+    asyncio.run(store.process_next(FailedService()))
+    failed = store.get(job["id"])
+    assert failed["status"] == "failed" and failed["result"] is None and failed["progress"] == 0
+    assert not store.summary(job["id"])["has_result"]
+    assert failed["completed_items"] == [{"stage": "review_validation", "result": error.review_diagnostics}]
+
+
+def test_unrelated_exception_does_not_get_saved_as_review_diagnostics(tmp_path):
+    from research_workspace.jobs import JobStore
+    error = RuntimeError("private transport detail")
+    error.review_diagnostics = {"untrusted": "not an audited review failure"}
+    class FailedService:
+        async def synthesize(self, *args, **kwargs):
+            raise error
+    store = JobStore(Library(tmp_path))
+    job = store.create("review", {"document_ids": ["doc"]})
+    asyncio.run(store.process_next(FailedService()))
+    failed = store.get(job["id"])
+    assert failed["completed_items"] == [] and "private transport" not in failed["error"]
 
 
 @pytest.mark.parametrize("value", [

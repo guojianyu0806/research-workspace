@@ -11,7 +11,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.0", "max_rounds": 2, "model_calls": 0,
+        "prompt_version": "review-completion-v1.1", "max_rounds": 2, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -38,6 +38,15 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
             {"document_id": doc, "aspect": aspect} for doc, aspect in missing],
             "retained_claim_ids": original_ids, "retrieval": search}
         completion["rounds"].append(entry)
+        # Feedback must include why a proposed fact failed, not only the name of
+        # the dimension it was supposed to fill. Otherwise retries repeat it.
+        failed_feedback = [{"attempt": attempt["attempt"], "problems": attempt["problems"],
+                            "rejected_claims": [claim for claim in attempt.get("claims", [])
+                                if any(review["claim_index"] == claim["claim_index"]
+                                       and review["verdict"] == "unsupported"
+                                       for review in attempt["reviews"])]}
+                           for attempt in audit["attempts"] if attempt["problems"]][-3:]
+        entry["received_feedback_attempts"] = [item["attempt"] for item in failed_feedback]
         await service._check_cancel(check_cancel)
         completion["model_calls"] += 1
         additions = await service.provider.generate(_prompt("review_completion_v1"), {
@@ -47,7 +56,8 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
             "evidence": [{**block.model_dump(), "citation_spans": [
                 {"quote_id": identifier, "text": text}
                 for identifier, text in catalog[block.evidence_id].items()]} for block in evidence],
-            "previous_completion_problems": completion.get("remaining_pairs", []),
+            "remaining_pairs": completion.get("remaining_pairs", []),
+            "previous_rejected_fact_feedback": failed_feedback,
         }, ReviewCompletionPayload)
         await service._check_cancel(check_cancel)
         if not additions.additions:

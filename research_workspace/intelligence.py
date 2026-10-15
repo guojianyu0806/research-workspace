@@ -1481,7 +1481,13 @@ class IntelligenceService:
                     else:
                         problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
                         problems.extend("Unanswered request aspect: " + item for item in coverage.missing_aspects)
-            audit["attempts"].append({"attempt": attempt_number, "problems": problems, "reviews": reviews})
+            attempt_record = {"attempt": attempt_number, "problems": problems, "reviews": reviews}
+            if structured_review and shared_state is not None:
+                source_ids = {item.evidence_id for item in evidence}
+                attempt_record["claims"] = [{"claim_index": index, **self._review_claim_identity(claim, evidence)}
+                    for index, claim in enumerate(claims)
+                    if all(cite.evidence_id in source_ids for cite in claim.citations)]
+            audit["attempts"].append(attempt_record)
             await self._check_cancel(check_cancel)
             if not problems:
                 audit["status"] = "passed" if claims else "no_asserted_claims"
@@ -1752,19 +1758,28 @@ class IntelligenceService:
                     "future_work_verification": "evidence_insufficient" if kind == "future_work" else None}
         await self._check_cancel(check_cancel)
         review_state = {} if kind == "review" else None
-        result, used, grounding = await self._generate_grounded(
-            _prompt("review_synthesis_v1" if kind == "review" else "synthesis_v5"), {
-            "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
-            "external_freshness_verified": False,
-        }, SynthesisPayload, evidence, check_cancel=check_cancel,
-            required_documents=document_ids if kind == "review" else None,
-            required_sections={"abstract", "introduction", "related work"} if kind == "draft" else None,
-            shared_state=review_state)
-        if kind == "review" and result.status == "generated":
-            result, evidence, grounding = await complete_review(self, result, evidence, retrieval,
-                document_ids, instruction, review_state, check_cancel=check_cancel)
-            trace.append(self._trace("review_completion",
-                f"逐项核对{grounding['review_completion']['answered_pairs']}项文献维度，最多2轮补充检索及独立引用审核；缺口说明不计为完整答案。"))
+        try:
+            result, used, grounding = await self._generate_grounded(
+                _prompt("review_synthesis_v1" if kind == "review" else "synthesis_v5"), {
+                "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
+                "external_freshness_verified": False,
+            }, SynthesisPayload, evidence, check_cancel=check_cancel,
+                required_documents=document_ids if kind == "review" else None,
+                required_sections={"abstract", "introduction", "related work"} if kind == "draft" else None,
+                shared_state=review_state)
+            if kind == "review" and result.status == "generated":
+                result, evidence, grounding = await complete_review(self, result, evidence, retrieval,
+                    document_ids, instruction, review_state, check_cancel=check_cancel)
+                trace.append(self._trace("review_completion",
+                    f"逐项核对{grounding['review_completion']['answered_pairs']}项文献维度，最多2轮补充检索及独立引用审核；缺口说明不计为完整答案。"))
+        except ModelOutputError as error:
+            if review_state is not None:
+                error.review_diagnostics = {"status": "validation_failed", "diagnostic_only": True,
+                    "grounding": review_state.get("audit", {}), "retrieval": retrieval_audit,
+                    "source_snapshot": [{key: block.model_dump()[key] for key in
+                        ("evidence_id", "document_id", "run_id", "block_id", "page", "bbox")}
+                        for block in evidence], "generation_prompt_version": "review-synthesis-v1.0"}
+            raise
         claims = [claim for section in result.sections for claim in section.claims]
         used = self._validate_claims(claims, evidence)
         if result.status == "generated":
