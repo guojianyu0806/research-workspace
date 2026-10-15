@@ -1072,6 +1072,7 @@ class IntelligenceService:
                  "claim_model_calls": 0, "coverage_model_calls": 0, "cache_hits": 0,
                  "limitation": "model_semantic_review_is_not_a_proof"}
         support_cache: dict[str, ClaimSupportPayload] = {}
+        supported_review_claims: Counter[str] | None = None
         catalog = self._citation_spans(evidence)
         named_identifiers = self._named_attribution_identifiers(catalog)
         payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
@@ -1087,6 +1088,10 @@ class IntelligenceService:
             try:
                 self._resolve_citation_spans(claims, catalog)
                 used = self._validate_claims(claims, evidence)
+                if supported_review_claims is not None and result.status == "generated":
+                    repaired = Counter(json.dumps(claim.model_dump(), sort_keys=True, ensure_ascii=False) for claim in claims)
+                    if repaired != supported_review_claims:
+                        raise ModelOutputError("综述纠正必须完整保留已通过的结论及其引用，不能改写、重复或重新加入已移除的结论。")
                 if result.status in {"answered", "generated"}:
                     if not claims:
                         raise ModelOutputError("生成结果没有可核验的来源依据，已拒绝。")
@@ -1166,6 +1171,31 @@ class IntelligenceService:
             if attempt == 1:
                 raise ModelOutputError("回答或引文复核未通过，纠正后仍缺乏可靠支持；结果已拒绝。" + problems[0][:200])
             previous = result.model_dump()
+            subset_repair = None
+            # A short review can keep a useful, fully cited subset. Freeze it
+            # before the sole repair instead of trusting the model to remove a
+            # rejected assertion. Never salvage malformed citations or omit an
+            # entire selected document, and still run the coverage gate below.
+            if payload.get("task") == "review" and isinstance(result, SynthesisPayload) and len(reviews) == len(claims):
+                kept_indices = [item["claim_index"] for item in reviews if item["verdict"] == "supported"]
+                rejected_indices = [item["claim_index"] for item in reviews if item["verdict"] == "unsupported"]
+                kept = [claims[index] for index in kept_indices]
+                kept_sources = {citation.evidence_id for claim in kept for citation in claim.citations}
+                kept_documents = {block.document_id for block in evidence if block.evidence_id in kept_sources}
+                if rejected_indices and kept and (not required_documents or kept_documents == set(required_documents)):
+                    supported_review_claims = Counter(json.dumps(claim.model_dump(), sort_keys=True, ensure_ascii=False) for claim in kept)
+                    offset, retained = 0, set(kept_indices)
+                    for section in previous["sections"]:
+                        original = section["claims"]
+                        section["claims"] = [claim for index, claim in enumerate(original, offset) if index in retained]
+                        offset += len(original)
+                    subset_repair = {
+                        "mode": "preserve_supported_review_claims",
+                        "retained_original_indices": kept_indices,
+                        "removed_original_indices": rejected_indices,
+                        "rule": "The previous_result below contains ONLY independently supported claims. Keep every retained claim text and citation ID exactly, once each. Do not add, rewrite or reinstate any claim. You may reorganize sections. Explain all requested aspects not answered by this subset in message as limitations of the supplied excerpts, without asserting new facts. Coverage will still be checked; return insufficient_evidence if this subset cannot form a useful review.",
+                    }
+                    audit["review_subset_repair"] = {key: value for key, value in subset_repair.items() if key != "rule"}
             previous_claims = previous.get("claims", []) + [claim for section in previous.get("sections", [])
                                                            for claim in section.get("claims", [])]
             for claim in previous_claims:
@@ -1179,6 +1209,9 @@ class IntelligenceService:
                         "including explicit model attribution, or narrow/split the claim. Adjacent claims cannot lend their citations. "
                         "Preserve unchanged supported claims. Use multiple citations when necessary. Do not fill gaps from memory; explicitly state missing aspects or return insufficient_evidence.",
             }}
+            if subset_repair is not None:
+                current_payload["correction"]["supported_subset"] = subset_repair
+                current_payload["correction"]["rule"] = subset_repair["rule"]
         raise ModelOutputError("未获得可核验结果。")
 
     async def answer(self, question: str, document_ids: list[str], *,

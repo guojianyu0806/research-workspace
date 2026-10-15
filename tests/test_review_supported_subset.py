@@ -1,0 +1,159 @@
+"""A review repair may retain a frozen supported subset, never rewrite its proof."""
+import asyncio
+
+import pytest
+
+from research_workspace.intelligence import (
+    Claim, ClaimSupportPayload, CoveragePayload, Evidence, IntelligenceService,
+    ModelOutputError, SynthesisPayload,
+)
+from research_workspace.library import Library
+
+
+def evidence(block_id, document_id, text):
+    return Evidence(evidence_id=f"E_{block_id}", document_id=document_id, document_title=document_id,
+                    filename=f"{document_id}.pdf", run_id=f"run-{document_id}", block_id=block_id,
+                    page=1, bbox=[0.1, 0.1, 0.9, 0.3], text=text)
+
+
+SOURCES = [
+    evidence("a", "doc-a", "ORION models use attention and score 28."),
+    evidence("b", "doc-b", "NOVA models use convolution and score 30."),
+    evidence("a-other", "doc-a", "ORION models use attention."),
+]
+
+
+def claim(text, source_id):
+    return Claim(text=text, citations=[{"evidence_id": f"E_{source_id}", "quote_id": "Q1"}])
+
+
+def good_a():
+    return claim("ORION 使用注意力。", "a")
+
+
+def good_b():
+    return claim("NOVA 使用卷积。", "b")
+
+
+def bad_a():
+    return claim("ORION 得分为 99。", "a")
+
+
+def review(*claims, message=""):
+    return SynthesisPayload(status="generated", sections=[{"heading": "结构与得分", "claims": claims}], message=message)
+
+
+class Provider:
+    configured = True
+
+    def __init__(self, results, coverage=None):
+        self.results = iter(results)
+        self.coverage = coverage or CoveragePayload(unverified_statements=[], missing_aspects=[])
+        self.calls = []
+
+    async def generate(self, prompt, payload, output_model):
+        self.calls.append((payload, output_model))
+        if output_model is SynthesisPayload:
+            return next(self.results)
+        if output_model is ClaimSupportPayload:
+            rejected = "99" in payload["claim"]["text"]
+            return ClaimSupportPayload(verdict="unsupported" if rejected else "supported",
+                                       reason="The quoted score is not 99." if rejected else "Identity and mechanism are quoted.")
+        assert output_model is CoveragePayload
+        return self.coverage
+
+
+def run(tmp_path, provider, *, task="review"):
+    service = IntelligenceService(Library(tmp_path), provider)
+    return asyncio.run(service._generate_grounded("fixture", {"task": task, "instruction": "Compare structures and scores."},
+                        SynthesisPayload, SOURCES, required_documents=["doc-a", "doc-b"]))
+
+
+def correction(provider):
+    return [payload for payload, output_model in provider.calls if output_model is SynthesisPayload][1]["correction"]
+
+
+def test_supported_subset_can_be_reordered_but_keeps_each_claim_and_its_quotes(tmp_path):
+    provider = Provider([review(good_a(), bad_a(), good_b()),
+                         review(good_b(), good_a(), message="所引片段不足以回答其余请求维度。")])
+    result, used, audit = run(tmp_path, provider)
+    assert [item.text for section in result.sections for item in section.claims] == [good_b().text, good_a().text]
+    assert used == {"E_a", "E_b"}
+    subset = correction(provider)["supported_subset"]
+    assert subset["retained_original_indices"] == [0, 2]
+    assert subset["removed_original_indices"] == [1]
+    previous = correction(provider)["previous_result"]["sections"][0]["claims"]
+    assert [item["text"] for item in previous] == [good_a().text, good_b().text]
+    assert all(not cite["quote"] for item in previous for cite in item["citations"])
+    assert audit["review_subset_repair"]["mode"] == "preserve_supported_review_claims"
+    assert audit["claim_model_calls"] == 3 and audit["cache_hits"] == 2
+    assert audit["coverage_model_calls"] == 1 and audit["status"] == "passed"
+
+
+@pytest.mark.parametrize("mutation", ["reinstate", "rewrite", "replace_citation", "duplicate", "drop"])
+def test_supported_subset_repair_cannot_change_the_claim_multiset(tmp_path, mutation):
+    claims = [good_a(), good_b()]
+    if mutation == "reinstate":
+        # Even a corrected, now supportable replacement for the rejected fact
+        # cannot be introduced after the supported subset has been frozen.
+        claims.append(claim("ORION 得分为 28。", "a"))
+    elif mutation == "rewrite":
+        claims[0].text = "ORION 的模型使用注意力。"
+    elif mutation == "replace_citation":
+        claims[0] = claim(good_a().text, "a-other")
+    elif mutation == "duplicate":
+        claims.append(good_a())
+    else:
+        claims.pop(0)
+    provider = Provider([review(good_a(), bad_a(), good_b()), review(*claims)])
+    with pytest.raises(ModelOutputError, match="完整保留"):
+        run(tmp_path, provider)
+    assert "supported_subset" in correction(provider)
+    assert all(model is not CoveragePayload for _, model in provider.calls)
+    assert sum(model is ClaimSupportPayload for _, model in provider.calls) == 3
+
+
+def test_subset_does_not_trigger_when_it_would_remove_an_entire_required_document(tmp_path):
+    bad_b = claim("NOVA 得分为 99。", "b")
+    provider = Provider([review(good_a(), bad_b), review(good_a(), good_b())])
+    _, used, audit = run(tmp_path, provider)
+    assert used == {"E_a", "E_b"}
+    assert "supported_subset" not in correction(provider)
+    assert "review_subset_repair" not in audit
+
+
+def test_invalid_citation_keeps_original_repair_path_instead_of_salvaging(tmp_path):
+    invalid = good_a()
+    invalid.citations[0].quote_id = "Q99"
+    provider = Provider([review(invalid, good_b()), review(good_a(), good_b())])
+    _, _, audit = run(tmp_path, provider)
+    assert "supported_subset" not in correction(provider)
+    assert audit["attempts"][0]["reviews"] == []
+    assert "review_subset_repair" not in audit
+
+
+def test_subset_still_fails_if_coverage_or_message_is_unacceptable(tmp_path):
+    provider = Provider([review(good_a(), bad_a(), good_b()), review(good_a(), good_b())],
+                        CoveragePayload(unverified_statements=[], missing_aspects=["The score request is unacknowledged."]))
+    with pytest.raises(ModelOutputError, match="Unanswered request aspect"):
+        run(tmp_path, provider)
+    assert "supported_subset" in correction(provider)
+    assert sum(model is CoveragePayload for _, model in provider.calls) == 1
+
+
+def test_other_synthesis_modes_keep_the_original_bounded_repair(tmp_path):
+    provider = Provider([review(good_a(), bad_a(), good_b()),
+                         review(good_a(), claim("ORION 得分为 28。", "a"), good_b())])
+    result, _, audit = run(tmp_path, provider, task="draft")
+    assert len(result.sections[0].claims) == 3
+    assert "supported_subset" not in correction(provider)
+    assert "review_subset_repair" not in audit
+
+
+def test_repair_can_refuse_without_publishing_a_partial_review(tmp_path):
+    provider = Provider([review(good_a(), bad_a(), good_b()),
+                         SynthesisPayload(status="insufficient_evidence", sections=[], message="所引片段不足以形成有用综述。")])
+    result, used, audit = run(tmp_path, provider)
+    assert result.status == "insufficient_evidence" and not result.sections and used == set()
+    assert audit["status"] == "no_asserted_claims"
+    assert "supported_subset" in correction(provider)
