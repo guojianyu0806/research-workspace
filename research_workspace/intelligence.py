@@ -1192,6 +1192,39 @@ class IntelligenceService:
         return resolved, record, problems
 
     @staticmethod
+    def _review_gap_message(record: dict, documents: list[str], evidence: list[Evidence]) -> str | None:
+        """Describe only omissions in verified retained claims, never missing facts in a paper."""
+        aspects = record.get("requested_aspects", [])
+        rows = record.get("assessments", [])
+        catalog, links = record.get("claim_catalog", []), record.get("claim_link_reviews", [])
+        expected = {(document, aspect) for document in documents for aspect in aspects}
+        actual = [(row["document_id"], row["aspect"]) for row in rows]
+        if (not aspects or len(set(aspects)) != len(aspects) or any(not aspect.strip() for aspect in aspects)
+                or set(actual) != expected or len(actual) != len(expected)
+                or not catalog or len(catalog) != len(links) or any(link.get("problems") for link in links)
+                or record.get("status")):
+            return None
+        for index, (claim, link) in enumerate(zip(catalog, links)):
+            if claim.get("claim_index") != index or link.get("claim_index") != index or claim.get("claim_id") != link.get("claim_id"):
+                return None
+        for row in rows:
+            matching = [link["claim_index"] for link in links if any(
+                answer["document_id"] == row["document_id"] and answer["aspect"] == row["aspect"]
+                for answer in link["answers"])]
+            if row["answer_claim_indices"] != matching or row.get("answer_claim_ids") != [catalog[i]["claim_id"] for i in matching]:
+                return None
+        titles = {item.document_id: item.document_title for item in evidence}
+        gaps = []
+        for document in documents:
+            missing = [row["aspect"] for row in rows if row["document_id"] == document and not row["answer_claim_indices"]]
+            if missing:
+                gaps.append("《" + titles[document] + "》：" + "、".join(missing))
+        message = ("以下维度尚未由本次保留的结论形成独立完整回答（仅限当前结果与所用摘录）：" + "；".join(gaps) + "。") if gaps else ""
+        if len(message) > 3000:
+            raise ModelOutputError("综述缺口说明超过长度上限，请减少文献或请求维度；结果已拒绝。")
+        return message
+
+    @staticmethod
     def _review_coverage_problems(coverage: ReviewCoveragePayload, claims: list[Claim],
                                   evidence: list[Evidence], required_documents: list[str],
                                   message: str) -> list[str]:
@@ -1241,6 +1274,7 @@ class IntelligenceService:
                          coverage_link_model_calls=0, coverage_link_cache_hits=0)
         supported_review_claims: Counter[str] | None = None
         frozen_review: SynthesisPayload | None = None
+        frozen_review_message: str | None = None
         catalog = self._citation_spans(evidence, omit_trailing_fragment=(
             payload.get("task") == "review" and output_model is SynthesisPayload))
         named_identifiers = self._named_attribution_identifiers(catalog)
@@ -1251,8 +1285,10 @@ class IntelligenceService:
         for attempt in range(2):
             await self._check_cancel(check_cancel)
             if frozen_review is not None:
-                repaired_message = await self.provider.generate(_prompt("review_message_repair_v1"),
-                    current_payload, ReviewMessageRepairPayload)
+                repaired_message = (ReviewMessageRepairPayload(status="generated", message=frozen_review_message)
+                                    if frozen_review_message is not None else
+                                    await self.provider.generate(_prompt("review_message_repair_v1"),
+                                        current_payload, ReviewMessageRepairPayload))
                 await self._check_cancel(check_cancel)
                 result = (SynthesisPayload.model_validate({**frozen_review.model_dump(), "message": repaired_message.message})
                           if repaired_message.status == "generated" else
@@ -1403,6 +1439,9 @@ class IntelligenceService:
                         section["claims"] = [claim for index, claim in enumerate(original, offset) if index in retained]
                         offset += len(original)
                     frozen_review = SynthesisPayload.model_validate(previous)
+                    coverage_record = next((item for item in reversed(audit.get("review_coverage", []))
+                                            if item["attempt"] == attempt + 1), {})
+                    frozen_review_message = self._review_gap_message(coverage_record, required_documents or [], evidence)
                     subset_repair = {
                         "mode": "preserve_supported_review_claims",
                         "repair_output": "message_only",
@@ -1412,6 +1451,9 @@ class IntelligenceService:
                         "removed_original_indices": rejected_indices,
                         "rule": "The application has frozen the supported sections and citations in previous_result. Return ONLY status and message, never sections, claims, citations, headings or architecture. The application will retain the frozen content itself. Explain all requested aspects not answered by this subset in message as limitations of the supplied excerpts, without asserting new facts. Coverage will still be checked; return insufficient_evidence if this subset cannot form a useful review.",
                     }
+                    if frozen_review_message is not None:
+                        subset_repair.update(repair_output="deterministic_gap_message", message_source="verified_claim_coverage")
+                        subset_repair.pop("prompt_version")
                     audit["review_subset_repair"] = {key: value for key, value in subset_repair.items() if key != "rule"}
             previous_claims = previous.get("claims", []) + [claim for section in previous.get("sections", [])
                                                            for claim in section.get("claims", [])]
@@ -1429,6 +1471,7 @@ class IntelligenceService:
             if subset_repair is not None:
                 current_payload["correction"]["supported_subset"] = subset_repair
                 current_payload["correction"]["rule"] = subset_repair["rule"]
+                current_payload["correction"]["retained_coverage"] = coverage_record
         raise ModelOutputError("未获得可核验结果。")
 
     async def answer(self, question: str, document_ids: list[str], *,

@@ -69,8 +69,10 @@ class Provider:
             assessments = []
             for document in payload["selected_document_ids"]:
                 for aspect in aspects:
-                    gap = self.gaps.get((document, aspect), "")
-                    present = bool(gap and gap in payload["response_message"])
+                    gap = next((candidate for candidate in (
+                        self.gaps.get((document, aspect), ""), f"《{document.upper()}》：{aspect}")
+                        if candidate and candidate in payload["response_message"]), "")
+                    present = bool(gap)
                     # Deliberately wrong proposals: the named NOVA assertion is
                     # index 2, while 3/4 are generic material from that same PDF.
                     indices = ([0] if document == "doc-orion" else [3, 4]) if aspect == "architecture" else []
@@ -137,10 +139,8 @@ def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
     assert resolved[("doc-nova", "architecture")]["answer_claim_ids"] == [catalog[2]["claim_id"]]
 
 
-def test_message_only_repair_reuses_stable_claim_coverage(tmp_path):
-    gaps = {("doc-orion", "objective"): "所给摘录未独立支持 ORION 的训练目标。",
-            ("doc-nova", "objective"): "所给摘录未独立支持 NOVA 的训练目标。"}
-    provider = Provider([synthesis(), repair("".join(gaps.values()))], aspects=("architecture", "objective"), gaps=gaps)
+def test_deterministic_message_repair_reuses_stable_claim_coverage(tmp_path):
+    provider = Provider([synthesis()], aspects=("architecture", "objective"))
     result, _, audit = run(tmp_path, provider)
     assert [item.text for item in result.sections[0].claims] == [item.text for item in claims()]
     assert len(classifier_calls(provider)) == 5
@@ -150,8 +150,10 @@ def test_message_only_repair_reuses_stable_claim_coverage(tmp_path):
     resolved = final_assessments(audit)
     assert resolved[("doc-nova", "architecture")]["answer_claim_indices"] == [2]
     assert resolved[("doc-orion", "architecture")]["answer_claim_indices"] == [0]
-    assert resolved[("doc-nova", "objective")]["gap_quote"] == gaps[("doc-nova", "objective")]
+    assert resolved[("doc-nova", "objective")]["gap_quote"] == "《DOC-NOVA》：objective"
     assert not resolved[("doc-nova", "objective")]["answer_claim_indices"]
+    assert audit["coverage_model_calls"] == 2
+    assert not any(model is ReviewMessageRepairPayload for _, model in provider.calls)
 
 
 def test_reordered_claims_reuse_cached_links_and_recompute_current_indices(tmp_path):
@@ -240,11 +242,13 @@ def test_duplicate_coverage_links_are_rejected(tmp_path):
         run(tmp_path, provider)
 
 
-def test_generic_claim_alone_does_not_answer_a_named_model_dimension(tmp_path):
+def test_generic_claim_alone_requires_an_explicit_gap_for_the_named_model_dimension(tmp_path):
     generic = claims()[3]
-    provider = Provider([synthesis([generic]), repair()])
-    with pytest.raises(ModelOutputError, match="Unanswered request aspect"):
-        run(tmp_path, provider, evidence=[SOURCES[3]], documents=("doc-nova",))
+    provider = Provider([synthesis([generic])])
+    result, _, audit = run(tmp_path, provider, evidence=[SOURCES[3]], documents=("doc-nova",))
+    assert "《DOC-NOVA》：architecture" in result.message
+    assert final_assessments(audit)[("doc-nova", "architecture")]["answer_claim_indices"] == []
+    assert audit["coverage_model_calls"] == 2
     assert len(classifier_calls(provider)) == 1
 
 
@@ -282,7 +286,7 @@ def test_unique_claim_coverage_requests_never_exceed_the_24_call_budget(tmp_path
 
 
 def test_second_round_cannot_replace_the_original_requested_dimensions(tmp_path):
-    provider = Provider([synthesis(), repair()], aspects=("architecture", "objective"), change_aspects=True)
+    provider = Provider([synthesis()], aspects=("architecture", "objective"), change_aspects=True)
     with pytest.raises(ModelOutputError, match="dimensions changed"):
         run(tmp_path, provider)
     assert len(classifier_calls(provider)) == 5

@@ -100,24 +100,31 @@ def correction(provider):
             if output_model in {SynthesisPayload, ReviewMessageRepairPayload}][1]["correction"]
 
 
-def test_message_only_repair_reconstructs_supported_claims_and_quotes_without_retyping(tmp_path):
-    provider = Provider([review(good_a(), bad_a(), good_b()),
-                         repair("所引片段不足以回答其余请求维度。")])
+def incomplete_coverage(payload):
+    return ReviewCoveragePayload(requested_aspects=["structure"], assessments=[{
+        "document_id": "doc-a", "aspect": "structure", "answer_claim_indices": [0],
+        "gap_is_appropriate": False, "reason": "Fixture deliberately omits the other selected document.",
+    }], unverified_statements=[])
+
+
+def test_deterministic_repair_reconstructs_supported_claims_and_quotes_without_retyping(tmp_path):
+    provider = Provider([review(good_a(), bad_a(), good_b())])
     result, used, audit = run(tmp_path, provider)
     assert [item.text for section in result.sections for item in section.claims] == [good_a().text, good_b().text]
     assert result.sections[0].heading == "结构与得分"
     assert [item.citations[0].quote for item in result.sections[0].claims] == [SOURCES[0].text, SOURCES[1].text]
     assert used == {"E_a", "E_b"}
-    subset = correction(provider)["supported_subset"]
+    subset = audit["review_subset_repair"]
     assert subset["retained_original_indices"] == [0, 2]
     assert subset["removed_original_indices"] == [1]
-    previous = correction(provider)["previous_result"]["sections"][0]["claims"]
-    assert [item["text"] for item in previous] == [good_a().text, good_b().text]
-    assert all(not cite["quote"] for item in previous for cite in item["citations"])
+    assert result.message == ""
+    assert sum(model is SynthesisPayload for _, model in provider.calls) == 1
+    assert not any(model is ReviewMessageRepairPayload for _, model in provider.calls)
     assert audit["review_subset_repair"]["mode"] == "preserve_supported_review_claims"
-    assert audit["review_subset_repair"]["repair_output"] == "message_only"
+    assert audit["review_subset_repair"]["repair_output"] == "deterministic_gap_message"
     assert audit["review_subset_repair"]["reconstructed_by_program"] is True
-    assert audit["review_subset_repair"]["prompt_version"] == "review-message-repair-v1.0"
+    assert audit["review_subset_repair"]["message_source"] == "verified_claim_coverage"
+    assert "prompt_version" not in audit["review_subset_repair"]
     assert audit["claim_model_calls"] == 3 and audit["cache_hits"] == 2
     assert audit["coverage_model_calls"] == 2 and audit["status"] == "passed"
     assert audit["review_coverage"][0]["original_claim_indices"] == [0, 2]
@@ -159,7 +166,7 @@ def test_invalid_citation_keeps_original_repair_path_instead_of_salvaging(tmp_pa
 
 
 def test_subset_still_fails_if_coverage_or_message_is_unacceptable(tmp_path):
-    provider = Provider([review(good_a(), bad_a(), good_b()), repair()],
+    provider = Provider([review(good_a(), bad_a(), good_b())],
                         ReviewCoveragePayload(requested_aspects=["training objective"], assessments=[
                             {"document_id": "doc-a", "aspect": "training objective", "answer_claim_indices": [],
                              "gap_is_appropriate": False, "reason": "Requested objective is unacknowledged."},
@@ -168,7 +175,7 @@ def test_subset_still_fails_if_coverage_or_message_is_unacceptable(tmp_path):
                         ], unverified_statements=[]))
     with pytest.raises(ModelOutputError, match="Unanswered request aspect"):
         run(tmp_path, provider)
-    assert "supported_subset" in correction(provider)
+    assert not any(model is ReviewMessageRepairPayload for _, model in provider.calls)
     assert sum(model is ReviewCoveragePayload for _, model in provider.calls) == 2
 
 
@@ -183,11 +190,14 @@ def test_other_synthesis_modes_keep_the_original_bounded_repair(tmp_path):
 
 def test_repair_can_refuse_without_publishing_a_partial_review(tmp_path):
     provider = Provider([review(good_a(), bad_a(), good_b()),
-                         repair("所引片段不足以形成有用综述。", status="insufficient_evidence")])
+                         repair("所引片段不足以形成有用综述。", status="insufficient_evidence")], incomplete_coverage)
     result, used, audit = run(tmp_path, provider)
     assert result.status == "insufficient_evidence" and not result.sections and used == set()
     assert audit["status"] == "no_asserted_claims"
     assert "supported_subset" in correction(provider)
+    assert audit["review_subset_repair"]["repair_output"] == "message_only"
+    assert audit["review_subset_repair"]["prompt_version"] == "review-message-repair-v1.0"
+    assert len(correction(provider)["retained_coverage"]["assessments"]) == 1
 
 
 def test_review_exact_quotations_still_require_the_coverage_matrix(tmp_path):
@@ -201,9 +211,9 @@ def test_review_exact_quotations_still_require_the_coverage_matrix(tmp_path):
     assert models[2:] == [ReviewClaimCoveragePayload, ReviewClaimCoveragePayload]
 
 
-def test_first_repair_receives_coverage_gaps_from_only_supported_claims(tmp_path):
-    gap_a = "所给摘录未独立支持 ORION 的训练目标。"
-    gap_b = "所给摘录未独立支持 NOVA 的训练目标。"
+def test_deterministic_gap_uses_only_supported_claims_and_is_fully_rechecked(tmp_path):
+    gap_a = "《doc-a》：training objective"
+    gap_b = "《doc-b》：training objective"
     coverage_inputs = []
 
     def check_coverage(payload):
@@ -220,25 +230,29 @@ def test_first_repair_receives_coverage_gaps_from_only_supported_claims(tmp_path
         return ReviewCoveragePayload(requested_aspects=["structure", "training objective"],
                                      assessments=assessments, unverified_statements=[])
 
-    provider = Provider([review(good_a(), bad_a(), good_b()),
-                         repair(gap_a + gap_b)], check_coverage)
+    provider = Provider([review(good_a(), bad_a(), good_b())], check_coverage)
     result, _, audit = run(tmp_path, provider, instruction="Compare structures and training objectives.")
     first = coverage_inputs[0]
     assert [item["claim_index"] for item in first["claims"]] == [0, 1]
     assert [item["text"] for item in first["claims"]] == [good_a().text, good_b().text]
     assert all("99" not in item["text"] for item in first["claims"])
-    feedback = correction(provider)["problems"]
+    feedback = audit["attempts"][0]["problems"]
     assert any("The quoted score is not 99" in item for item in feedback)
     assert any("Unanswered request aspect" in item and "training objective" in item for item in feedback)
-    assert correction(provider)["supported_subset"]["removed_original_indices"] == [1]
+    assert audit["review_subset_repair"]["removed_original_indices"] == [1]
     assert audit["review_coverage"][0]["original_claim_indices"] == [0, 2]
     assert audit["coverage_model_calls"] == 2 and audit["status"] == "passed"
-    assert result.message == gap_a + gap_b
+    assert gap_a in result.message and gap_b in result.message
+    assert "structure" not in result.message
+    assert "尚未由本次保留的结论形成独立完整回答" in result.message
+    assert "仅限当前结果与所用摘录" in result.message
+    assert coverage_inputs[1]["response_message"] == result.message
+    assert not any(model is ReviewMessageRepairPayload for _, model in provider.calls)
 
 
-def test_coverage_only_message_repair_preserves_every_supported_claim(tmp_path):
-    gap_a = "所给摘录未独立支持 ORION 的训练目标。"
-    gap_b = "所给摘录未独立支持 NOVA 的训练目标。"
+def test_coverage_only_deterministic_gap_preserves_every_supported_claim(tmp_path):
+    gap_a = "《doc-a》：training objective"
+    gap_b = "《doc-b》：training objective"
 
     def check_coverage(payload):
         return ReviewCoveragePayload(requested_aspects=["training objective"], assessments=[{
@@ -248,20 +262,24 @@ def test_coverage_only_message_repair_preserves_every_supported_claim(tmp_path):
             "reason": "The requested training objective needs an explicit evidence gap.",
         } for document_id, gap in (("doc-a", gap_a), ("doc-b", gap_b))], unverified_statements=[])
 
-    provider = Provider([review(good_a(), good_b()), repair(gap_a + gap_b)], check_coverage)
+    provider = Provider([review(good_a(), good_b())], check_coverage)
     result, _, audit = run(tmp_path, provider, instruction="Compare structures and training objectives.")
-    assert result.message == gap_a + gap_b
+    assert gap_a in result.message and gap_b in result.message
     assert [item.text for item in result.sections[0].claims] == [good_a().text, good_b().text]
     assert audit["coverage_model_calls"] == 2 and audit["claim_model_calls"] == 2
     assert audit["cache_hits"] == 2 and audit["status"] == "passed"
     assert audit["review_subset_repair"]["removed_original_indices"] == []
-    subset = correction(provider)["supported_subset"]
+    subset = audit["review_subset_repair"]
     assert subset["retained_original_indices"] == [0, 1]
     assert subset["removed_original_indices"] == []
 
 
 def test_message_only_repair_cannot_smuggle_an_uncited_fact_into_the_result(tmp_path):
+    rounds = []
     def check_coverage(payload):
+        rounds.append(payload)
+        if len(rounds) == 1:
+            return incomplete_coverage(payload)
         return ReviewCoveragePayload(requested_aspects=["structure"], assessments=[{
             "document_id": document, "aspect": "structure", "answer_claim_indices": [index],
             "gap_is_appropriate": False, "reason": "Structure is quoted.",
@@ -279,6 +297,40 @@ def test_message_repair_provider_failure_does_not_publish_the_supported_subset(t
             if output_model is ReviewMessageRepairPayload:
                 raise RuntimeError("Fixture message repair failure")
             return await super().generate(prompt, payload, output_model)
-    provider = FailingProvider([review(good_a(), bad_a(), good_b())])
+    provider = FailingProvider([review(good_a(), bad_a(), good_b())], incomplete_coverage)
     with pytest.raises(RuntimeError, match="Fixture message repair failure"):
         run(tmp_path, provider)
+
+
+@pytest.mark.parametrize("initial_message", ["ORION 得分为 99。", "ORION 的结构未获回答。"])
+def test_complete_answers_clear_unverified_or_conflicting_message_without_model_repair(tmp_path, initial_message):
+    coverage_inputs = []
+
+    def check_coverage(payload):
+        coverage_inputs.append(payload)
+        message = payload["response_message"]
+        return ReviewCoveragePayload(requested_aspects=["structure"], assessments=[{
+            "document_id": document, "aspect": "structure", "answer_claim_indices": [index],
+            "gap_quote": message if document == "doc-a" and "未获回答" in message else "",
+            "gap_is_appropriate": False, "reason": "Each retained named structure is independently cited.",
+        } for index, document in enumerate(("doc-a", "doc-b"))],
+            unverified_statements=["Uncited score 99."] if "99" in message else [])
+
+    provider = Provider([review(good_a(), good_b(), message=initial_message)], check_coverage)
+    result, _, audit = run(tmp_path, provider)
+    assert result.message == ""
+    assert [item.text for item in result.sections[0].claims] == [good_a().text, good_b().text]
+    assert coverage_inputs[0]["response_message"] == initial_message
+    assert coverage_inputs[1]["response_message"] == ""
+    assert audit["coverage_model_calls"] == 2 and audit["status"] == "passed"
+    assert audit["review_subset_repair"]["repair_output"] == "deterministic_gap_message"
+    assert not any(model is ReviewMessageRepairPayload for _, model in provider.calls)
+
+
+def test_invalid_matrix_requires_fallback_and_cannot_publish_without_rechecking(tmp_path):
+    provider = Provider([review(good_a(), good_b()), repair()], incomplete_coverage)
+    with pytest.raises(ModelOutputError, match="every selected document"):
+        run(tmp_path, provider)
+    assert correction(provider)["supported_subset"]["repair_output"] == "message_only"
+    assert sum(model is ReviewMessageRepairPayload for _, model in provider.calls) == 1
+    assert sum(model is ReviewCoveragePayload for _, model in provider.calls) == 2
