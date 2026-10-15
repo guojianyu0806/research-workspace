@@ -63,15 +63,15 @@ class Provider:
             unverified_statements=[])
 
 
-def run(tmp_path, provider, *, cancel=None):
+def run(tmp_path, provider, *, cancel=None, initial_evidence=None):
     async def scenario():
         service = IntelligenceService(Library(tmp_path), provider)
         state = {}
         result, _, first_audit = await service._generate_grounded("fixture", {
             "task": "review", "instruction": "architecture and training objectives"}, SynthesisPayload,
-            SOURCES[:1], required_documents=["doc"], shared_state=state)
+            initial_evidence or SOURCES[:1], required_documents=["doc"], shared_state=state)
         first_identity = first_audit["review_coverage"][-1]["claim_catalog"][0]["claim_id"]
-        completed, evidence, audit = await complete_review(service, result, SOURCES[:1],
+        completed, evidence, audit = await complete_review(service, result, initial_evidence or SOURCES[:1],
             {"_snapshot_blocks": SOURCES, "queries": []}, ["doc"], "architecture and training objectives",
             state, check_cancel=cancel)
         return completed, evidence, audit, first_identity
@@ -207,6 +207,48 @@ def test_missing_literal_subject_gets_focused_citation_repair_before_fact_audit(
     assert audit["review_completion"]["status"] == "complete"
     assert audit["claim_model_calls"] == 1  # The invalid literal attribution was repaired before semantic spending.
     assert result.sections[-1].claims[0].citations[0].evidence_id == "E_objective"
+
+
+def test_uncited_initial_hits_do_not_exhaust_completion_source_budget(tmp_path):
+    unused = [source(f"irrelevant-{i}", f"Copper sensors measured temperature sample {i}.") for i in range(95)]
+    provider = Provider([[addition()]])
+    result, evidence, audit, original = run(tmp_path, provider, initial_evidence=SOURCES[:1] + unused)
+    assert result.status == "generated" and len(evidence) < 96
+    round_search = audit["review_completion"]["rounds"][0]["retrieval"]
+    assert len(round_search["retired_uncited_block_ids"]) == 95
+    assert "objective" in round_search["added_block_ids"]
+    assert audit["review_coverage"][-1]["claim_catalog"][0]["claim_id"] == original
+
+
+def test_one_new_fact_can_answer_two_dimensions_only_after_independent_link_checks(tmp_path, monkeypatch):
+    import sys
+    details = source("objective", "ORION pre-trains on BookArchive to predict masked words.")
+    monkeypatch.setattr(sys.modules[__name__], "SOURCES", [SOURCES[0], details])
+    text = "ORION 使用 BookArchive 预训练以预测被遮盖的词。"
+    class SharedFactProvider(Provider):
+        async def generate(self, prompt, payload, model):
+            if model is ReviewCoveragePayload:
+                return ReviewCoveragePayload(requested_aspects=["architecture", "training objective", "corpus"],
+                    assessments=[{"document_id": "doc", "aspect": aspect,
+                        "answer_claim_indices": [c["claim_index"] for c in payload["claims"]
+                            if ("attention" in c["text"]) == (aspect == "architecture")],
+                        "gap_quote": "", "gap_is_appropriate": False, "reason": "Check this actual prediction and corpus relation."}
+                        for aspect in ["architecture", "training objective", "corpus"]], unverified_statements=[])
+            if model is ReviewClaimCoveragePayload:
+                aspects = (["architecture"] if "attention" in payload["claim"]["text"] else
+                           ["training objective", "corpus"])
+                return ReviewClaimCoveragePayload(answers=[{"document_id": "doc", "aspect": aspect,
+                    "subject_citation_id": "R1", "answer_citation_id": "R1",
+                    "reason": "ORION, the training corpus and prediction objective are in this same quotation."} for aspect in aspects])
+            return await super().generate(prompt, payload, model)
+    provider = SharedFactProvider([[addition(text=text)], [addition(text=text, aspect="corpus")]])
+    result, _, audit, _ = run(tmp_path, provider)
+    assert len([claim for section in result.sections for claim in section.claims]) == 2
+    final = audit["review_coverage"][-1]
+    assert final["assessments"][1]["answer_claim_indices"] == [1]
+    assert final["assessments"][2]["answer_claim_indices"] == [1]
+    assert audit["review_completion"]["rounds"][0]["shared_new_candidates"]
+    assert audit["review_completion"]["answered_pairs"] == 3
 
 
 def test_cancellation_happens_before_paid_completion(tmp_path):

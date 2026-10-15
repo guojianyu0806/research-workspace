@@ -65,7 +65,13 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
         queries = aspect_queries(aspect, expanded_queries)
         names = (subject_names or {}).get(document, [])
         if names:
-            queries = [" ".join(names) + " " + query for query in queries] + queries
+            # Short queries preserve inflection-specific source wording. A long
+            # generic objective query can rank a nameless formula above a directly
+            # named task, while "trained" and "training" are distinct BM25 tokens.
+            focused = (["trained", "training corpus", "pretraining data"]
+                       if re.search(r"知识|knowledge|external|corpus", aspect, re.I) else
+                       ["trained", "negative log likelihood", "prediction task"])
+            queries = [" ".join(names) + " " + query for query in focused + queries] + queries
         rankings = []
         for query in queries:
             structural = service._section_candidates(query, source, index, document)
@@ -75,7 +81,8 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
             # Keep several different explanatory paragraphs, not just one name hit.
             # Give the corpus/objective phrase its own lexical slot. A broad
             # "pre-training" heading must not crowd out the actual corpus paragraph.
-            rankings.extend([lexical[:4], structural[:3]])
+            named = [item for item in lexical if service._identifier_tokens(item.text).intersection(names)]
+            rankings.extend([named[:3], lexical[:4], structural[:3]])
         seeds, seed_ids = [], set()
         for position in range(max((len(ranking) for ranking in rankings), default=0)):
             for ranking in rankings:

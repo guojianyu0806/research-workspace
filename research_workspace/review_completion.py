@@ -13,7 +13,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.2", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
+        "prompt_version": "review-completion-v1.3", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -41,8 +41,13 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 identifiers = service._identifier_tokens(known["text"]) & names
                 subjects.setdefault(cite["document_id"], set()).update(identifiers)
         subjects = {doc: sorted(names)[:4] for doc, names in subjects.items()}
-        evidence, search = supplement_review_evidence(service, retrieval["_snapshot_blocks"], evidence,
+        cited_ids = {cite["evidence_id"] for known in record["claim_catalog"] for cite in known["citations"]}
+        retained_sources = [block for block in evidence if block.evidence_id in cited_ids]
+        retired = [block.block_id for block in evidence if block.evidence_id not in cited_ids]
+        evidence, search = supplement_review_evidence(service, retrieval["_snapshot_blocks"], retained_sources,
             retrieval["queries"], request=instruction, missing_pairs=missing, subject_names=subjects)
+        search["retired_uncited_block_ids"] = [identifier for identifier in retired
+                                               if identifier not in {block.block_id for block in evidence}]
         shared_state["review_evidence"] = evidence
         catalog = service._citation_spans(evidence, omit_trailing_fragment=True)
         frozen = [claim for section in result.sections for claim in section.claims]
@@ -67,6 +72,20 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
             own_evidence = [block for block in evidence if block.document_id == document]
             own_names = service._named_attribution_identifiers(service._citation_spans(own_evidence))
             target_names = subjects.get(document, [])
+            # Rank this one task's directly named paragraphs first. Full canonical
+            # passages remain available; no automatically generated text is cited.
+            ranked_ids = []
+            for query in search["searches"]:
+                if query["document_id"] == document and query["aspect"] == aspect:
+                    ranked_ids = query["candidate_block_ids"]
+                    break
+            ranking = {identifier: position for position, identifier in enumerate(ranked_ids)}
+            own_evidence.sort(key=lambda block: (not bool(service._identifier_tokens(block.text).intersection(target_names)),
+                                                ranking.get(block.block_id, 10000), block.page))
+            own_feedback = [{**item, "rejected_claims": [claim for claim in item["rejected_claims"]
+                if any(cite["document_id"] == document for cite in claim["citations"])]}
+                for item in failed_feedback]
+            own_feedback = [item for item in own_feedback if item["rejected_claims"]]
             name_spans = [{"evidence_id": block.evidence_id, "quote_id": identifier, "text": text,
                            "page": block.page, "block_id": block.block_id}
                           for block in own_evidence for identifier, text in catalog[block.evidence_id].items()
@@ -82,7 +101,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 "evidence": [{**block.model_dump(), "citation_spans": [
                     {"quote_id": identifier, "text": text}
                     for identifier, text in catalog[block.evidence_id].items()]} for block in own_evidence],
-                "previous_rejected_fact_feedback": failed_feedback,
+                "previous_rejected_fact_feedback": own_feedback,
             }
             pair_record = {"document_id": document, "aspect": aspect, "attempts": []}
             entry["pair_generations"].append(pair_record)
@@ -136,7 +155,14 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 raise ModelOutputError("补充结论借用了其他文献的引用，结果已拒绝。")
             identity = service._review_claim_identity(claim, evidence)["claim_id"]
             if identity in identities:
-                raise ModelOutputError("补充结论重复已有事实，不能据此填充缺口。")
+                if identity in original_ids:
+                    raise ModelOutputError("补充结论重复已有事实，不能据此填充缺口。")
+                # Two requested dimensions may genuinely share one new fact.
+                # Keep one card; the independent classifier, not these proposed
+                # labels, decides which dimensions it actually answers.
+                entry.setdefault("shared_new_candidates", []).append({
+                    "document_id": addition.document_id, "aspect": addition.aspect, "claim_id": identity})
+                continue
             identities.add(identity)
             section = next((section for section in rebuilt.sections
                             if _normalized(section.heading) == _normalized(addition.aspect)), None)

@@ -57,3 +57,14 @@ def test_search_vocabulary_does_not_make_nonmatching_document_evidence(tmp_path)
     source = block("unrelated", "doc", "Copper sensors record temperatures inside a controlled chamber.")
     evidence, audit = supplement_review_evidence(service, [source], [], [], request="训练目标")
     assert evidence == [] and audit["added_block_ids"] == []
+
+
+def test_short_named_training_search_preserves_explicit_corpus_attribution(tmp_path):
+    service = IntelligenceService(Library(tmp_path))
+    named_corpus = block("direct-corpus", "doc", "ORION is trained on BookArchive and PublicEncyclopaedia.")
+    anonymous = block("anonymous", "doc", "We use a pretraining training data corpus of unlabeled passages.")
+    architecture = block("architecture", "doc", "ORION models use an attention architecture with two encoders.")
+    evidence, audit = supplement_review_evidence(service, [architecture, anonymous, named_corpus], [], [],
+        request="", missing_pairs=[("doc", "外部知识的作用")], subject_names={"doc": ["orion"]})
+    assert evidence[0].block_id == "direct-corpus"
+    assert audit["searches"][0]["queries"][0] == "orion trained"
