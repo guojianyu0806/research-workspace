@@ -276,10 +276,10 @@ class ChatCompletionProvider:
         official_pro = (self.config.model == 'deepseek-v4-pro'
                         and urlsplit(self.config.base_url).hostname == 'api.deepseek.com')
         writing = payload.get('task') in {'review', 'complete_review_missing_dimensions'}
-        multi_quote_review = (payload.get('task') in {'verify_single_claim', 'verify_review_claim_coverage'}
-            and len(payload.get('claim', {}).get('citations', [])) > 1
-            and (payload.get('response_kind') == 'review' or payload.get('task') == 'verify_review_claim_coverage'))
-        return official_pro and (writing or multi_quote_review)
+        fact_review = payload.get('task') == 'verify_single_claim' and payload.get('response_kind') == 'review'
+        multi_quote_coverage = (payload.get('task') == 'verify_review_claim_coverage'
+                                and len(payload.get('claim', {}).get('citations', [])) > 1)
+        return official_pro and (writing or fact_review or multi_quote_coverage)
 
     async def generate(self, prompt: str, payload: dict, output_model: type[T]) -> T:
         endpoint = self.config.endpoint()
@@ -1137,6 +1137,21 @@ class IntelligenceService:
         return min((sorted(named - quoted) for named in named_forms), key=lambda missing: (len(missing), missing))
 
     @staticmethod
+    def _missing_review_qualifiers(claim: Claim) -> list[str]:
+        """Reject visibly absent scope words; presence still needs semantic review."""
+        quotes = unicodedata.normalize("NFKC", " ".join(cite.quote for cite in claim.citations))
+        quotes = re.sub(r"(?<=[A-Za-z])-\s*\n\s*(?=[A-Za-z])", "", quotes)
+        rules = [
+            (r"开放域|open[- ]domain", r"open[- ]?domain|开放域", "open-domain scope"),
+            (r"英文|英语", r"\bEnglish\b|英文|英语", "English language"),
+            (r"预训练", r"\bpre[- ]?train\w*\b|预训练", "pre-training stage"),
+            (r"文档级", r"document[- ]?level|文档级", "document-level corpus"),
+            (r"推理时|测试时", r"\binference\b|\b(?:at|during|for)\s+(?:the\s+)?test(?:ing)?\b|test[- ]time|推理时|测试时", "inference/test-time scope"),
+        ]
+        return [label for trigger, required, label in rules
+                if re.search(trigger, claim.text, re.I) and not re.search(required, quotes, re.I)]
+
+    @staticmethod
     def _review_claim_identity(claim: Claim, evidence: list[Evidence]) -> dict:
         sources = {item.evidence_id: item for item in evidence}
         citations = [{"citation_id": f"R{index + 1}", **citation.model_dump(), **sources[citation.evidence_id].model_dump(
@@ -1194,7 +1209,7 @@ class IntelligenceService:
                                       for doc in own_documents for aspect in coverage.requested_aspects],
                     "claim": identity,
                 }
-                links = await self.provider.generate(_prompt("review_claim_coverage_v1"), link_payload,
+                links = await self.provider.generate(_prompt("review_claim_coverage_v2"), link_payload,
                                                       ReviewClaimCoveragePayload)
                 await self._check_cancel(check_cancel)
                 audit["coverage_link_model_calls"] += 1
@@ -1208,7 +1223,7 @@ class IntelligenceService:
                 if audit["coverage_link_model_calls"] >= MAX_ISOLATED_CLAIMS:
                     raise ModelOutputError("综述覆盖关联已达到24次独立核验上限；结果已拒绝。")
                 await self._check_cancel(check_cancel)
-                links = await self.provider.generate(_prompt("review_claim_coverage_v1"), {
+                links = await self.provider.generate(_prompt("review_claim_coverage_v2"), {
                     **link_payload, "protocol_correction": {"previous_result": links.model_dump(),
                         "problems": invalid, "rule": "Return one link at most for each EXACT allowed_pair. Reuse the exact document_id and aspect, without aliases. Choose existing own R citation IDs. Several supporting citations or tasks do not require duplicate links for one document/aspect. Do not add semantic links just to fix format; use answers [] when this claim does not answer a target."},
                 }, ReviewClaimCoveragePayload)
@@ -1348,16 +1363,17 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
-            audit["coverage_link_prompt_version"] = "review-claim-coverage-v1.4"
+            audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.0"
             audit.setdefault("coverage_link_model_calls", 0)
             audit.setdefault("coverage_link_cache_hits", 0)
-            audit["claim_support_prompt_version"] = "review-claim-support-v1.0"
+            audit["claim_support_prompt_version"] = "review-claim-support-v1.1"
             if isinstance(self.provider, ChatCompletionProvider):
                 config = self.provider.config
                 if config.model == "deepseek-v4-pro" and urlsplit(config.base_url).hostname == "api.deepseek.com":
                     audit["review_model_policy"] = {"model": config.model, "thinking": "adaptive",
-                        "generation_thinking": "enabled", "multi_quote_review_thinking": "enabled",
-                        "single_quote_review_thinking": "disabled", "global_coverage_thinking": "disabled",
+                        "generation_thinking": "enabled", "claim_support_thinking": "enabled",
+                        "multi_quote_coverage_thinking": "enabled", "single_quote_coverage_thinking": "disabled",
+                        "global_coverage_thinking": "disabled",
                         "reasoning_effort": "low", "extra_output_token_budget": 8192,
                         "reasoning_content_retained": False, "request_timeout_seconds": max(90, config.timeout_seconds)}
         supported_review_claims: Counter[str] | None = None
@@ -1420,7 +1436,13 @@ class IntelligenceService:
                     claim_data = claim.model_dump()
                     cache_key = json.dumps(claim_data, sort_keys=True, ensure_ascii=False)
                     missing_names = self._missing_named_attribution(claim, named_identifiers)
-                    if missing_names:
+                    missing_scope = self._missing_review_qualifiers(claim) if structured_review else []
+                    if missing_scope:
+                        verdict = ClaimSupportPayload(verdict="unsupported", reason=(
+                            "This claim adds scope not explicitly present in its own quotations: " + ", ".join(missing_scope)
+                            + ". Attach the actual scope passage to this same claim or narrow the wording; other cards and unquoted context are unavailable."))
+                        method = "literal_scope_guard"
+                    elif missing_names:
                         verdict = ClaimSupportPayload(verdict="unsupported", reason=(
                             "The claim names model identifier(s) " + ", ".join(missing_names)
                             + ", but its own quotations do not contain those complete identifiers. "
