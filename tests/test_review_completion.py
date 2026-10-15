@@ -102,15 +102,18 @@ def test_unsupported_addition_is_filtered_then_actual_new_fact_is_required(tmp_p
     texts = [c.text for section in result.sections for c in section.claims]
     assert not any("99" in text for text in texts)
     assert audit["review_completion"]["model_calls"] == 2
-    assert len(audit["attempts"]) == 4
-    assert [attempt["attempt"] for attempt in audit["attempts"]] == [1, 2, 3, 4]
+    assert len(audit["attempts"]) == 2
+    assert [attempt["attempt"] for attempt in audit["attempts"]] == [1, 2]
     assert audit["review_coverage"][-1]["claim_catalog"][0]["claim_id"] == original
     assert audit["claim_model_calls"] == 2
     completion_requests = [payload for model, payload in provider.calls if model is ReviewCompletionPayload]
-    feedback = completion_requests[1]["previous_rejected_fact_feedback"]
-    assert any("Wrong quantity" in problem for item in feedback for problem in item["problems"])
-    assert any("99" in claim["text"] for item in feedback for claim in item["rejected_claims"])
-    assert all(claim["citations"] for item in feedback for claim in item["rejected_claims"])
+    feedback = completion_requests[1]["citation_correction"]
+    assert any("Wrong quantity" in problem for problem in feedback["preflight_problems"])
+    assert "99" in feedback["previous_result"]["additions"][0]["claim"]["text"]
+    checks = audit["review_completion"]["rounds"][0]["pair_generations"][0]["semantic_prechecks"]
+    assert [item["verdict"] for item in checks] == ["unsupported", "supported"]
+    assert all(item["claim_id"].startswith("C_") for item in checks)
+    assert len(audit["review_completion"]["rounds"]) == 1
 
 
 def test_gap_only_result_cannot_be_reported_as_complete(tmp_path):
@@ -121,10 +124,12 @@ def test_gap_only_result_cannot_be_reported_as_complete(tmp_path):
 
 def test_two_failed_additions_do_not_turn_gap_notice_into_completion(tmp_path):
     provider = Provider([[addition(text="ORION predicts 99 masked words.")],
+                         [addition(text="ORION predicts 99 masked words.")],
+                         [addition(text="ORION predicts 99 masked words.")],
                          [addition(text="ORION predicts 99 masked words.")]])
     with pytest.raises(ModelOutputError, match="未将缺口说明计作完整综述"):
         run(tmp_path, provider)
-    assert sum(model is ReviewCompletionPayload for model, _ in provider.calls) == 2
+    assert sum(model is ReviewCompletionPayload for model, _ in provider.calls) == 4
 
 
 def test_public_review_also_requires_completing_partial_result(tmp_path, monkeypatch):
@@ -317,3 +322,18 @@ def test_cancellation_happens_before_paid_completion(tmp_path):
     with pytest.raises(Cancelled):
         run(tmp_path, provider, cancel=cancel)
     assert not any(model is ReviewCompletionPayload for model, _ in provider.calls)
+
+
+def test_local_semantic_precheck_shares_the_global_fact_call_budget(tmp_path):
+    async def scenario():
+        provider = Provider([[addition()]])
+        service = IntelligenceService(Library(tmp_path), provider)
+        state = {}
+        result, _, audit = await service._generate_grounded("fixture", {"task":"review", "instruction":"training objective"},
+            SynthesisPayload, SOURCES[:1], required_documents=["doc"], shared_state=state)
+        audit["claim_model_calls"] = 24
+        with pytest.raises(ModelOutputError, match="24次调用上限"):
+            await complete_review(service,result,SOURCES[:1],{"_snapshot_blocks":SOURCES,"queries":[]},
+                ["doc"],"architecture and training objectives",state)
+        assert not any(model is ClaimSupportPayload for model, _ in provider.calls)
+    asyncio.run(scenario())

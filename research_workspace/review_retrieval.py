@@ -11,9 +11,72 @@ import re
 MAX_REVIEW_EVIDENCE = 96
 
 
+def is_training_aspect(aspect):
+    return bool(re.search(r"训练|损失|\b(?:pre[- ]?)?train\w*\b|\bloss\b", aspect, re.I))
+
+
 def _task_training_relation(text):
     return bool(re.search(r"\btrain(?:ed|s)?\s+for\s+(?!as\b)|\btrain(?:ed|s)?.{0,100}\b(?:minimiz|predict|objective|loss)",
                           " ".join(text.split()), re.I))
+
+
+def training_task_requirements(service, source, names):
+    """Recognize only an explicit named multi-task declaration plus numbered tasks."""
+    ordered = service._reading_order(source)
+    catalog = service._citation_spans(service._excerpts(ordered), omit_trailing_fragment=True)
+    numbers = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+               **{str(n): n for n in range(2, 7)}}
+    for pos, block in enumerate(ordered):
+        for quote_id, text in catalog[block.evidence_id].items():
+            plain = " ".join(text.split())
+            count = re.search(r"\b(two|three|four|five|six|[2-6])\b.{0,30}\btasks?\b", plain, re.I)
+            if not count or not directly_named_training(text, names, service):
+                continue
+            tasks = []
+            nearby = ordered[pos+1:pos+32]
+            for offset, candidate in enumerate(nearby):
+                if candidate.page > block.page + 2:
+                    break
+                heading = re.match(r"\s*Task\s*#?\s*([1-6])\s*:\s*([^\n]{1,100})", candidate.text, re.I)
+                if not heading:
+                    continue
+                group = [candidate]
+                for following in nearby[offset+1:offset+5]:
+                    if (re.match(r"\s*Task\s*#?\s*[1-6]\s*:", following.text, re.I)
+                            or following.page > candidate.page + 1 or service._heading(following)):
+                        break
+                    group.append(following)
+                tasks.append({"number": int(heading[1]), "label": heading[2].strip(),
+                              "evidence_ids": [item.evidence_id for item in group],
+                              "preferred_evidence_ids": [candidate.evidence_id] + [item.evidence_id for item in group[1:]
+                                  if re.search(r"predict|target|classif|minimiz|recover|detect|预测", item.text, re.I)][:1]})
+            total = numbers[count[1].lower()]
+            if [task["number"] for task in tasks[:total]] == list(range(1, total+1)):
+                return {"scope_evidence_id": block.evidence_id, "scope_quote_id": quote_id,
+                        "scope_text": text, "tasks": tasks[:total],
+                        "rule": "Each training answer must quote this named task scope and its own prediction definitions for ALL listed tasks; labels alone do not answer them."}
+    return None
+
+
+def has_training_relation(service, claim, names):
+    """A decoding computation alone cannot establish an actual training task."""
+    text = " ".join(cite.quote for cite in claim.citations)
+    return (directly_named_training(text, names, service) or
+            bool(re.search(r"\b(?:pre[- ]?)?training\s+(?:objective|task|loss)|\b(?:pre[- ]?)?training.{0,45}\bpredict|\bobjective\b|\bminimiz\w*\b|训练目标|训练任务|训练损失", text, re.I)))
+
+
+def training_eligibility(service, claim, names, requirement=None):
+    missing = [] if has_training_relation(service, claim, names) else ["actual training task/objective relation"]
+    if (re.search(r"softmax|线性变换|linear\s+(?:transfor|projection)", claim.text, re.I)
+            and not re.search(r"训练|目标|train|objective|learning task", claim.text, re.I)):
+        missing.append("an actual training target in the claim, rather than output computation alone")
+    if requirement:
+        own = {(cite.evidence_id, cite.quote_id) for cite in claim.citations}
+        if (requirement["scope_evidence_id"], requirement["scope_quote_id"]) not in own:
+            missing.append("named multiple-task scope declaration")
+        ids = {cite.evidence_id for cite in claim.citations}
+        missing.extend(task["label"] for task in requirement["tasks"] if not ids.intersection(task["evidence_ids"]))
+    return missing
 
 
 def focus_review_evidence(service, evidence, aspect, names, *, max_blocks=12):
@@ -156,14 +219,21 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
         # broad headings and adjacent paragraphs consume the fair-search slots.
         # These are canonical candidates, not inferred facts or attribution.
         scope_anchors = [item for item in source if item.block_id not in index[3]
-            and directly_named_training(item.text, names, service)
-            and re.search(r"\btasks?\b|\bobjectives?\b", " ".join(item.text.split()), re.I)]
+            and any(directly_named_training(text, names, service) and
+                    re.search(r"\btasks?\b|\bobjectives?\b", text, re.I)
+                    for text in service._citation_spans([item], omit_trailing_fragment=True)[item.evidence_id].values())]
         corpus_anchors = [item for item in source if item.block_id not in index[3]
-            and re.search(r"\b(?:pre[- ]?)?training\s+corpus\b|\b(?:we\s+)?trained\s+on\b|\btraining\s+data\b",
+            and re.search(r"\b(?:pre[- ]?)?training\s+corpus\b|\b(?:we\s+)?trained\s+on\b",
                           " ".join(item.text.split()), re.I)]
         corpus_anchors.sort(key=lambda item: not directly_named_training(item.text, names, service))
         anchors = (scope_anchors[:2] if re.search(r"训练|目标|train|objective|loss", aspect, re.I) else
                    corpus_anchors[:2] if re.search(r"知识|语料|knowledge|external|corpus", aspect, re.I) else [])
+        requirement = training_task_requirements(service, source, names) if re.search(r"训练|目标|train|objective|loss", aspect, re.I) else None
+        if requirement:
+            ids = [requirement["scope_evidence_id"]] + [task["preferred_evidence_ids"][0] for task in requirement["tasks"]]
+            ids += [identifier for task in requirement["tasks"] for identifier in task["preferred_evidence_ids"][1:]]
+            by_id = {item.evidence_id: item for item in source}
+            anchors = [by_id[identifier] for identifier in dict.fromkeys(ids)]
         if anchors:
             seeds = anchors + [item for item in seeds if item.block_id not in {anchor.block_id for anchor in anchors}]
         positions = {item.block_id: i for i, item in enumerate(source)}

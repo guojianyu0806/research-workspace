@@ -2,18 +2,19 @@
 from __future__ import annotations
 
 import re
+import json
 
-from .review_retrieval import supplement_review_evidence, directly_named_training, focus_review_evidence
+from .review_retrieval import supplement_review_evidence, directly_named_training, focus_review_evidence, training_eligibility, is_training_aspect
 
 
 async def complete_review(service, result, evidence, retrieval, documents, instruction,
                           shared_state, *, check_cancel=None):
-    from .intelligence import (MAX_ISOLATED_CLAIMS, ModelOutputError, ReviewCompletionPayload,
+    from .intelligence import (MAX_ISOLATED_CLAIMS, ModelOutputError, ReviewCompletionPayload, ClaimSupportPayload,
                                Section, SynthesisPayload, _normalized, _prompt)
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.8", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
+        "prompt_version": "review-completion-v1.9", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -114,6 +115,12 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                                                 ranking.get(block.block_id, 10000), block.page))
             own_evidence = focus_review_evidence(service, own_evidence, aspect, target_names,
                                                  max_blocks=12 if round_number == 0 else 20)
+            requirement = audit.get("training_requirements", {}).get(document) if is_training_aspect(aspect) else None
+            if requirement:
+                reserved = {requirement["scope_evidence_id"]} | {identifier for task in requirement["tasks"] for identifier in task["preferred_evidence_ids"]}
+                anchors = [block for block in evidence if block.evidence_id in reserved]
+                limit = max(12 if round_number == 0 else 20, len(anchors))
+                own_evidence = anchors + [block for block in own_evidence if block.evidence_id not in reserved][:limit-len(anchors)]
             pair_catalog = {block.evidence_id: catalog[block.evidence_id] for block in own_evidence}
             own_feedback = [{**item, "rejected_claims": [claim for claim in item["rejected_claims"]
                 if any(cite["document_id"] == document for cite in claim["citations"])]}
@@ -133,6 +140,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 "retained_claims": [known for known in record["claim_catalog"]
                                     if any(c["document_id"] == document for c in known["citations"])],
                 "target_subject_search_hints": target_names,
+                "required_training_tasks": requirement,
                 "own_named_passages": name_spans,
                 "direct_named_training_passages": direct[:8],
                 "preferred_direct_relation_spans": [span for span in name_spans
@@ -166,6 +174,11 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                         preflight_problems.append(str(problem) + " Select only evidence_id and quote_id pairs currently present in this call's evidence citation_spans; rejected feedback is not a citation catalog.")
                         continue
                     missing_names.extend(service._missing_named_attribution(item.claim, own_names))
+                    if is_training_aspect(aspect):
+                        incomplete = training_eligibility(service, item.claim, own_names, requirement)
+                        if incomplete:
+                            preflight_problems.append("The training answer lacks: " + ", ".join(incomplete)
+                                + ". Quote the actual training relation and, when required_training_tasks is present, the named task declaration and each actual prediction definition on THIS card; do not substitute decoder softmax or a single task.")
                     missing_scope = service._missing_review_qualifiers(item.claim)
                     if missing_scope:
                         preflight_problems.append("This card's own quotes lack the following asserted scope: "
@@ -178,6 +191,35 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                             and re.search(r"未描述|未使用|没有|不使用|仅依赖|no external|no retrieval|only relies", item.claim.text, re.I)
                             and not re.search(r"knowledge|retriev|外部知识|检索", " ".join(c.quote for c in item.claim.citations), re.I)):
                         preflight_problems.append("A negative knowledge/retrieval assertion has only unrelated structure quotations. Replace it with a positively supported corpus/input-information role and its actual named-method source; absence of a topic is not proof of non-use.")
+                    if not missing_names and not preflight_problems:
+                        # Reuse the exact same own-quote support cache and budget
+                        # as the final audit; never buy a second check just because
+                        # this fact was first checked during a local correction.
+                        service._validate_claims([item.claim], evidence)
+                        data = item.claim.model_dump()
+                        key = json.dumps(data, sort_keys=True, ensure_ascii=False)
+                        cache = shared_state.setdefault("support_cache", {})
+                        if key in cache:
+                            verdict = cache[key]
+                            audit["cache_hits"] += 1
+                            method = "cached_isolated_review"
+                        else:
+                            if audit["claim_model_calls"] >= MAX_ISOLATED_CLAIMS:
+                                raise ModelOutputError("综述事实核验已达到24次调用上限；补充结果未作为完整综述返回。")
+                            verdict = await service.provider.generate(_prompt("review_claim_support_v1"), {
+                                "task": "verify_single_claim", "response_kind": "review", "claim_index": 0,
+                                "claim": data}, ClaimSupportPayload)
+                            await service._check_cancel(check_cancel)
+                            cache[key] = verdict
+                            audit["claim_model_calls"] += 1
+                            audit["model_checked"] = True
+                            method = "isolated_review"
+                        pair_record.setdefault("semantic_prechecks", []).append({"local_attempt": protocol_attempt + 1,
+                            "claim_id": service._review_claim_identity(item.claim, evidence)["claim_id"],
+                            "method": method, **verdict.model_dump()})
+                        if verdict.verdict == "unsupported":
+                            preflight_problems.append("Independent own-quote semantic review rejected this entire candidate: " + verdict.reason
+                                + " Repair the actual relation/citations, retaining the requested factual content; do not merely paraphrase the rejected predicate.")
                 if (missing_names or preflight_problems) and protocol_attempt == 0:
                     pair_payload["citation_correction"] = {
                         "previous_result": proposed.model_dump(), "missing_subject_identifiers": sorted(set(missing_names)),

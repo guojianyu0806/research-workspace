@@ -25,7 +25,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from .library import Library, LibraryError
 from .review_retrieval import (supplement_review_evidence, subject_hints, request_aspects,
-                               focus_review_evidence, directly_named_training)
+                               focus_review_evidence, directly_named_training,
+                               training_task_requirements, training_eligibility, is_training_aspect)
 from .review_completion import complete_review
 
 
@@ -1165,12 +1166,14 @@ class IntelligenceService:
 
     @staticmethod
     def _review_link_problems(links: ReviewClaimCoveragePayload, identity: dict,
-                              documents: list[str], aspects: list[str]) -> list[str]:
+                              documents: list[str], aspects: list[str], *, eligible_pairs=None) -> list[str]:
         problems, seen = [], set()
         for link in links.answers:
             pair = (link.document_id, link.aspect)
             if link.document_id not in documents or link.aspect not in aspects:
                 problems.append(f"Invalid review coverage link target: document={link.document_id}, aspect={link.aspect}.")
+            elif eligible_pairs is not None and pair not in eligible_pairs:
+                problems.append("The proposed training link lacks its own required training/task scope quotations.")
             elif pair in seen:
                 problems.append(f"Duplicate review coverage link target: document={link.document_id}, aspect={link.aspect}.")
             seen.add(pair)
@@ -1195,21 +1198,38 @@ class IntelligenceService:
             catalog.append({"claim_index": index, "original_claim_index": original_indices[index], **identity})
             own_documents = sorted({item["document_id"] for item in identity["citations"]} & set(documents))
             targets = [{"document_id": document, "title": titles[document]} for document in own_documents]
+            allowed = [(doc, aspect) for doc in own_documents for aspect in coverage.requested_aspects]
+            omissions = {}
+            for doc in own_documents:
+                own_sources = [source for source in evidence if source.document_id == doc]
+                own_ids = {source.evidence_id for source in own_sources}
+                own_claim = claim.model_copy(update={"citations": [cite for cite in claim.citations if cite.evidence_id in own_ids]})
+                names = self._named_attribution_identifiers(self._citation_spans(own_sources))
+                absent = training_eligibility(self, own_claim, names, audit.get("training_requirements", {}).get(doc))
+                if absent:
+                    omissions[doc] = absent
+                    allowed = [(target, aspect) for target, aspect in allowed
+                        if target != doc or not is_training_aspect(aspect)]
             key = json.dumps({"claim_id": identity["claim_id"], "request": request,
-                "aspects": sorted(coverage.requested_aspects), "targets": targets}, ensure_ascii=False, sort_keys=True)
+                "aspects": sorted(coverage.requested_aspects), "targets": targets,
+                "eligible_pairs": allowed, "training_requirements": audit.get("training_requirements", {})}, ensure_ascii=False, sort_keys=True)
             if key in cache:
                 links = cache[key]
                 audit["coverage_link_cache_hits"] += 1
                 method = "cached_isolated_claim_coverage"
                 protocol_attempts = []
+            elif not allowed:
+                links = ReviewClaimCoveragePayload(answers=[])
+                method, protocol_attempts = "training_source_eligibility_guard", []
             else:
                 if audit["coverage_link_model_calls"] >= MAX_ISOLATED_CLAIMS:
                     raise ModelOutputError("综述覆盖关联已达到24次独立核验上限；结果已拒绝。")
                 link_payload = {
                     "task": "verify_review_claim_coverage", "request": request,
                     "requested_aspects": coverage.requested_aspects, "targets": targets,
-                    "allowed_pairs": [{"document_id": doc, "aspect": aspect}
-                                      for doc in own_documents for aspect in coverage.requested_aspects],
+                    "allowed_pairs": [{"document_id": doc, "aspect": aspect} for doc, aspect in allowed],
+                    "required_training_tasks": {doc: audit.get("training_requirements", {}).get(doc)
+                                                for doc in own_documents if audit.get("training_requirements", {}).get(doc)},
                     "claim": identity,
                 }
                 links = await self.provider.generate(_prompt("review_claim_coverage_v2"), link_payload,
@@ -1217,7 +1237,7 @@ class IntelligenceService:
                 await self._check_cancel(check_cancel)
                 audit["coverage_link_model_calls"] += 1
                 method = "isolated_claim_coverage"
-            invalid = self._review_link_problems(links, identity, own_documents, coverage.requested_aspects)
+            invalid = self._review_link_problems(links, identity, own_documents, coverage.requested_aspects, eligible_pairs=set(allowed))
             if method == "isolated_claim_coverage":
                 protocol_attempts = [{"problems": invalid, **links.model_dump()}]
             if invalid and method == "isolated_claim_coverage":
@@ -1232,11 +1252,13 @@ class IntelligenceService:
                 }, ReviewClaimCoveragePayload)
                 await self._check_cancel(check_cancel)
                 audit["coverage_link_model_calls"] += 1
-                invalid = self._review_link_problems(links, identity, own_documents, coverage.requested_aspects)
+                invalid = self._review_link_problems(links, identity, own_documents, coverage.requested_aspects, eligible_pairs=set(allowed))
                 protocol_attempts.append({"problems": invalid, **links.model_dump()})
                 method = "isolated_claim_coverage_protocol_repair"
             checked.append({"claim_id": identity["claim_id"], "claim_index": index,
                             "method": method, "problems": invalid, "protocol_attempts": protocol_attempts,
+                            "eligible_pairs": [{"document_id": doc, "aspect": aspect} for doc, aspect in allowed],
+                            "missing_training_source_anchors": omissions,
                             **links.model_dump()})
             if invalid:
                 problems.extend(invalid)
@@ -1366,10 +1388,11 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
-            audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.1"
+            audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.2"
             audit.setdefault("coverage_link_model_calls", 0)
             audit.setdefault("coverage_link_cache_hits", 0)
             audit["claim_support_prompt_version"] = "review-claim-support-v1.2"
+            audit["training_requirements"] = state.get("training_requirements", {})
             if isinstance(self.provider, ChatCompletionProvider):
                 config = self.provider.config
                 if config.model == "deepseek-v4-pro" and urlsplit(config.base_url).hostname == "api.deepseek.com":
@@ -1816,6 +1839,12 @@ class IntelligenceService:
         reading_sets = []
         if kind == "review":
             names = subject_hints(self, retrieval["_snapshot_blocks"])
+            review_state["training_requirements"] = {}
+            for document in document_ids:
+                requirement = training_task_requirements(self,
+                    [block for block in retrieval["_snapshot_blocks"] if block.document_id == document], names.get(document, []))
+                if requirement:
+                    review_state["training_requirements"][document] = requirement
             spans = self._citation_spans(evidence, omit_trailing_fragment=True)
             for document in document_ids:
                 own = [block for block in evidence if block.document_id == document]
@@ -1834,7 +1863,8 @@ class IntelligenceService:
                 _prompt("review_synthesis_v1" if kind == "review" else "synthesis_v5"), {
                 "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
                 "external_freshness_verified": False,
-                **({"dimension_reading_sets": reading_sets} if kind == "review" else {}),
+                **({"dimension_reading_sets": reading_sets,
+                    "required_training_tasks": review_state.get("training_requirements", {})} if kind == "review" else {}),
             }, SynthesisPayload, evidence, check_cancel=check_cancel,
                 required_documents=document_ids if kind == "review" else None,
                 required_sections={"abstract", "introduction", "related work"} if kind == "draft" else None,
@@ -1851,7 +1881,7 @@ class IntelligenceService:
                     "source_snapshot": [{key: block.model_dump()[key] for key in
                         ("evidence_id", "document_id", "run_id", "block_id", "page", "bbox")}
                         for block in review_state.get("review_evidence", evidence)],
-                    "generation_prompt_version": "review-synthesis-v1.2"}
+                    "generation_prompt_version": "review-synthesis-v1.3"}
             raise
         claims = [claim for section in result.sections for claim in section.claims]
         used = self._validate_claims(claims, evidence)
@@ -1890,7 +1920,7 @@ class IntelligenceService:
                 "limitations": limitations, "prompt_version": PROMPT_VERSION,
                 "retrieval": retrieval_audit,
                 "grounding": grounding,
-                "generation_prompt_version": "review-synthesis-v1.2" if kind == "review" else "synthesis-v5",
+                "generation_prompt_version": "review-synthesis-v1.3" if kind == "review" else "synthesis-v5",
                 "trace": trace + [self._trace("model", "已调用模型生成分节内容。"),
                     self._trace("validate", "已回填并核验原文引句，对改述论断执行支持度复核，来源清单取自本地文献记录。")],
                 "future_work_verification": "evidence_insufficient" if kind == "future_work" else None,

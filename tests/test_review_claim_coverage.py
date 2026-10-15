@@ -117,7 +117,7 @@ def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
     provider = Provider([synthesis()])
     _, _, audit = run(tmp_path, provider)
     assert audit["coverage_prompt_version"] == "review-coverage-v1.2"
-    assert audit["coverage_link_prompt_version"] == "review-claim-coverage-v2.1"
+    assert audit["coverage_link_prompt_version"] == "review-claim-coverage-v2.2"
     resolved = final_assessments(audit)
     assert resolved[("doc-nova", "architecture")]["answer_claim_indices"] == [2]
     assert resolved[("doc-orion", "architecture")]["answer_claim_indices"] == [0]
@@ -126,7 +126,7 @@ def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
     calls = classifier_calls(provider)
     assert len(calls) == 5
     for payload in calls:
-        assert set(payload) == {"task", "request", "requested_aspects", "targets", "allowed_pairs", "claim"}
+        assert set(payload) == {"task", "request", "requested_aspects", "targets", "allowed_pairs", "claim", "required_training_tasks"}
         assert payload["task"] == "verify_review_claim_coverage"
         assert set(payload["claim"]) == {"claim_id", "text", "citations"}
         assert all(set(target) == {"document_id", "title"} for target in payload["targets"])
