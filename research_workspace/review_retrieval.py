@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 
 
-MAX_REVIEW_EVIDENCE = 64
+MAX_REVIEW_EVIDENCE = 96
 
 
 def aspect_queries(aspect: str, expanded_queries: list[dict]) -> list[str]:
@@ -17,7 +17,9 @@ def aspect_queries(aspect: str, expanded_queries: list[dict]) -> list[str]:
         groups += ["model architecture encoder decoder attention mechanism"]
     if re.search(r"训练|目标|损失|任务|train|objective|loss", aspect, re.I):
         groups += ["pretraining training objective prediction loss likelihood",
-                   "training data supervised target sequence pairs"]
+                   "training data supervised target sequence pairs",
+                   "train minimize negative log likelihood",
+                   "masked language model predict tokens"]
     if re.search(r"知识|外部|语料|knowledge|external|corpus|corpora", aspect, re.I):
         groups += ["external knowledge retrieval memory index",
                    "pretraining training data corpus"]
@@ -45,7 +47,7 @@ def request_aspects(request: str, expanded_queries: list[dict]) -> list[str]:
 
 
 def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
-                               request: str, missing_pairs=None):
+                               request: str, missing_pairs=None, max_evidence=MAX_REVIEW_EVIDENCE):
     """Search every target fairly; never reopen the database after a model await."""
     documents = list(dict.fromkeys(item.document_id for item in snapshot))
     aspects = request_aspects(request, expanded_queries)
@@ -96,17 +98,17 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
         queues.append(seeds[:6] + contexts + seeds[6:])
     # Round robin over document/dimension pairs bounds starvation, including
     # when one paper contains many mentions of the requested model names.
-    while any(queues) and len(selected) < MAX_REVIEW_EVIDENCE:
+    while any(queues) and len(selected) < max_evidence:
         for queue in queues:
             while queue and queue[0].block_id in seen:
                 queue.pop(0)
-            if queue and len(selected) < MAX_REVIEW_EVIDENCE:
+            if queue and len(selected) < max_evidence:
                 item = queue.pop(0)
                 seen.add(item.block_id)
                 selected.append(item)
     added = selected[len(current):]
     return service._excerpts(selected), {
-        "mode": "frozen_snapshot_dimension_search", "max_evidence": MAX_REVIEW_EVIDENCE,
+        "mode": "frozen_snapshot_dimension_search", "max_evidence": max_evidence,
         "added_block_ids": [item.block_id for item in added], "searches": observations,
         "selected_runs": {doc: next(item.run_id for item in snapshot if item.document_id == doc)
                           for doc in documents},

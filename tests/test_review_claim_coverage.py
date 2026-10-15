@@ -116,8 +116,8 @@ def final_assessments(audit):
 def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
     provider = Provider([synthesis()])
     _, _, audit = run(tmp_path, provider)
-    assert audit["coverage_prompt_version"] == "review-coverage-v1.1"
-    assert audit["coverage_link_prompt_version"] == "review-claim-coverage-v1.1"
+    assert audit["coverage_prompt_version"] == "review-coverage-v1.2"
+    assert audit["coverage_link_prompt_version"] == "review-claim-coverage-v1.2"
     resolved = final_assessments(audit)
     assert resolved[("doc-nova", "architecture")]["answer_claim_indices"] == [2]
     assert resolved[("doc-orion", "architecture")]["answer_claim_indices"] == [0]

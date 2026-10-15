@@ -43,12 +43,12 @@ def test_missing_pair_search_does_not_reopen_library_or_add_other_target(tmp_pat
 
 def test_source_budget_is_bounded_and_fair_between_missing_dimensions(tmp_path):
     service = IntelligenceService(Library(tmp_path))
-    current = [block(f"existing-{i}", "unrelated", f"Existing paragraph number {i}.") for i in range(62)]
+    current = [block(f"existing-{i}", "unrelated", f"Existing paragraph number {i}.") for i in range(94)]
     sources = [block("one", "doc-one", "ORION training objective predicts the next target symbol."),
                block("two", "doc-two", "NOVA external knowledge retrieval accesses a document index.")]
     evidence, audit = supplement_review_evidence(service, sources, current, [], request="",
         missing_pairs=[("doc-one", "training objective"), ("doc-two", "external knowledge")])
-    assert len(evidence) == audit["max_evidence"] == 64
+    assert len(evidence) == audit["max_evidence"] == 96
     assert {item.block_id for item in evidence[-2:]} == {"one", "two"}
 
 

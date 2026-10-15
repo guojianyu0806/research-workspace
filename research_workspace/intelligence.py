@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from .library import Library, LibraryError
 from .review_retrieval import supplement_review_evidence
+from .review_completion import complete_review
 
 
 PROMPT_VERSION = "research-evidence-v5"
@@ -231,6 +232,16 @@ class SynthesisPayload(StrictModel):
         if self.status == "insufficient_evidence" and (self.sections or self.architecture):
             raise ValueError("A refusal cannot contain generated sections")
         return self
+
+
+class ReviewAddition(StrictModel):
+    document_id: str = Field(min_length=1, max_length=80)
+    aspect: str = Field(min_length=1, max_length=120)
+    claim: Claim
+
+
+class ReviewCompletionPayload(StrictModel):
+    additions: list[ReviewAddition] = Field(default_factory=list, max_length=MAX_ISOLATED_CLAIMS)
 
 
 class Evidence(StrictModel):
@@ -1280,20 +1291,25 @@ class IntelligenceService:
     async def _generate_grounded(self, prompt: str, payload: dict, output_model: type[T],
                                  evidence: list[Evidence], *, check_cancel=None,
                                  required_documents: list[str] | None = None,
-                                 required_sections: set[str] | None = None) -> tuple[T, set[str], dict]:
+                                 required_sections: set[str] | None = None,
+                                 initial_result: T | None = None,
+                                 shared_state: dict | None = None) -> tuple[T, set[str], dict]:
         """Bounded repair against one frozen retrieval snapshot; never waive checks."""
         audit = {"prompt_version": "claim-support-v1", "coverage_prompt_version": "coverage-v1",
                  "mode": "isolated_claim_citations", "attempts": [], "model_checked": False,
                  "claim_model_calls": 0, "coverage_model_calls": 0, "cache_hits": 0,
                  "limitation": "model_semantic_review_is_not_a_proof"}
-        support_cache: dict[str, ClaimSupportPayload] = {}
-        coverage_link_cache: dict[str, ReviewClaimCoveragePayload] = {}
-        frozen_coverage_aspects: list[str] | None = None
+        state = shared_state if shared_state is not None else {}
+        audit = state.setdefault("audit", audit)
+        support_cache: dict[str, ClaimSupportPayload] = state.setdefault("support_cache", {})
+        coverage_link_cache: dict[str, ReviewClaimCoveragePayload] = state.setdefault("coverage_link_cache", {})
+        frozen_coverage_aspects: list[str] | None = state.get("coverage_aspects")
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if structured_review:
-            audit["coverage_prompt_version"] = "review-coverage-v1.1"
-            audit.update(coverage_link_prompt_version="review-claim-coverage-v1.1",
-                         coverage_link_model_calls=0, coverage_link_cache_hits=0)
+            audit["coverage_prompt_version"] = "review-coverage-v1.2"
+            audit["coverage_link_prompt_version"] = "review-claim-coverage-v1.2"
+            audit.setdefault("coverage_link_model_calls", 0)
+            audit.setdefault("coverage_link_cache_hits", 0)
         supported_review_claims: Counter[str] | None = None
         frozen_review: SynthesisPayload | None = None
         frozen_review_message: str | None = None
@@ -1305,6 +1321,7 @@ class IntelligenceService:
             for block in evidence]}
         current_payload = dict(payload)
         for attempt in range(2):
+            attempt_number = len(audit["attempts"]) + 1
             await self._check_cancel(check_cancel)
             if frozen_review is not None:
                 repaired_message = (ReviewMessageRepairPayload(status="generated", message=frozen_review_message)
@@ -1315,6 +1332,8 @@ class IntelligenceService:
                 result = (SynthesisPayload.model_validate({**frozen_review.model_dump(), "message": repaired_message.message})
                           if repaired_message.status == "generated" else
                           SynthesisPayload(status="insufficient_evidence", message=repaired_message.message))
+            elif attempt == 0 and initial_result is not None:
+                result = initial_result.model_copy(deep=True)
             else:
                 result = await self.provider.generate(prompt, current_payload, output_model)
             claims = result.claims if isinstance(result, AnswerPayload) else [
@@ -1365,6 +1384,8 @@ class IntelligenceService:
                         audit["cache_hits"] += 1
                         method = "cached_isolated_review"
                     else:
+                        if structured_review and shared_state is not None and audit["claim_model_calls"] >= MAX_ISOLATED_CLAIMS:
+                            raise ModelOutputError("综述事实核验已达到24次调用上限；补充结果未作为完整综述返回。")
                         # The judge must not see neighbouring claims, titles, the
                         # question, or unquoted parts of the source block. These
                         # could supply precisely the support missing from this card.
@@ -1418,6 +1439,7 @@ class IntelligenceService:
                     if structured_review:
                         if frozen_coverage_aspects is None:
                             frozen_coverage_aspects = list(coverage.requested_aspects)
+                            state["coverage_aspects"] = frozen_coverage_aspects
                         if set(coverage.requested_aspects) != set(frozen_coverage_aspects):
                             problems.append("Review coverage dimensions changed during correction; preserve the original requested dimensions.")
                             coverage_record = {**coverage.model_dump(), "status": "rejected_dimension_change"}
@@ -1427,14 +1449,14 @@ class IntelligenceService:
                                 coverage_input["request"], coverage_indices, coverage_link_cache, audit,
                                 check_cancel=check_cancel, generated_gap_message=frozen_review_message)
                             problems.extend(link_problems)
-                        audit.setdefault("review_coverage", []).append({"attempt": attempt + 1,
+                        audit.setdefault("review_coverage", []).append({"attempt": attempt_number,
                             "original_claim_indices": coverage_indices, **coverage_record})
                         problems.extend(self._review_coverage_problems(coverage, coverage_claims, evidence,
                             coverage_input["selected_document_ids"], result.message))
                     else:
                         problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
                         problems.extend("Unanswered request aspect: " + item for item in coverage.missing_aspects)
-            audit["attempts"].append({"attempt": attempt + 1, "problems": problems, "reviews": reviews})
+            audit["attempts"].append({"attempt": attempt_number, "problems": problems, "reviews": reviews})
             await self._check_cancel(check_cancel)
             if not problems:
                 audit["status"] = "passed" if claims else "no_asserted_claims"
@@ -1462,7 +1484,7 @@ class IntelligenceService:
                         offset += len(original)
                     frozen_review = SynthesisPayload.model_validate(previous)
                     coverage_record = next((item for item in reversed(audit.get("review_coverage", []))
-                                            if item["attempt"] == attempt + 1), {})
+                                            if item["attempt"] == attempt_number), {})
                     frozen_review_message = self._review_gap_message(coverage_record, required_documents or [], evidence)
                     subset_repair = {
                         "mode": "preserve_supported_review_claims",
@@ -1687,7 +1709,8 @@ class IntelligenceService:
                     if candidate.document_id not in represented and len(evidence) < MAX_EVIDENCE:
                         evidence.append(candidate)
             evidence, dimension_search = supplement_review_evidence(
-                self, retrieval["_snapshot_blocks"], evidence, retrieval["queries"], request=instruction)
+                self, retrieval["_snapshot_blocks"], evidence, retrieval["queries"], request=instruction,
+                max_evidence=64)
             retrieval_audit["review_dimension_search"] = dimension_search
             retrieval["trace"].append(self._trace("review_dimension_search",
                 f"按文献和请求维度从固定版本快照补充{len(dimension_search['added_block_ids'])}个原文及上下文块；每条引用仍单独审核。"))
@@ -1703,12 +1726,20 @@ class IntelligenceService:
                     "retrieval": retrieval_audit,
                     "future_work_verification": "evidence_insufficient" if kind == "future_work" else None}
         await self._check_cancel(check_cancel)
-        result, used, grounding = await self._generate_grounded(_prompt("synthesis_v5"), {
+        review_state = {} if kind == "review" else None
+        result, used, grounding = await self._generate_grounded(
+            _prompt("review_synthesis_v1" if kind == "review" else "synthesis_v5"), {
             "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
             "external_freshness_verified": False,
         }, SynthesisPayload, evidence, check_cancel=check_cancel,
             required_documents=document_ids if kind == "review" else None,
-            required_sections={"abstract", "introduction", "related work"} if kind == "draft" else None)
+            required_sections={"abstract", "introduction", "related work"} if kind == "draft" else None,
+            shared_state=review_state)
+        if kind == "review" and result.status == "generated":
+            result, evidence, grounding = await complete_review(self, result, evidence, retrieval,
+                document_ids, instruction, review_state, check_cancel=check_cancel)
+            trace.append(self._trace("review_completion",
+                f"逐项核对{grounding['review_completion']['answered_pairs']}项文献维度，最多2轮补充检索及独立引用审核；缺口说明不计为完整答案。"))
         claims = [claim for section in result.sections for claim in section.claims]
         used = self._validate_claims(claims, evidence)
         if result.status == "generated":
@@ -1746,6 +1777,7 @@ class IntelligenceService:
                 "limitations": limitations, "prompt_version": PROMPT_VERSION,
                 "retrieval": retrieval_audit,
                 "grounding": grounding,
+                "generation_prompt_version": "review-synthesis-v1.0" if kind == "review" else "synthesis-v5",
                 "trace": trace + [self._trace("model", "已调用模型生成分节内容。"),
                     self._trace("validate", "已回填并核验原文引句，对改述论断执行支持度复核，来源清单取自本地文献记录。")],
                 "future_work_verification": "evidence_insufficient" if kind == "future_work" else None,
