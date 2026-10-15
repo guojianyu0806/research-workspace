@@ -24,6 +24,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .library import Library, LibraryError
+from .review_retrieval import supplement_review_evidence
 
 
 PROMPT_VERSION = "research-evidence-v5"
@@ -970,6 +971,7 @@ class IntelligenceService:
                                         "max_added": 6, "max_per_document": 3},
                 # Internal snapshot data, excluded from persisted/public audit.
                 "_opening_candidates": self._excerpts(list(opening_by_document.values())),
+                "_snapshot_blocks": blocks,
                 "query_terms": [item["text"] for item in queries[1:]], "expansion": info,
                 "prompt_version": RETRIEVAL_PROMPT_VERSION, "trace": trace,
                 "selected_runs": {document_id: next((block.run_id for block in blocks if block.document_id == document_id), None)
@@ -1505,7 +1507,7 @@ class IntelligenceService:
         retrieval = await self.retrieve_for_question(question, document_ids, limit=max(12, len(document_ids)),
                                                      check_cancel=check_cancel)
         evidence = retrieval["evidence"]
-        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace", "_opening_candidates"}}
+        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace"} and not key.startswith("_")}
         represented = {block.document_id for block in evidence}
         missing = [value for value in document_ids if value not in represented]
         trace = retrieval["trace"]
@@ -1674,7 +1676,7 @@ class IntelligenceService:
                                                      expansion="auto" if instruction.strip() else "off",
                                                      check_cancel=check_cancel, include_attribution_context=True)
         evidence = retrieval["evidence"]
-        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace", "_opening_candidates"}}
+        retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace"} and not key.startswith("_")}
         # Reviews may include a selected document's opening passage when none of
         # its blocks matched headings. Reuse the same pre-await run snapshot;
         # a newly completed parse must not enter through the fallback path.
@@ -1684,6 +1686,11 @@ class IntelligenceService:
                 for candidate in retrieval["_opening_candidates"]:
                     if candidate.document_id not in represented and len(evidence) < MAX_EVIDENCE:
                         evidence.append(candidate)
+            evidence, dimension_search = supplement_review_evidence(
+                self, retrieval["_snapshot_blocks"], evidence, retrieval["queries"], request=instruction)
+            retrieval_audit["review_dimension_search"] = dimension_search
+            retrieval["trace"].append(self._trace("review_dimension_search",
+                f"按文献和请求维度从固定版本快照补充{len(dimension_search['added_block_ids'])}个原文及上下文块；每条引用仍单独审核。"))
         trace = retrieval["trace"] + [self._trace("retrieve_scope", f"本次生成使用{len(evidence)}个选定文献片段，未自动核验外部最新研究。")]
         limitations = ["仅基于所选文献的有限检索片段，未验证覆盖全文。",
                        "引用校验验证来源归属与原文引句，不等于自动证明全部推论正确。"]
