@@ -26,7 +26,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .library import Library, LibraryError
 from .review_retrieval import (supplement_review_evidence, subject_hints, request_aspects,
                                focus_review_evidence, directly_named_training,
-                               training_task_requirements, training_eligibility, is_training_aspect)
+                               training_task_requirements, training_eligibility, is_training_aspect,
+                               verified_training_corpus_role, is_information_role_comparison)
 from .review_completion import complete_review
 
 
@@ -1264,7 +1265,34 @@ class IntelligenceService:
                 problems.extend(invalid)
                 continue
             cache[key] = links
-            for link in links.answers:
+            # Preserve the model's raw association. A verified explicit training
+            # corpus is also a positive source/stage role under this declared
+            # comparison policy; never turn it into an external-retrieval claim.
+            resolved_links = list(links.answers)
+            derived = []
+            for doc in own_documents:
+                own_sources = [source for source in evidence if source.document_id == doc]
+                names = subject_hints(self, own_sources).get(doc, [])
+                if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{1,30}", titles[doc]):
+                    # A short title is a lexical name hint only: the helper still
+                    # requires that name in the fact AND its own real training
+                    # quotation, not merely in this metadata.
+                    names = sorted(set(names) | self._identifier_tokens(titles[doc]))
+                role = verified_training_corpus_role(self, identity, doc, names)
+                if role:
+                    for aspect in coverage.requested_aspects:
+                        if (is_information_role_comparison(request, aspect)
+                                and (doc, aspect) in allowed
+                                and not any(link.document_id == doc and link.aspect == aspect for link in resolved_links)):
+                            link = ReviewClaimCoverageLink(document_id=doc, aspect=aspect,
+                                subject_citation_id=role["subject_citation_id"], answer_citation_id=role["answer_citation_id"],
+                                reason="Verified own-card training corpus role, organized by the information-source/stage policy; no inference-time retrieval assertion.")
+                            resolved_links.append(link)
+                            derived.append({**role, "aspect": aspect})
+            checked[-1]["model_answers"] = [link.model_dump() for link in links.answers]
+            checked[-1]["derived_source_role_links"] = derived
+            checked[-1]["answers"] = [link.model_dump() for link in resolved_links]
+            for link in resolved_links:
                 by_pair.setdefault((link.document_id, link.aspect), []).append((index, link))
         for item in resolved.assessments:
             verified = by_pair.get((item.document_id, item.aspect), [])
@@ -1393,6 +1421,12 @@ class IntelligenceService:
             audit.setdefault("coverage_link_cache_hits", 0)
             audit["claim_support_prompt_version"] = "review-claim-support-v1.2"
             audit["training_requirements"] = state.get("training_requirements", {})
+            audit["source_role_policy"] = {"version": "information-source-stage-v1.0",
+                "scope": "broad information-source and usage-stage comparisons only",
+                "requires": "isolated_supported_claim; explicit named training/data relation in own text and own quotes",
+                "does_not_imply": "inference-time retrieval or its absence",
+                "raw_model_associations_preserved": True}
+            payload = {**payload, "information_role_policy": audit["source_role_policy"]}
             if isinstance(self.provider, ChatCompletionProvider):
                 config = self.provider.config
                 if config.model == "deepseek-v4-pro" and urlsplit(config.base_url).hostname == "api.deepseek.com":

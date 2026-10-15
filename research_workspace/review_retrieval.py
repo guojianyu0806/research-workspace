@@ -15,6 +15,40 @@ def is_training_aspect(aspect):
     return bool(re.search(r"训练|损失|\b(?:pre[- ]?)?train\w*\b|\bloss\b", aspect, re.I))
 
 
+def is_information_role_comparison(request, aspect):
+    """A corpus role cannot answer an explicit yes/no retrieval question."""
+    topic = r"外部知识.{0,6}(?:作用|来源)|知识来源|信息来源|knowledge\s+(?:source|role|use|usage)|information\s+(?:source|role)"
+    aspect_topic = r"外部知识|知识来源|信息来源|external\s+knowledge|knowledge\s+(?:source|role|use|usage)|information\s+(?:source|role)"
+    return bool(re.search(topic, request, re.I) and re.search(aspect_topic, aspect, re.I)
+                and not re.search(r"是否|有无|是不是|whether|yes.?no|does.{0,40}retriev", request, re.I))
+
+
+def verified_training_corpus_role(service, identity, document, names):
+    """Organize an ALREADY supported own-card training/data relation by its stage.
+
+    This does not verify facts, infer retrieval absence or accept a dataset name
+    alone. The caller must only supply claims that passed isolated fact support.
+    """
+    text = identity["text"]
+    if not service._identifier_tokens(text).intersection(names):
+        return None
+    if re.search(r"未使用|没有使用|不使用|未用|not\s+(?:trained|used)|no\s+training|without\s+data", text, re.I):
+        return None
+    if not (re.search(r"训练|\b(?:pre[- ]?)?train\w*\b", text, re.I)
+            and re.search(r"语料|数据集|训练数据|数据来源|corpus|corpora|data\s*set|training\s+data", text, re.I)):
+        return None
+    own = [cite for cite in identity["citations"] if cite["document_id"] == document]
+    subjects = [cite for cite in own if service._identifier_tokens(cite["quote"]).intersection(names)
+                and directly_named_training(cite["quote"], names, service)]
+    corpora = [cite for cite in own if re.search(r"corpus|corpora|data\s*set|training\s+data|语料|数据集|训练数据", cite["quote"], re.I)]
+    if not subjects or not corpora:
+        return None
+    return {"document_id": document, "role": "training_corpus",
+            "subject_citation_id": subjects[0]["citation_id"], "answer_citation_id": corpora[0]["citation_id"],
+            "policy_version": "information-source-stage-v1.0",
+            "interpretation": "A positively documented training-data role answers the broad source/stage comparison; it does not assert inference-time retrieval or its absence."}
+
+
 def _task_training_relation(text):
     return bool(re.search(r"\btrain(?:ed|s)?\s+for\s+(?!as\b)|\btrain(?:ed|s)?.{0,100}\b(?:minimiz|predict|objective|loss)",
                           " ".join(text.split()), re.I))
