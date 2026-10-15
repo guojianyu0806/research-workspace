@@ -957,7 +957,7 @@ class IntelligenceService:
         return {"step": step, "detail": detail}
 
     @staticmethod
-    def _citation_spans(evidence: list[Evidence]) -> dict[str, dict[str, str]]:
+    def _citation_spans(evidence: list[Evidence], *, omit_trailing_fragment: bool = False) -> dict[str, dict[str, str]]:
         """Number contiguous canonical passages; the model selects, never copies."""
         catalog = {}
         for block in evidence:
@@ -976,6 +976,13 @@ class IntelligenceService:
                 if remaining:
                     spans.append(remaining)
             catalog[block.evidence_id] = {f"Q{index + 1}": text for index, text in enumerate(spans)}
+            # Reviews should not select a visibly unfinished final sentence after
+            # complete prose (common at PDF page boundaries). Keep standalone
+            # headings, formulas and tables; this is not a general grammar test.
+            complete = lambda text: bool(re.search(r'''[.!?。！？]["'”’\)\]]*(?:\d{1,3}|\[\d+\])?\s*$''', text))
+            if (omit_trailing_fragment and len(spans) > 1 and not complete(spans[-1])
+                    and any(complete(text) for text in spans[:-1])):
+                del catalog[block.evidence_id][f"Q{len(spans)}"]
         return catalog
 
     @staticmethod
@@ -1073,7 +1080,8 @@ class IntelligenceService:
                  "limitation": "model_semantic_review_is_not_a_proof"}
         support_cache: dict[str, ClaimSupportPayload] = {}
         supported_review_claims: Counter[str] | None = None
-        catalog = self._citation_spans(evidence)
+        catalog = self._citation_spans(evidence, omit_trailing_fragment=(
+            payload.get("task") == "review" and output_model is SynthesisPayload))
         named_identifiers = self._named_attribution_identifiers(catalog)
         payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
             {"quote_id": quote_id, "text": text} for quote_id, text in catalog[block.evidence_id].items()]}
