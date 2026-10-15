@@ -11,6 +11,41 @@ import re
 MAX_REVIEW_EVIDENCE = 96
 
 
+def _task_training_relation(text):
+    return bool(re.search(r"\btrain(?:ed|s)?\s+for\s+(?!as\b)|\btrain(?:ed|s)?.{0,100}\b(?:minimiz|predict|objective|loss)",
+                          " ".join(text.split()), re.I))
+
+
+def focus_review_evidence(service, evidence, aspect, names, *, max_blocks=12):
+    """Select a small canonical reading set, never turn search labels into facts."""
+    objective = bool(re.search(r"训练|目标|损失|train|objective|loss", aspect, re.I))
+    information = bool(re.search(r"知识|语料|knowledge|external|corpus", aspect, re.I))
+    ranked = []
+    for position, block in enumerate(evidence):
+        text = " ".join(block.text.split())
+        named = bool(service._identifier_tokens(block.text).intersection(names))
+        direct = directly_named_training(block.text, names, service)
+        corpus = bool(re.search(r"corpus|corpora|training\s+(?:data|set)|data\s*set|sentence\s+pairs|\btrain(?:ed|s)?\s+on\b|语料|训练集", text, re.I))
+        memory = bool(re.search(r"retriev|non.parametric|external\s+knowledge|document\s+index|外部知识|检索", text, re.I))
+        target = bool(re.search(r"\b(?:pre.?training|training)\s+(?:objective|task|loss)|\b(?:predict|prediction|predicting|masked|likelihood|minimiz|maximiz)|训练目标|预测", text, re.I))
+        task_relation = direct and _task_training_relation(text)
+        if objective:
+            priority = 0 if task_relation else 1 if direct else 2 if target else 3 if corpus else 4
+        elif information:
+            priority = 0 if named and (corpus or memory) else 1 if corpus or memory else 2 if direct else 3
+        else:
+            priority = 0 if named else 1
+        ranked.append((priority, position, block))
+    ranked.sort(key=lambda item: item[:2])
+    # When there are actual training/source candidates, unrelated architecture
+    # passages cannot overwhelm them. An unfamiliar aspect keeps its normal pool.
+    if objective and any(priority < 3 for priority, _, _ in ranked):
+        ranked = [item for item in ranked if item[0] < 4]
+    elif information and any(priority < 2 for priority, _, _ in ranked):
+        ranked = [item for item in ranked if item[0] < 3]
+    return [block for _, _, block in ranked[:max_blocks]]
+
+
 def subject_hints(service, snapshot):
     """Lexical identity hints only, never a source of factual attribution."""
     hints = {}
@@ -108,7 +143,8 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
             # "pre-training" heading must not crowd out the actual corpus paragraph.
             named = [item for item in lexical if service._identifier_tokens(item.text).intersection(names)]
             if re.search(r"train|objective|训练|知识|knowledge|external|corpus", aspect, re.I):
-                named.sort(key=lambda item: not directly_named_training(item.text, names, service))
+                named.sort(key=lambda item: (not directly_named_training(item.text, names, service),
+                    not _task_training_relation(item.text)))
             rankings.extend([named[:3], lexical[:4], structural[:3]])
         seeds, seed_ids = [], set()
         for position in range(max((len(ranking) for ranking in rankings), default=0)):

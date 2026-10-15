@@ -139,6 +139,11 @@ def test_public_review_also_requires_completing_partial_result(tmp_path, monkeyp
     assert diagnostic["status"] == "validation_failed" and diagnostic["diagnostic_only"]
     assert diagnostic["grounding"]["review_completion"]["rounds"]
     assert diagnostic["source_snapshot"] and "sections" not in diagnostic
+    synthesis_request = next(payload for model, payload in service.provider.calls if model is SynthesisPayload)
+    assert synthesis_request["dimension_reading_sets"]
+    for reading_set in synthesis_request["dimension_reading_sets"]:
+        assert reading_set["document_id"] == "doc"
+        assert set(reading_set["preferred_evidence_ids"]) <= {"E_architecture", "E_objective"}
 
 
 def test_failed_review_audit_is_saved_without_an_answer_or_completed_progress(tmp_path):

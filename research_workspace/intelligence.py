@@ -24,7 +24,8 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .library import Library, LibraryError
-from .review_retrieval import supplement_review_evidence, subject_hints
+from .review_retrieval import (supplement_review_evidence, subject_hints, request_aspects,
+                               focus_review_evidence, directly_named_training)
 from .review_completion import complete_review
 
 
@@ -1363,10 +1364,10 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
-            audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.0"
+            audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.1"
             audit.setdefault("coverage_link_model_calls", 0)
             audit.setdefault("coverage_link_cache_hits", 0)
-            audit["claim_support_prompt_version"] = "review-claim-support-v1.1"
+            audit["claim_support_prompt_version"] = "review-claim-support-v1.2"
             if isinstance(self.provider, ChatCompletionProvider):
                 config = self.provider.config
                 if config.model == "deepseek-v4-pro" and urlsplit(config.base_url).hostname == "api.deepseek.com":
@@ -1810,11 +1811,28 @@ class IntelligenceService:
                     "future_work_verification": "evidence_insufficient" if kind == "future_work" else None}
         await self._check_cancel(check_cancel)
         review_state = {} if kind == "review" else None
+        reading_sets = []
+        if kind == "review":
+            names = subject_hints(self, retrieval["_snapshot_blocks"])
+            spans = self._citation_spans(evidence, omit_trailing_fragment=True)
+            for document in document_ids:
+                own = [block for block in evidence if block.document_id == document]
+                for aspect in request_aspects(instruction, retrieval["queries"]):
+                    focused = focus_review_evidence(self, own, aspect, names.get(document, []))
+                    reading_sets.append({"document_id": document, "aspect": aspect,
+                        "preferred_evidence_ids": [block.evidence_id for block in focused],
+                        "direct_training_relation_spans": [{"evidence_id": block.evidence_id,
+                            "quote_id": identifier, "text": text}
+                            for block in focused for identifier, text in spans[block.evidence_id].items()
+                            if directly_named_training(text, names.get(document, []), self)]})
+            retrieval_audit["review_reading_sets"] = [{key: item[key] for key in
+                ("document_id", "aspect", "preferred_evidence_ids")} for item in reading_sets]
         try:
             result, used, grounding = await self._generate_grounded(
                 _prompt("review_synthesis_v1" if kind == "review" else "synthesis_v5"), {
                 "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
                 "external_freshness_verified": False,
+                **({"dimension_reading_sets": reading_sets} if kind == "review" else {}),
             }, SynthesisPayload, evidence, check_cancel=check_cancel,
                 required_documents=document_ids if kind == "review" else None,
                 required_sections={"abstract", "introduction", "related work"} if kind == "draft" else None,
@@ -1831,7 +1849,7 @@ class IntelligenceService:
                     "source_snapshot": [{key: block.model_dump()[key] for key in
                         ("evidence_id", "document_id", "run_id", "block_id", "page", "bbox")}
                         for block in review_state.get("review_evidence", evidence)],
-                    "generation_prompt_version": "review-synthesis-v1.1"}
+                    "generation_prompt_version": "review-synthesis-v1.2"}
             raise
         claims = [claim for section in result.sections for claim in section.claims]
         used = self._validate_claims(claims, evidence)
@@ -1870,7 +1888,7 @@ class IntelligenceService:
                 "limitations": limitations, "prompt_version": PROMPT_VERSION,
                 "retrieval": retrieval_audit,
                 "grounding": grounding,
-                "generation_prompt_version": "review-synthesis-v1.1" if kind == "review" else "synthesis-v5",
+                "generation_prompt_version": "review-synthesis-v1.2" if kind == "review" else "synthesis-v5",
                 "trace": trace + [self._trace("model", "已调用模型生成分节内容。"),
                     self._trace("validate", "已回填并核验原文引句，对改述论断执行支持度复核，来源清单取自本地文献记录。")],
                 "future_work_verification": "evidence_insufficient" if kind == "future_work" else None,

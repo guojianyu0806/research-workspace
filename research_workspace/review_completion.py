@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from .review_retrieval import supplement_review_evidence, directly_named_training
+from .review_retrieval import supplement_review_evidence, directly_named_training, focus_review_evidence
 
 
 async def complete_review(service, result, evidence, retrieval, documents, instruction,
@@ -13,7 +13,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.6", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
+        "prompt_version": "review-completion-v1.7", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -112,6 +112,9 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
             ranking = {identifier: position for position, identifier in enumerate(ranked_ids)}
             own_evidence.sort(key=lambda block: (not bool(service._identifier_tokens(block.text).intersection(target_names)),
                                                 ranking.get(block.block_id, 10000), block.page))
+            own_evidence = focus_review_evidence(service, own_evidence, aspect, target_names,
+                                                 max_blocks=12 if round_number == 0 else 20)
+            pair_catalog = {block.evidence_id: catalog[block.evidence_id] for block in own_evidence}
             own_feedback = [{**item, "rejected_claims": [claim for claim in item["rejected_claims"]
                 if any(cite["document_id"] == document for cite in claim["citations"])]}
                 for item in failed_feedback]
@@ -132,12 +135,15 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 "target_subject_search_hints": target_names,
                 "own_named_passages": name_spans,
                 "direct_named_training_passages": direct[:8],
+                "preferred_direct_relation_spans": [span for span in name_spans
+                    if directly_named_training(span["text"], target_names, service)],
                 "evidence": [{**block.model_dump(), "citation_spans": [
                     {"quote_id": identifier, "text": text}
                     for identifier, text in catalog[block.evidence_id].items()]} for block in own_evidence],
                 "previous_rejected_fact_feedback": own_feedback,
             }
-            pair_record = {"document_id": document, "aspect": aspect, "attempts": []}
+            pair_record = {"document_id": document, "aspect": aspect,
+                           "focused_block_ids": [block.block_id for block in own_evidence], "attempts": []}
             entry["pair_generations"].append(pair_record)
             for protocol_attempt in range(2):
                 await service._check_cancel(check_cancel)
@@ -153,7 +159,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 missing_names, preflight_problems = [], []
                 for item in proposed.additions:
                     try:
-                        service._resolve_citation_spans([item.claim], catalog)
+                        service._resolve_citation_spans([item.claim], pair_catalog)
                     except ModelOutputError as problem:
                         if protocol_attempt:
                             raise

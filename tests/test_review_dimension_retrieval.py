@@ -1,7 +1,7 @@
 """Review supplementation finds missing tasks/corpora in the same parse snapshot."""
 from research_workspace.intelligence import Evidence, IntelligenceService
 from research_workspace.library import Library
-from research_workspace.review_retrieval import supplement_review_evidence, directly_named_training, subject_hints
+from research_workspace.review_retrieval import supplement_review_evidence, directly_named_training, subject_hints, focus_review_evidence
 
 
 def block(identifier, document, text, *, page=1, y=0.1, run="old"):
@@ -84,3 +84,31 @@ def test_subject_hints_prefer_the_named_contribution_over_background(tmp_path):
                block("two", "Research", "ORION models pre-train on text."),
                block("three", "Research", "NOVA models are discussed as prior work.")]
     assert subject_hints(service, sources) == {"Research": ["orion"]}
+
+
+def test_focused_objective_catalog_prioritizes_actual_training_task_over_decoder_and_speed(tmp_path):
+    service = IntelligenceService(Library(tmp_path))
+    decoder = block("decoder", "doc", "ORION's decoder predicts next-token probabilities with softmax.")
+    speed = block("speed", "doc", "ORION can be trained significantly faster.")
+    task = block("task", "doc", "The ORION (large) model trained for French-to-German translation used dropout.")
+    focused = focus_review_evidence(service, [decoder, speed, task], "训练目标", ["orion"], max_blocks=1)
+    assert focused == [task]
+    assert focused[0].text == task.text and focused[0].bbox == task.bbox
+
+
+def test_focused_source_catalog_retains_named_scope_and_anonymous_corpus_without_architecture_noise(tmp_path):
+    service = IntelligenceService(Library(tmp_path))
+    architecture = block("arch", "doc", "ORION models use attention.")
+    corpus = block("data", "doc", "We trained on the public training data corpus of translation sentence pairs.")
+    scope = block("scope", "doc", "The ORION model trained for translation uses dropout.")
+    focused = focus_review_evidence(service, [architecture, scope, corpus], "外部知识的作用", ["orion"])
+    assert focused == [corpus, scope]
+
+
+def test_focused_catalog_has_bounded_source_count_and_never_invents_an_objective(tmp_path):
+    service = IntelligenceService(Library(tmp_path))
+    paragraphs = [block(str(i), "doc", f"ORION predicts target symbol {i}.") for i in range(24)]
+    focused = focus_review_evidence(service, paragraphs, "training objective", ["orion"])
+    assert len(focused) == 12 and all(item in paragraphs for item in focused)
+    unrelated = block("unrelated", "doc", "Copper sensors record temperature.")
+    assert focus_review_evidence(service, [unrelated], "training objective", ["orion"]) == [unrelated]
