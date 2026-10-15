@@ -11,6 +11,28 @@ import re
 MAX_REVIEW_EVIDENCE = 96
 
 
+def subject_hints(service, snapshot):
+    """Lexical identity hints only, never a source of factual attribution."""
+    hints = {}
+    for document in dict.fromkeys(block.document_id for block in snapshot):
+        own = [block for block in snapshot if block.document_id == document]
+        names = service._named_attribution_identifiers(service._citation_spans(service._excerpts(own)))
+        title_names = service._identifier_tokens(own[0].document_title) & names
+        hints[document] = (sorted(title_names)[:2] if title_names else sorted(names, key=lambda name: (
+            -sum(name in service._identifier_tokens(block.text) for block in own), name))[:1])
+    return hints
+
+
+def directly_named_training(text, names, service):
+    """Identify candidate wording, not whether it entails a generated claim."""
+    if not service._identifier_tokens(text).intersection(names):
+        return False
+    plain = " ".join(text.split())
+    return bool(re.search(r"\b(?:pre[- ]?)?train(?:ed|s|ing)?\s+(?:on|for|using|with)\s+(?!as\b|only\b|at least\b|\d)", plain, re.I)
+                or re.search(r"\b(?:pre[- ]?)?train(?:ed|s|ing)?\s+(?:the\s+)?(?:"+
+                    "|".join(re.escape(name) for name in names)+r")\b", plain, re.I)) if names else False
+
+
 def aspect_queries(aspect: str, expanded_queries: list[dict]) -> list[str]:
     groups = [aspect]
     if re.search(r"结构|架构|architecture|structure", aspect, re.I):
@@ -70,6 +92,8 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
             # named task, while "trained" and "training" are distinct BM25 tokens.
             focused = (["trained", "training corpus", "pretraining data"]
                        if re.search(r"知识|knowledge|external|corpus", aspect, re.I) else
+                       ["architecture", "encoder decoder", "attention"]
+                       if re.search(r"结构|架构|architecture|structure", aspect, re.I) else
                        ["trained", "negative log likelihood", "prediction task"])
             queries = [" ".join(names) + " " + query for query in focused + queries] + queries
         queries = list(dict.fromkeys((repair_queries or {}).get((document, aspect), []) + queries))
@@ -83,6 +107,8 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
             # Give the corpus/objective phrase its own lexical slot. A broad
             # "pre-training" heading must not crowd out the actual corpus paragraph.
             named = [item for item in lexical if service._identifier_tokens(item.text).intersection(names)]
+            if re.search(r"train|objective|训练|知识|knowledge|external|corpus", aspect, re.I):
+                named.sort(key=lambda item: not directly_named_training(item.text, names, service))
             rankings.extend([named[:3], lexical[:4], structural[:3]])
         seeds, seed_ids = [], set()
         for position in range(max((len(ranking) for ranking in rankings), default=0)):

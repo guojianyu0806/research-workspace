@@ -1,7 +1,7 @@
 """Review supplementation finds missing tasks/corpora in the same parse snapshot."""
 from research_workspace.intelligence import Evidence, IntelligenceService
 from research_workspace.library import Library
-from research_workspace.review_retrieval import supplement_review_evidence
+from research_workspace.review_retrieval import supplement_review_evidence, directly_named_training, subject_hints
 
 
 def block(identifier, document, text, *, page=1, y=0.1, run="old"):
@@ -68,3 +68,19 @@ def test_short_named_training_search_preserves_explicit_corpus_attribution(tmp_p
         request="", missing_pairs=[("doc", "外部知识的作用")], subject_names={"doc": ["orion"]})
     assert evidence[0].block_id == "direct-corpus"
     assert audit["searches"][0]["queries"][0] == "orion trained"
+
+
+def test_direct_training_candidates_distinguish_task_relation_from_speed_statement(tmp_path):
+    service = IntelligenceService(Library(tmp_path))
+    assert directly_named_training("We train ORION by minimizing answer loss.", ["orion"], service)
+    assert directly_named_training("The ORION model trained for translation uses attention.", ["orion"], service)
+    assert not directly_named_training("ORION can be trained significantly faster.", ["orion"], service)
+    assert not directly_named_training("ORION was trained for as little as ten hours.", ["orion"], service)
+
+
+def test_subject_hints_prefer_the_named_contribution_over_background(tmp_path):
+    service = IntelligenceService(Library(tmp_path))
+    sources = [block("one", "Research", "We introduce ORION models. ORION models use attention."),
+               block("two", "Research", "ORION models pre-train on text."),
+               block("three", "Research", "NOVA models are discussed as prior work.")]
+    assert subject_hints(service, sources) == {"Research": ["orion"]}

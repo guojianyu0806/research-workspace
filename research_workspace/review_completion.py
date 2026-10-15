@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from .review_retrieval import supplement_review_evidence
+from .review_retrieval import supplement_review_evidence, directly_named_training
 
 
 async def complete_review(service, result, evidence, retrieval, documents, instruction,
@@ -13,7 +13,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.5", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
+        "prompt_version": "review-completion-v1.6", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -120,6 +120,9 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                            "page": block.page, "block_id": block.block_id}
                           for block in own_evidence for identifier, text in catalog[block.evidence_id].items()
                           if service._identifier_tokens(text).intersection(target_names)]
+            direct = [{**block.model_dump(), "citation_spans": [
+                {"quote_id": identifier, "text": text} for identifier, text in catalog[block.evidence_id].items()]}
+                for block in own_evidence if directly_named_training(block.text, target_names, service)]
             pair_payload = {
                 "task": "complete_review_missing_dimensions", "instruction": instruction,
                 "missing_pairs": [{"document_id": document, "aspect": aspect}],
@@ -128,6 +131,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                                     if any(c["document_id"] == document for c in known["citations"])],
                 "target_subject_search_hints": target_names,
                 "own_named_passages": name_spans,
+                "direct_named_training_passages": direct[:8],
                 "evidence": [{**block.model_dump(), "citation_spans": [
                     {"quote_id": identifier, "text": text}
                     for identifier, text in catalog[block.evidence_id].items()]} for block in own_evidence],

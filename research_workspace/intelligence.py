@@ -24,7 +24,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .library import Library, LibraryError
-from .review_retrieval import supplement_review_evidence
+from .review_retrieval import supplement_review_evidence, subject_hints
 from .review_completion import complete_review
 
 
@@ -1351,7 +1351,7 @@ class IntelligenceService:
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v1.4"
             audit.setdefault("coverage_link_model_calls", 0)
             audit.setdefault("coverage_link_cache_hits", 0)
-            audit["claim_support_prompt_version"] = "claim-support-v1.4"
+            audit["claim_support_prompt_version"] = "review-claim-support-v1.0"
             if isinstance(self.provider, ChatCompletionProvider):
                 config = self.provider.config
                 if config.model == "deepseek-v4-pro" and urlsplit(config.base_url).hostname == "api.deepseek.com":
@@ -1440,7 +1440,7 @@ class IntelligenceService:
                         # The judge must not see neighbouring claims, titles, the
                         # question, or unquoted parts of the source block. These
                         # could supply precisely the support missing from this card.
-                        verdict = await self.provider.generate(_prompt("claim_support_v1"), {
+                        verdict = await self.provider.generate(_prompt("review_claim_support_v1" if structured_review else "claim_support_v1"), {
                             "task": "verify_single_claim", "claim_index": index, "claim": claim_data,
                             **({"response_kind": "review"} if structured_review else {}),
                         }, ClaimSupportPayload)
@@ -1771,7 +1771,7 @@ class IntelligenceService:
                         evidence.append(candidate)
             evidence, dimension_search = supplement_review_evidence(
                 self, retrieval["_snapshot_blocks"], evidence, retrieval["queries"], request=instruction,
-                max_evidence=64)
+                max_evidence=64, subject_names=subject_hints(self, retrieval["_snapshot_blocks"]))
             retrieval_audit["review_dimension_search"] = dimension_search
             retrieval["trace"].append(self._trace("review_dimension_search",
                 f"按文献和请求维度从固定版本快照补充{len(dimension_search['added_block_ids'])}个原文及上下文块；每条引用仍单独审核。"))
