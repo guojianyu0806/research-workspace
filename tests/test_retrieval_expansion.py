@@ -9,7 +9,7 @@ import pytest
 
 from research_workspace.intelligence import (
     AnswerPayload, ChatCompletionProvider, IntelligenceService, ModelConfig,
-    ModelOutputError, RetrievalQueryPayload, SynthesisPayload,
+    ModelOutputError, RetrievalQueryPayload, ReviewCoveragePayload, SynthesisPayload,
 )
 from research_workspace.jobs import TaskCancelled
 from research_workspace.library import Library, LibraryError
@@ -57,6 +57,14 @@ class MockProvider:
                 self.on_expansion()
             return output_model.model_validate({"terms": self.terms})
         assert "query_terms" not in payload and "queries" not in payload
+        if output_model is ReviewCoveragePayload:
+            documents = {source["evidence_id"]: source["document_id"] for source in payload["evidence"]}
+            return ReviewCoveragePayload(requested_aspects=["background"], assessments=[{
+                "document_id": document_id, "aspect": "background", "answer_claim_indices": [next(
+                    item["claim_index"] for item in payload["claims"] if any(
+                        documents[cite["evidence_id"]] == document_id for cite in item["citations"]))],
+                "gap_is_appropriate": False, "reason": "Canonical background is quoted for this document.",
+            } for document_id in payload["selected_document_ids"]], unverified_statements=[])
         if output_model is AnswerPayload:
             if self.refuse:
                 return output_model.model_validate({"status": "insufficient_evidence", "claims": [],
@@ -336,7 +344,7 @@ def test_synthesis_can_expand_chinese_instruction_without_changing_citation_rule
     doc = document(library, "LayerNorm normalizes feature activations within each example.")
     provider = MockProvider([term("层归一化", "LayerNorm")])
     result = run(IntelligenceService(library, provider).synthesize("review", [doc], instruction="总结层归一化"))
-    assert [model for model, _ in provider.calls] == [RetrievalQueryPayload, SynthesisPayload]
+    assert [model for model, _ in provider.calls] == [RetrievalQueryPayload, SynthesisPayload, ReviewCoveragePayload]
     assert result["retrieval"]["mode"] == "bilingual_query_expansion_bm25_rrf"
     assert result["references"][0]["document_id"] == doc
     assert result["sources"][0]["document_id"] == doc

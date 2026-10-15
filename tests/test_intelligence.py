@@ -294,6 +294,9 @@ def test_split_does_not_cut_protected_marker():
 @pytest.mark.parametrize("schema_name,budget,reply", [
     ("ClaimSupportPayload", 1024, {"verdict": "supported", "reason": ""}),
     ("CoveragePayload", 2048, {"unverified_statements": [], "missing_aspects": []}),
+    ("ReviewCoveragePayload", 8192, {"requested_aspects": ["structure"], "assessments": [{
+        "document_id": "doc", "aspect": "structure", "answer_claim_indices": [0],
+        "gap_is_appropriate": False, "reason": "Fixture coverage."}], "unverified_statements": []}),
 ])
 def test_short_review_uses_bounded_output_budget(schema_name, budget, reply):
     from research_workspace import intelligence
@@ -309,6 +312,14 @@ def synthesis_reply(request):
     payload = json.loads(json.loads(request.content)["messages"][1]["content"])
     if payload["task"] == "verify_single_claim":
         return envelope({"verdict": "supported", "reason": ""})
+    if payload["task"] == "verify_response_coverage" and payload.get("response_kind") == "review":
+        source_documents = {source["evidence_id"]: source["document_id"] for source in payload["evidence"]}
+        return envelope({"requested_aspects": ["structure"], "assessments": [{
+            "document_id": document_id, "aspect": "structure", "answer_claim_indices": [
+                next(item["claim_index"] for item in payload["claims"] if any(
+                    source_documents[cite["evidence_id"]] == document_id for cite in item["citations"]))],
+            "gap_is_appropriate": False, "reason": "Fixture coverage.",
+        } for document_id in payload["selected_document_ids"]], "unverified_statements": []})
     if payload["task"] == "verify_response_coverage":
         return envelope({"unverified_statements": [], "missing_aspects": []})
     source = payload["evidence"][0]

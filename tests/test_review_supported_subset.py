@@ -5,7 +5,7 @@ import pytest
 
 from research_workspace.intelligence import (
     Claim, ClaimSupportPayload, CoveragePayload, Evidence, IntelligenceService,
-    ModelOutputError, SynthesisPayload,
+    ModelOutputError, ReviewCoveragePayload, SynthesisPayload,
 )
 from research_workspace.library import Library
 
@@ -48,7 +48,7 @@ class Provider:
 
     def __init__(self, results, coverage=None):
         self.results = iter(results)
-        self.coverage = coverage or CoveragePayload(unverified_statements=[], missing_aspects=[])
+        self.coverage = coverage
         self.calls = []
 
     async def generate(self, prompt, payload, output_model):
@@ -59,8 +59,18 @@ class Provider:
             rejected = "99" in payload["claim"]["text"]
             return ClaimSupportPayload(verdict="unsupported" if rejected else "supported",
                                        reason="The quoted score is not 99." if rejected else "Identity and mechanism are quoted.")
+        if output_model is ReviewCoveragePayload:
+            if self.coverage is not None:
+                return self.coverage
+            source_documents = {source.evidence_id: source.document_id for source in SOURCES}
+            return ReviewCoveragePayload(requested_aspects=["structure"], assessments=[{
+                "document_id": document_id, "aspect": "structure",
+                "answer_claim_indices": [next(item["claim_index"] for item in payload["claims"]
+                    if any(source_documents[cite["evidence_id"]] == document_id for cite in item["citations"]))],
+                "gap_is_appropriate": False, "reason": "Fixture structural coverage.",
+            } for document_id in ("doc-a", "doc-b")], unverified_statements=[])
         assert output_model is CoveragePayload
-        return self.coverage
+        return self.coverage or CoveragePayload(unverified_statements=[], missing_aspects=[])
 
 
 def run(tmp_path, provider, *, task="review"):
@@ -109,7 +119,7 @@ def test_supported_subset_repair_cannot_change_the_claim_multiset(tmp_path, muta
     with pytest.raises(ModelOutputError, match="完整保留"):
         run(tmp_path, provider)
     assert "supported_subset" in correction(provider)
-    assert all(model is not CoveragePayload for _, model in provider.calls)
+    assert all(model not in {CoveragePayload, ReviewCoveragePayload} for _, model in provider.calls)
     assert sum(model is ClaimSupportPayload for _, model in provider.calls) == 3
 
 
@@ -134,11 +144,16 @@ def test_invalid_citation_keeps_original_repair_path_instead_of_salvaging(tmp_pa
 
 def test_subset_still_fails_if_coverage_or_message_is_unacceptable(tmp_path):
     provider = Provider([review(good_a(), bad_a(), good_b()), review(good_a(), good_b())],
-                        CoveragePayload(unverified_statements=[], missing_aspects=["The score request is unacknowledged."]))
+                        ReviewCoveragePayload(requested_aspects=["structure"], assessments=[
+                            {"document_id": "doc-a", "aspect": "structure", "answer_claim_indices": [0],
+                             "gap_is_appropriate": False, "reason": "Supported structure."},
+                            {"document_id": "doc-b", "aspect": "structure", "answer_claim_indices": [],
+                             "gap_is_appropriate": False, "reason": "Requested structure is unacknowledged."},
+                        ], unverified_statements=[]))
     with pytest.raises(ModelOutputError, match="Unanswered request aspect"):
         run(tmp_path, provider)
     assert "supported_subset" in correction(provider)
-    assert sum(model is CoveragePayload for _, model in provider.calls) == 1
+    assert sum(model is ReviewCoveragePayload for _, model in provider.calls) == 1
 
 
 def test_other_synthesis_modes_keep_the_original_bounded_repair(tmp_path):
@@ -157,3 +172,12 @@ def test_repair_can_refuse_without_publishing_a_partial_review(tmp_path):
     assert result.status == "insufficient_evidence" and not result.sections and used == set()
     assert audit["status"] == "no_asserted_claims"
     assert "supported_subset" in correction(provider)
+
+
+def test_review_exact_quotations_still_require_the_coverage_matrix(tmp_path):
+    direct = [claim(source.text, source.block_id) for source in SOURCES[:2]]
+    provider = Provider([review(*direct)])
+    _, _, audit = run(tmp_path, provider)
+    assert audit["claim_model_calls"] == 0
+    assert audit["coverage_model_calls"] == 1
+    assert [model for _, model in provider.calls] == [SynthesisPayload, ReviewCoveragePayload]

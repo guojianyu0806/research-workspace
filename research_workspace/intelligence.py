@@ -156,6 +156,21 @@ class CoveragePayload(StrictModel):
     missing_aspects: list[str] = Field(max_length=12)
 
 
+class ReviewCoverageAspect(StrictModel):
+    document_id: str = Field(min_length=1, max_length=80)
+    aspect: str = Field(min_length=1, max_length=120)
+    answer_claim_indices: list[int] = Field(default_factory=list, max_length=24)
+    gap_quote: str = Field(default="", max_length=1000)
+    gap_is_appropriate: bool
+    reason: str = Field(min_length=1, max_length=400)
+
+
+class ReviewCoveragePayload(StrictModel):
+    requested_aspects: list[str] = Field(min_length=1, max_length=12)
+    assessments: list[ReviewCoverageAspect] = Field(min_length=1, max_length=240)
+    unverified_statements: list[str] = Field(max_length=12)
+
+
 class Section(StrictModel):
     heading: str = Field(min_length=1, max_length=200)
     claims: list[Claim] = Field(default_factory=list, max_length=15)
@@ -239,6 +254,8 @@ class ChatCompletionProvider:
             max_tokens = 1024
         elif output_model is CoveragePayload:
             max_tokens = 2048
+        elif output_model is ReviewCoveragePayload:
+            max_tokens = MAX_OUTPUT_TOKENS
         messages = [
             {"role": "system", "content": prompt + "\nReturn only a JSON object matching this schema:\n"
              + json.dumps(output_model.model_json_schema(), ensure_ascii=False)},
@@ -1069,6 +1086,37 @@ class IntelligenceService:
         # distinct model identities that both have to appear in the quotations.
         return min((sorted(named - quoted) for named in named_forms), key=lambda missing: (len(missing), missing))
 
+    @staticmethod
+    def _review_coverage_problems(coverage: ReviewCoveragePayload, claims: list[Claim],
+                                  evidence: list[Evidence], required_documents: list[str],
+                                  message: str) -> list[str]:
+        """An explicit, valid evidence gap is an alternative to a cited answer."""
+        problems = ["Uncited statement outside claims: " + item for item in coverage.unverified_statements]
+        aspects = coverage.requested_aspects
+        if len(set(aspects)) != len(aspects) or any(not aspect.strip() for aspect in aspects):
+            problems.append("Review coverage dimensions must be distinct and nonempty.")
+        expected = {(document, aspect) for document in required_documents for aspect in aspects}
+        actual = [(item.document_id, item.aspect) for item in coverage.assessments]
+        if set(actual) != expected or len(actual) != len(expected):
+            problems.append("Review coverage must assess every selected document and requested dimension exactly once.")
+        source_documents = {item.evidence_id: item.document_id for item in evidence}
+        for item in coverage.assessments:
+            indices = item.answer_claim_indices
+            if indices:
+                if len(set(indices)) != len(indices) or any(
+                    index < 0 or index >= len(claims) or not any(
+                        source_documents.get(citation.evidence_id) == item.document_id
+                        for citation in claims[index].citations) for index in indices
+                ):
+                    problems.append(f"Invalid review coverage claim reference: {item.document_id} / {item.aspect}.")
+                # The judge assesses relevance to this dimension; the program
+                # checks that its references exist and belong to this document.
+                continue
+            if item.gap_is_appropriate and item.gap_quote.strip() and item.gap_quote in message:
+                continue
+            problems.append(f"Unanswered request aspect: {item.document_id} / {item.aspect}: {item.reason}")
+        return problems
+
     async def _generate_grounded(self, prompt: str, payload: dict, output_model: type[T],
                                  evidence: list[Evidence], *, check_cancel=None,
                                  required_documents: list[str] | None = None,
@@ -1079,6 +1127,9 @@ class IntelligenceService:
                  "claim_model_calls": 0, "coverage_model_calls": 0, "cache_hits": 0,
                  "limitation": "model_semantic_review_is_not_a_proof"}
         support_cache: dict[str, ClaimSupportPayload] = {}
+        structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
+        if structured_review:
+            audit["coverage_prompt_version"] = "review-coverage-v1"
         supported_review_claims: Counter[str] | None = None
         catalog = self._citation_spans(evidence, omit_trailing_fragment=(
             payload.get("task") == "review" and output_model is SynthesisPayload))
@@ -1156,21 +1207,31 @@ class IntelligenceService:
                             for section in getattr(result, "sections", [])]
                 all_direct = all(direct) and not result.message and not any(item["proposed_work"] for item in proposed)
                 # Overall coverage is separate and cannot override a rejected card.
-                if not problems and not all_direct:
+                if not problems and (structured_review or not all_direct):
                     await self._check_cancel(check_cancel)
-                    coverage = await self.provider.generate(_prompt("coverage_v1"), {
+                    coverage_input = {
                         "task": "verify_response_coverage", "request": payload.get("question") or payload.get("instruction", ""),
                         "response_kind": payload["task"], "response_message": result.message,
                         "proposed_sections": proposed,
                         "selected_document_ids": payload.get("selected_document_ids", required_documents or []),
                         "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(claims)],
                         "evidence": [block.model_dump() for block in evidence],
-                    }, CoveragePayload)
+                    }
+                    if structured_review:
+                        coverage = await self.provider.generate(_prompt("review_coverage_v1"),
+                                                                coverage_input, ReviewCoveragePayload)
+                    else:
+                        coverage = await self.provider.generate(_prompt("coverage_v1"), coverage_input, CoveragePayload)
                     await self._check_cancel(check_cancel)
                     audit["model_checked"] = True
                     audit["coverage_model_calls"] += 1
-                    problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
-                    problems.extend("Unanswered request aspect: " + item for item in coverage.missing_aspects)
+                    if structured_review:
+                        audit.setdefault("review_coverage", []).append({"attempt": attempt + 1, **coverage.model_dump()})
+                        problems.extend(self._review_coverage_problems(coverage, claims, evidence,
+                            coverage_input["selected_document_ids"], result.message))
+                    else:
+                        problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
+                        problems.extend("Unanswered request aspect: " + item for item in coverage.missing_aspects)
             audit["attempts"].append({"attempt": attempt + 1, "problems": problems, "reviews": reviews})
             await self._check_cancel(check_cancel)
             if not problems:
