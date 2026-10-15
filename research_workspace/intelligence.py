@@ -991,6 +991,77 @@ class IntelligenceService:
                     raise ModelOutputError(f"claim[{index}] 的原文片段编号与引句不一致，结果已拒绝。")
                 citation.quote = quote
 
+    @staticmethod
+    def _identifier_text_forms(text: str) -> tuple[str, ...]:
+        """Match typography only; retain both readings of a PDF line-end hyphen."""
+        text = unicodedata.normalize("NFKC", text).replace("\u00ad", "")
+        text = text.translate(str.maketrans({"’": "'", "‘": "'", "‐": "-", "‑": "-", "–": "-"}))
+        # A line break may split Transformer or follow a real variant separator.
+        # Neither reading may turn RAG-Sequence into the bare identifier RAG.
+        preserved = re.sub(r"(?<=[A-Za-z0-9])-\s*\n\s*(?=[A-Za-z0-9])", "-", text)
+        joined = re.sub(r"(?<=[A-Za-z0-9])-\s*\n\s*(?=[A-Za-z0-9])", "", text)
+        return tuple(dict.fromkeys((preserved, joined)))
+
+    @classmethod
+    def _identifier_tokens(cls, text: str) -> set[str]:
+        token = r"(?<![A-Za-z0-9_-])[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*(?![A-Za-z0-9_-])"
+        return {match.group().casefold() for form in cls._identifier_text_forms(text)
+                for match in re.finditer(token, form)}
+
+    @classmethod
+    def _named_attribution_identifiers(cls, catalog: dict[str, dict[str, str]]) -> set[str]:
+        """Recognize conservative model names, never import their factual context.
+
+        This vocabulary is only a rejection hint. Ordinary words and task/type
+        abbreviations are not model identities; uncertain names stay with the
+        isolated semantic reviewer rather than being guessed by this guard.
+        """
+        generic = {
+            "a", "an", "the", "this", "that", "these", "those", "our", "their", "its", "we", "both",
+            "each", "every", "all", "other", "another", "one", "two", "new", "old", "first", "second",
+            "most", "many", "some", "several", "different", "such", "specific", "single", "multiple",
+            "large", "small", "neural", "language", "masked", "pretrained", "pre-trained", "trained",
+            "general", "generative", "probabilistic", "baseline", "original", "proposed", "existing",
+            "model", "models", "architecture", "method", "approach", "framework", "system", "network",
+            "nlp", "nlu", "nlg", "qa", "mlm", "nsp", "lm", "llm", "rnn", "cnn", "dnn", "seq2seq",
+            "mask", "cls", "sep", "sota", "figure", "table", "appendix",
+        }
+        identifier = r"(?P<name>[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*)"
+        patterns = (
+            rf"(?<![A-Za-z0-9_-]){identifier}(?:'s)?\s+(?i:models?\b|architecture\b)",
+            rf"\b(?i:we\s+(?:introduce[ds]?|propose[ds]?|present(?:ed)?|develop(?:ed)?|build|built)\s+)"
+            rf"(?:(?i:a|an|the|new)\s+)*{identifier}(?![A-Za-z0-9_-])",
+            rf"\b(?i:(?:model|architecture)\s+(?:called|named)\s+){identifier}(?![A-Za-z0-9_-])",
+        )
+        names = set()
+        for spans in catalog.values():
+            for quote in spans.values():
+                for form in cls._identifier_text_forms(quote):
+                    for pattern in patterns:
+                        for match in re.finditer(pattern, form):
+                            name = match.group("name")
+                            if name.casefold() not in generic and len(name) >= 2 and any(char.isupper() for char in name):
+                                names.add(name.casefold())
+        return names
+
+    @classmethod
+    def _missing_named_attribution(cls, claim: Claim, names: set[str]) -> list[str]:
+        """Reject an absent literal name; presence alone never proves support."""
+        named_forms = [cls._identifier_tokens(form) & names for form in cls._identifier_text_forms(claim.text)]
+        if not any(named_forms):
+            return []
+        quotes = "\n".join(citation.quote for citation in claim.citations)
+        # A translated name/expansion may legitimately replace a Latin spelling.
+        # Other-script or accented aliases can occur in otherwise English prose.
+        # Leave these uncertain cases to semantic review, even when they are short.
+        normalized_quotes = unicodedata.normalize("NFKC", quotes)
+        if any(char.isalpha() and not char.isascii() for char in normalized_quotes):
+            return []
+        quoted = cls._identifier_tokens(quotes)
+        # Treat the two possible line-break readings as alternatives, not two
+        # distinct model identities that both have to appear in the quotations.
+        return min((sorted(named - quoted) for named in named_forms), key=lambda missing: (len(missing), missing))
+
     async def _generate_grounded(self, prompt: str, payload: dict, output_model: type[T],
                                  evidence: list[Evidence], *, check_cancel=None,
                                  required_documents: list[str] | None = None,
@@ -1002,6 +1073,7 @@ class IntelligenceService:
                  "limitation": "model_semantic_review_is_not_a_proof"}
         support_cache: dict[str, ClaimSupportPayload] = {}
         catalog = self._citation_spans(evidence)
+        named_identifiers = self._named_attribution_identifiers(catalog)
         payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
             {"quote_id": quote_id, "text": text} for quote_id, text in catalog[block.evidence_id].items()]}
             for block in evidence]}
@@ -1037,7 +1109,15 @@ class IntelligenceService:
                     await self._check_cancel(check_cancel)
                     claim_data = claim.model_dump()
                     cache_key = json.dumps(claim_data, sort_keys=True, ensure_ascii=False)
-                    if direct[index]:
+                    missing_names = self._missing_named_attribution(claim, named_identifiers)
+                    if missing_names:
+                        verdict = ClaimSupportPayload(verdict="unsupported", reason=(
+                            "The claim names model identifier(s) " + ", ".join(missing_names)
+                            + ", but its own quotations do not contain those complete identifiers. "
+                            "A variant name does not establish the broader model family. Add a relevant identifying quotation "
+                            "to this claim or narrow/remove it; other source passages are not attached support.")[:600])
+                        method = "named_attribution_guard"
+                    elif direct[index]:
                         verdict = ClaimSupportPayload(verdict="supported", reason="Exact source quotation.")
                         method = "exact_quote"
                     elif cache_key in support_cache:
