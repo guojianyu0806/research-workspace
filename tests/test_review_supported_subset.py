@@ -70,8 +70,8 @@ class Provider:
             current = payload["claim"]
             return ReviewClaimCoveragePayload(answers=[{
                 "document_id": citation["document_id"], "aspect": aspect,
-                "subject_text": name, "subject_quote": name, "answer_text": current["text"],
-                "answer_quote": citation["quote"], "reason": "The fixture names its model and structure.",
+                "subject_citation_id": citation["citation_id"], "answer_citation_id": citation["citation_id"],
+                "reason": "The fixture names its model and structure.",
             } for name in ("ORION", "NOVA") if name in current["text"]
               for citation in current["citations"] if name in citation["quote"]
               for aspect in payload["requested_aspects"] if aspect == "structure"])

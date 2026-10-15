@@ -174,10 +174,8 @@ class ReviewCoveragePayload(StrictModel):
 class ReviewClaimCoverageLink(StrictModel):
     document_id: str = Field(min_length=1, max_length=80)
     aspect: str = Field(min_length=1, max_length=120)
-    subject_text: str = Field(min_length=1, max_length=6000)
-    subject_quote: str = Field(min_length=1, max_length=3000)
-    answer_text: str = Field(min_length=1, max_length=6000)
-    answer_quote: str = Field(min_length=1, max_length=3000)
+    subject_citation_id: str = Field(pattern=r"^R[1-9][0-9]*$")
+    answer_citation_id: str = Field(pattern=r"^R[1-9][0-9]*$")
     reason: str = Field(min_length=1, max_length=400)
 
 
@@ -1112,8 +1110,8 @@ class IntelligenceService:
     @staticmethod
     def _review_claim_identity(claim: Claim, evidence: list[Evidence]) -> dict:
         sources = {item.evidence_id: item for item in evidence}
-        citations = [{**citation.model_dump(), **sources[citation.evidence_id].model_dump(
-            include={"document_id", "run_id", "block_id", "page", "bbox"})} for citation in claim.citations]
+        citations = [{"citation_id": f"R{index + 1}", **citation.model_dump(), **sources[citation.evidence_id].model_dump(
+            include={"document_id", "run_id", "block_id", "page", "bbox"})} for index, citation in enumerate(claim.citations)]
         identity = {"text": claim.text, "citations": citations}
         digest = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
         return {"claim_id": "C_" + digest, **identity}
@@ -1127,14 +1125,9 @@ class IntelligenceService:
             if link.document_id not in documents or link.aspect not in aspects or pair in seen:
                 problems.append("Invalid or duplicate review coverage link target.")
             seen.add(pair)
-            own_quotes = [item["quote"] for item in identity["citations"] if item["document_id"] == link.document_id]
-            if not own_quotes or any(not span.strip() or span not in identity["text"]
-                                     for span in (link.subject_text, link.answer_text)):
-                problems.append("Review coverage text anchors must occur in this claim for the target document.")
-            if any(not span.strip() or not any(_quote_normalized(span) in _quote_normalized(quote)
-                                              for quote in own_quotes)
-                   for span in (link.subject_quote, link.answer_quote)):
-                problems.append("Review coverage quote anchors must occur in this claim's own target-document quotations.")
+            own_ids = {item["citation_id"] for item in identity["citations"] if item["document_id"] == link.document_id}
+            if any(identifier not in own_ids for identifier in (link.subject_citation_id, link.answer_citation_id)):
+                problems.append("Review coverage citation IDs must belong to this claim and the target document.")
         return problems
 
     async def _resolve_review_coverage(self, coverage: ReviewCoveragePayload, claims: list[Claim],
@@ -1244,7 +1237,7 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.1"
-            audit.update(coverage_link_prompt_version="review-claim-coverage-v1.0",
+            audit.update(coverage_link_prompt_version="review-claim-coverage-v1.1",
                          coverage_link_model_calls=0, coverage_link_cache_hits=0)
         supported_review_claims: Counter[str] | None = None
         frozen_review: SynthesisPayload | None = None

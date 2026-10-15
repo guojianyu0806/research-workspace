@@ -316,8 +316,8 @@ def synthesis_reply(request):
         current = payload["claim"]
         return envelope({"answers": [{
             "document_id": cite["document_id"], "aspect": aspect,
-            "subject_text": current["text"], "subject_quote": cite["quote"],
-            "answer_text": current["text"], "answer_quote": cite["quote"], "reason": "Fixture source coverage.",
+            "subject_citation_id": cite["citation_id"], "answer_citation_id": cite["citation_id"],
+            "reason": "Fixture source coverage.",
         } for cite in current["citations"] for aspect in payload["requested_aspects"]]})
     if payload["task"] == "verify_single_claim":
         return envelope({"verdict": "supported", "reason": ""})

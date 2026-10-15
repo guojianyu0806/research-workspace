@@ -39,8 +39,9 @@ def test_review_generation_cannot_reintroduce_omitted_span_id(tmp_path):
             if output_model is ReviewClaimCoveragePayload:
                 current = payload["claim"]
                 return ReviewClaimCoveragePayload(answers=[{
-                    "document_id": "doc", "aspect": "objective", "subject_text": "ORION", "subject_quote": "ORION",
-                    "answer_text": "uses a masked objective", "answer_quote": "uses a masked objective",
+                    "document_id": "doc", "aspect": "objective",
+                    "subject_citation_id": current["citations"][0]["citation_id"],
+                    "answer_citation_id": current["citations"][0]["citation_id"],
                     "reason": "The complete objective sentence explicitly names its model.",
                 }])
             if output_model is ReviewCoveragePayload:

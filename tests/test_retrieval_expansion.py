@@ -61,8 +61,8 @@ class MockProvider:
             current = payload["claim"]
             return ReviewClaimCoveragePayload(answers=[{
                 "document_id": citation["document_id"], "aspect": aspect,
-                "subject_text": current["text"], "subject_quote": citation["quote"],
-                "answer_text": current["text"], "answer_quote": citation["quote"], "reason": "Canonical background fixture.",
+                "subject_citation_id": citation["citation_id"], "answer_citation_id": citation["citation_id"],
+                "reason": "Canonical background fixture.",
             } for citation in current["citations"] for aspect in payload["requested_aspects"]])
         if output_model is ReviewCoveragePayload:
             documents = {source["evidence_id"]: source["document_id"] for source in payload["evidence"]}

@@ -2,6 +2,7 @@
 import asyncio
 
 import pytest
+from pydantic import ValidationError
 
 from research_workspace.intelligence import (
     Claim, ClaimSupportPayload, Evidence, IntelligenceService, ModelOutputError,
@@ -87,8 +88,8 @@ class Provider:
                 if aspect != "architecture":
                     continue
                 citation = next(item for item in current["citations"] if item["document_id"] == document)
-                links.append({"document_id": document, "aspect": aspect, "subject_text": name, "subject_quote": name,
-                              "answer_text": current["text"], "answer_quote": citation["quote"],
+                links.append({"document_id": document, "aspect": aspect,
+                              "subject_citation_id": citation["citation_id"], "answer_citation_id": citation["citation_id"],
                               "reason": "The named model and its structure are explicit in this claim and its own quote."})
         if self.mutate_link and links:
             links = self.mutate_link(links)
@@ -114,7 +115,7 @@ def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
     provider = Provider([synthesis()])
     _, _, audit = run(tmp_path, provider)
     assert audit["coverage_prompt_version"] == "review-coverage-v1.1"
-    assert audit["coverage_link_prompt_version"] == "review-claim-coverage-v1.0"
+    assert audit["coverage_link_prompt_version"] == "review-claim-coverage-v1.1"
     resolved = final_assessments(audit)
     assert resolved[("doc-nova", "architecture")]["answer_claim_indices"] == [2]
     assert resolved[("doc-orion", "architecture")]["answer_claim_indices"] == [0]
@@ -127,8 +128,9 @@ def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
         assert payload["task"] == "verify_review_claim_coverage"
         assert set(payload["claim"]) == {"claim_id", "text", "citations"}
         assert all(set(target) == {"document_id", "title"} for target in payload["targets"])
-        assert all(set(cite) == {"evidence_id", "quote_id", "quote", "document_id", "run_id", "block_id", "page", "bbox"}
+        assert all(set(cite) == {"citation_id", "evidence_id", "quote_id", "quote", "document_id", "run_id", "block_id", "page", "bbox"}
                    for cite in payload["claim"]["citations"])
+        assert [cite["citation_id"] for cite in payload["claim"]["citations"]] == ["R1"]
     catalog = audit["review_coverage"][-1]["claim_catalog"]
     assert [item["claim_index"] for item in catalog] == list(range(5))
     assert len({item["claim_id"] for item in catalog}) == 5
@@ -184,8 +186,7 @@ def test_reordered_claims_reuse_cached_links_and_recompute_current_indices(tmp_p
 
 
 @pytest.mark.parametrize("field,value", [
-    ("subject_text", "UnstatedModel"), ("answer_text", "Unstated answer"),
-    ("subject_quote", "UnquotedModel"), ("answer_quote", "An unquoted answer"),
+    ("subject_citation_id", "R99"), ("answer_citation_id", "R99"),
     ("document_id", "doc-nova"), ("document_id", "unknown-document"), ("aspect", "unknown-dimension"),
 ])
 def test_tampered_or_cross_document_coverage_links_are_rejected(tmp_path, field, value):
@@ -194,6 +195,43 @@ def test_tampered_or_cross_document_coverage_links_are_rejected(tmp_path, field,
     provider = Provider([synthesis(), repair()], mutate_link=mutate)
     with pytest.raises(ModelOutputError):
         run(tmp_path, provider)
+
+
+@pytest.mark.parametrize("field", ["subject_citation_id", "answer_citation_id"])
+@pytest.mark.parametrize("invalid_id", ["", "R0", "Q1", "R01"])
+def test_coverage_link_schema_rejects_malformed_citation_ids(field, invalid_id):
+    link = {"document_id": "doc-orion", "aspect": "architecture", "subject_citation_id": "R1",
+            "answer_citation_id": "R1", "reason": "Use an existing citation, without copying its words."}
+    with pytest.raises(ValidationError):
+        ReviewClaimCoveragePayload(answers=[{**link, field: invalid_id}])
+
+
+@pytest.mark.parametrize("subject_id,answer_id,valid", [
+    ("R1", "R3", True), ("R3", "R1", True),
+    ("R2", "R3", False), ("R1", "R2", False), ("R1", "R99", False),
+])
+def test_both_selected_citations_must_belong_to_the_target_document(subject_id, answer_id, valid):
+    items = [SOURCES[0], SOURCES[2], source("orion-detail", "doc-orion", "ORION uses stacked attention layers.")]
+    value = Claim(text="ORION 使用注意力层，NOVA 使用双向编码器。", citations=[{
+        "evidence_id": item.evidence_id, "quote": item.text} for item in items])
+    identity = IntelligenceService._review_claim_identity(value, items)
+    assert [(cite["citation_id"], cite["document_id"]) for cite in identity["citations"]] == [
+        ("R1", "doc-orion"), ("R2", "doc-nova"), ("R3", "doc-orion")]
+    links = ReviewClaimCoveragePayload(answers=[{
+        "document_id": "doc-orion", "aspect": "architecture", "subject_citation_id": subject_id,
+        "answer_citation_id": answer_id, "reason": "Subject and answer are selected from this claim's own references.",
+    }])
+    problems = IntelligenceService._review_link_problems(links, identity, ["doc-orion", "doc-nova"], ["architecture"])
+    assert bool(problems) is not valid
+
+
+def test_coverage_link_schema_does_not_accept_copied_quote_anchors():
+    with pytest.raises(ValidationError):
+        ReviewClaimCoveragePayload(answers=[{
+            "document_id": "doc-orion", "aspect": "architecture", "subject_citation_id": "R1",
+            "answer_citation_id": "R1", "subject_quote": "ORION", "answer_quote": "An altered quotation.",
+            "reason": "Copied text is outside the citation-selection protocol.",
+        }])
 
 
 def test_duplicate_coverage_links_are_rejected(tmp_path):
