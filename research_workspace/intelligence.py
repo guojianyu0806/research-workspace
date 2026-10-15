@@ -1207,14 +1207,26 @@ class IntelligenceService:
                             for section in getattr(result, "sections", [])]
                 all_direct = all(direct) and not result.message and not any(item["proposed_work"] for item in proposed)
                 # Overall coverage is separate and cannot override a rejected card.
-                if not problems and (structured_review or not all_direct):
+                coverage_documents = payload.get("selected_document_ids", required_documents or [])
+                coverage_indices = ([item["claim_index"] for item in reviews if item["verdict"] == "supported"]
+                                    if structured_review else list(range(len(claims))))
+                coverage_claims = [claims[index] for index in coverage_indices]
+                coverage_sources = {cite.evidence_id for claim in coverage_claims for cite in claim.citations}
+                coverage_source_documents = {block.document_id for block in evidence if block.evidence_id in coverage_sources}
+                # Give the sole repair both kinds of feedback at once. Otherwise
+                # an unsupported card hides coverage gaps until the final attempt.
+                # Only a viable supported subset gets this preview; no rejected
+                # claim can be counted toward coverage or returned as supported.
+                preview_supported_subset = (structured_review and bool(coverage_claims)
+                    and coverage_source_documents == set(coverage_documents))
+                if (not problems or preview_supported_subset) and (structured_review or not all_direct):
                     await self._check_cancel(check_cancel)
                     coverage_input = {
                         "task": "verify_response_coverage", "request": payload.get("question") or payload.get("instruction", ""),
                         "response_kind": payload["task"], "response_message": result.message,
                         "proposed_sections": proposed,
-                        "selected_document_ids": payload.get("selected_document_ids", required_documents or []),
-                        "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(claims)],
+                        "selected_document_ids": coverage_documents,
+                        "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(coverage_claims)],
                         "evidence": [block.model_dump() for block in evidence],
                     }
                     if structured_review:
@@ -1226,8 +1238,9 @@ class IntelligenceService:
                     audit["model_checked"] = True
                     audit["coverage_model_calls"] += 1
                     if structured_review:
-                        audit.setdefault("review_coverage", []).append({"attempt": attempt + 1, **coverage.model_dump()})
-                        problems.extend(self._review_coverage_problems(coverage, claims, evidence,
+                        audit.setdefault("review_coverage", []).append({"attempt": attempt + 1,
+                            "original_claim_indices": coverage_indices, **coverage.model_dump()})
+                        problems.extend(self._review_coverage_problems(coverage, coverage_claims, evidence,
                             coverage_input["selected_document_ids"], result.message))
                     else:
                         problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
@@ -1251,7 +1264,7 @@ class IntelligenceService:
                 kept = [claims[index] for index in kept_indices]
                 kept_sources = {citation.evidence_id for claim in kept for citation in claim.citations}
                 kept_documents = {block.document_id for block in evidence if block.evidence_id in kept_sources}
-                if rejected_indices and kept and (not required_documents or kept_documents == set(required_documents)):
+                if kept and (not required_documents or kept_documents == set(required_documents)):
                     supported_review_claims = Counter(json.dumps(claim.model_dump(), sort_keys=True, ensure_ascii=False) for claim in kept)
                     offset, retained = 0, set(kept_indices)
                     for section in previous["sections"]:
