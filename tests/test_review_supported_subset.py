@@ -165,7 +165,7 @@ def test_invalid_citation_keeps_original_repair_path_instead_of_salvaging(tmp_pa
     assert audit["review_coverage"][0]["attempt"] == 2
 
 
-def test_subset_still_fails_if_coverage_or_message_is_unacceptable(tmp_path):
+def test_program_gap_corrects_false_global_acknowledgement_and_preserves_the_proposal(tmp_path):
     provider = Provider([review(good_a(), bad_a(), good_b())],
                         ReviewCoveragePayload(requested_aspects=["training objective"], assessments=[
                             {"document_id": "doc-a", "aspect": "training objective", "answer_claim_indices": [],
@@ -173,8 +173,14 @@ def test_subset_still_fails_if_coverage_or_message_is_unacceptable(tmp_path):
                             {"document_id": "doc-b", "aspect": "training objective", "answer_claim_indices": [],
                              "gap_is_appropriate": False, "reason": "Requested objective is unacknowledged."},
                         ], unverified_statements=[]))
-    with pytest.raises(ModelOutputError, match="Unanswered request aspect"):
-        run(tmp_path, provider)
+    result, _, audit = run(tmp_path, provider)
+    assert "《doc-a》：training objective" in result.message
+    assert "《doc-b》：training objective" in result.message
+    final = audit["review_coverage"][-1]
+    assert final["gap_observation_source"] == "program_generated_verified_coverage"
+    assert all(item["gap_is_appropriate"] and item["gap_quote"] in result.message for item in final["assessments"])
+    assert all(not item["gap_is_appropriate"] and item["gap_quote"] == "" for item in final["proposed_assessments"])
+    assert all(item["reason"] == "Requested objective is unacknowledged." for item in final["proposed_assessments"])
     assert not any(model is ReviewMessageRepairPayload for _, model in provider.calls)
     assert sum(model is ReviewCoveragePayload for _, model in provider.calls) == 2
 

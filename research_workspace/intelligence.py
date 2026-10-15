@@ -1133,12 +1133,12 @@ class IntelligenceService:
     async def _resolve_review_coverage(self, coverage: ReviewCoveragePayload, claims: list[Claim],
                                        evidence: list[Evidence], documents: list[str], request: str,
                                        original_indices: list[int], cache: dict, audit: dict,
-                                       *, check_cancel=None) -> tuple[ReviewCoveragePayload, dict, list[str]]:
+                                       *, check_cancel=None, generated_gap_message: str | None = None) -> tuple[ReviewCoveragePayload, dict, list[str]]:
         """Derive indices from isolated claim-to-dimension links, not a global guess."""
         if len(claims) > MAX_ISOLATED_CLAIMS:
             raise ModelOutputError("综述覆盖关联超过24条结论的核验上限，请缩小范围；结果已拒绝。")
         resolved = coverage.model_copy(deep=True)
-        catalog, checked, problems, by_pair = [], [], [], {}
+        catalog, checked, problems, by_pair, gap_conflicts = [], [], [], {}, []
         titles = {item.document_id: item.document_title for item in evidence}
         for index, claim in enumerate(claims):
             await self._check_cancel(check_cancel)
@@ -1177,7 +1177,7 @@ class IntelligenceService:
             item.answer_claim_indices = [index for index, _ in verified]
             if verified:
                 if item.gap_quote.strip():
-                    problems.append(f"Evidence-gap statement conflicts with an independently linked answer: {item.document_id} / {item.aspect}.")
+                    gap_conflicts.append(f"Evidence-gap statement conflicts with an independently linked answer: {item.document_id} / {item.aspect}.")
                 item.reason = ("Independent claim links: " + "; ".join(
                     f"claim[{index}]: {link.reason}" for index, link in verified))[:400]
                 item.gap_quote, item.gap_is_appropriate = "", False
@@ -1189,7 +1189,32 @@ class IntelligenceService:
                   "claim_catalog": catalog, "claim_link_reviews": checked}
         for item in record["assessments"]:
             item["answer_claim_ids"] = [catalog[index]["claim_id"] for index in item["answer_claim_indices"]]
+        if generated_gap_message is not None:
+            if self._review_gap_message(record, documents, evidence) == generated_gap_message:
+                parts = self._review_gap_parts(record, documents, evidence)
+                for item, observed in zip(resolved.assessments, record["assessments"]):
+                    item.gap_quote = parts.get(item.document_id, "") if not item.answer_claim_indices else ""
+                    item.gap_is_appropriate = bool(item.gap_quote)
+                    if item.gap_quote:
+                        item.reason = "Program-generated acknowledgement of a dimension unanswered by the verified retained claims."
+                    observed.update(item.model_dump())
+                record["gap_observation_source"] = "program_generated_verified_coverage"
+            else:
+                problems.append("Program-generated gap message does not match the independently verified coverage.")
+                problems.extend(gap_conflicts)
+        else:
+            problems.extend(gap_conflicts)
         return resolved, record, problems
+
+    @staticmethod
+    def _review_gap_parts(record: dict, documents: list[str], evidence: list[Evidence]) -> dict[str, str]:
+        titles = {item.document_id: item.document_title for item in evidence}
+        parts = {}
+        for document in documents:
+            missing = sorted(row["aspect"] for row in record["assessments"] if row["document_id"] == document and not row["answer_claim_indices"])
+            if missing:
+                parts[document] = "《" + titles[document] + "》：" + "、".join(missing)
+        return parts
 
     @staticmethod
     def _review_gap_message(record: dict, documents: list[str], evidence: list[Evidence]) -> str | None:
@@ -1213,12 +1238,7 @@ class IntelligenceService:
                 for answer in link["answers"])]
             if row["answer_claim_indices"] != matching or row.get("answer_claim_ids") != [catalog[i]["claim_id"] for i in matching]:
                 return None
-        titles = {item.document_id: item.document_title for item in evidence}
-        gaps = []
-        for document in documents:
-            missing = [row["aspect"] for row in rows if row["document_id"] == document and not row["answer_claim_indices"]]
-            if missing:
-                gaps.append("《" + titles[document] + "》：" + "、".join(missing))
+        gaps = list(IntelligenceService._review_gap_parts(record, documents, evidence).values())
         message = ("以下维度尚未由本次保留的结论形成独立完整回答（仅限当前结果与所用摘录）：" + "；".join(gaps) + "。") if gaps else ""
         if len(message) > 3000:
             raise ModelOutputError("综述缺口说明超过长度上限，请减少文献或请求维度；结果已拒绝。")
@@ -1403,7 +1423,7 @@ class IntelligenceService:
                             coverage, coverage_record, link_problems = await self._resolve_review_coverage(
                                 coverage, coverage_claims, evidence, coverage_documents,
                                 coverage_input["request"], coverage_indices, coverage_link_cache, audit,
-                                check_cancel=check_cancel)
+                                check_cancel=check_cancel, generated_gap_message=frozen_review_message)
                             problems.extend(link_problems)
                         audit.setdefault("review_coverage", []).append({"attempt": attempt + 1,
                             "original_claim_indices": coverage_indices, **coverage_record})

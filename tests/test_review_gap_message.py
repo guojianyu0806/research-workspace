@@ -1,9 +1,13 @@
 """Deterministic limitations describe retained answers, not what a paper lacks."""
 from copy import deepcopy
+import asyncio
 
 import pytest
 
-from research_workspace.intelligence import Evidence, IntelligenceService
+from research_workspace.intelligence import (
+    Claim, Evidence, IntelligenceService, ReviewClaimCoveragePayload, ReviewCoveragePayload,
+)
+from research_workspace.library import Library
 
 
 DOCUMENTS = ["doc-a", "doc-b"]
@@ -45,6 +49,24 @@ def test_no_missing_dimension_produces_an_empty_message():
     assert IntelligenceService._review_gap_message(record, DOCUMENTS, EVIDENCE) == ""
 
 
+def test_multiple_gap_dimensions_are_stable_when_assessments_and_aspects_are_reordered():
+    record = verified_record()
+    record["requested_aspects"].append("external knowledge")
+    for document in DOCUMENTS:
+        record["assessments"].append({
+            "document_id": document, "aspect": "external knowledge", "answer_claim_indices": [],
+            "answer_claim_ids": [], "gap_quote": "", "gap_is_appropriate": False,
+            "reason": "This dimension is not independently answered by the retained claims.",
+        })
+    expected = IntelligenceService._review_gap_message(record, DOCUMENTS, EVIDENCE)
+    assert "《ORION》：external knowledge、training objective" in expected
+    assert "《NOVA》：external knowledge、training objective" in expected
+    reordered = deepcopy(record)
+    reordered["requested_aspects"].reverse()
+    reordered["assessments"].reverse()
+    assert IntelligenceService._review_gap_message(reordered, DOCUMENTS, EVIDENCE) == expected
+
+
 @pytest.mark.parametrize("damage", [
     "missing_row", "duplicate_row", "duplicate_aspect", "missing_link_review", "invalid_link",
     "catalog_identity", "catalog_index", "wrong_answer_index", "wrong_answer_id", "rejected_status",
@@ -72,3 +94,75 @@ def test_unverified_or_inconsistent_records_cannot_generate_a_gap_message(damage
     else:
         record["status"] = "rejected_dimension_change"
     assert IntelligenceService._review_gap_message(record, DOCUMENTS, EVIDENCE) is None
+
+
+def resolve_program_gap(tmp_path, *, damage=None, message=None, unverified=None):
+    values = [Claim(text=item.text, citations=[{"evidence_id": item.evidence_id, "quote": item.text}])
+              for item in EVIDENCE]
+    proposal = ReviewCoveragePayload(requested_aspects=["structure", "training objective"], assessments=[{
+        "document_id": document, "aspect": aspect, "answer_claim_indices": [],
+        "gap_quote": "The model incorrectly claims the answered structure is absent." if aspect == "structure" else "",
+        "gap_is_appropriate": False, "reason": "The message names the gap, but this fixture marks it false.",
+    } for document in DOCUMENTS for aspect in ("structure", "training objective")],
+        unverified_statements=unverified or [])
+    if damage == "invalid_matrix":
+        proposal.assessments.pop()
+
+    class Provider:
+        configured = True
+
+        async def generate(self, prompt, payload, output_model):
+            assert output_model is ReviewClaimCoveragePayload
+            citation = payload["claim"]["citations"][0]
+            return ReviewClaimCoveragePayload(answers=[{
+                "document_id": citation["document_id"], "aspect": "structure",
+                "subject_citation_id": "R99" if damage == "invalid_link" else citation["citation_id"],
+                "answer_citation_id": citation["citation_id"], "reason": "Fixture independently linked structure.",
+            }])
+
+    message = message if message is not None else IntelligenceService._review_gap_message(verified_record(), DOCUMENTS, EVIDENCE)
+    service = IntelligenceService(Library(tmp_path), Provider())
+    resolved, record, problems = asyncio.run(service._resolve_review_coverage(proposal, values, EVIDENCE,
+        DOCUMENTS, "Compare structures and training objectives.", [0, 1], {},
+        {"coverage_link_model_calls": 0, "coverage_link_cache_hits": 0}, generated_gap_message=message))
+    return resolved, record, problems, message, values
+
+
+def test_matching_program_message_uses_verified_gaps_and_clears_answered_row_gap_flags(tmp_path):
+    resolved, record, problems, message, values = resolve_program_gap(tmp_path)
+    assert not problems
+    assert record["gap_observation_source"] == "program_generated_verified_coverage"
+    assert not IntelligenceService._review_coverage_problems(resolved, values, EVIDENCE, DOCUMENTS, message)
+    for row in resolved.assessments:
+        if row.aspect == "structure":
+            assert row.answer_claim_indices and row.gap_quote == "" and not row.gap_is_appropriate
+        else:
+            assert not row.answer_claim_indices and row.gap_is_appropriate and row.gap_quote in message
+    proposals = record["proposed_assessments"]
+    assert all(not row["gap_is_appropriate"] for row in proposals)
+    assert all(row["gap_quote"] for row in proposals if row["aspect"] == "structure")
+    assert all(row["reason"] == "The message names the gap, but this fixture marks it false." for row in proposals)
+
+
+def test_a_different_program_message_cannot_receive_verified_gap_observations(tmp_path):
+    message = IntelligenceService._review_gap_message(verified_record(), DOCUMENTS, EVIDENCE) + " Additional unsupported facts."
+    _, record, problems, _, _ = resolve_program_gap(tmp_path, message=message)
+    assert any("does not match" in problem for problem in problems)
+    assert "gap_observation_source" not in record
+
+
+@pytest.mark.parametrize("damage", ["invalid_link", "invalid_matrix"])
+def test_program_gap_marker_cannot_bypass_invalid_fresh_coverage(tmp_path, damage):
+    _, record, problems, _, _ = resolve_program_gap(tmp_path, damage=damage)
+    assert problems
+    assert any("does not match" in problem for problem in problems)
+    assert "gap_observation_source" not in record
+
+
+def test_correct_program_gap_does_not_waive_unverified_facts(tmp_path):
+    resolved, record, problems, message, values = resolve_program_gap(tmp_path, unverified=["An uncited score of 99."])
+    assert not problems
+    assert record["gap_observation_source"] == "program_generated_verified_coverage"
+    assert record["unverified_statements"] == ["An uncited score of 99."]
+    failures = IntelligenceService._review_coverage_problems(resolved, values, EVIDENCE, DOCUMENTS, message)
+    assert any("Uncited statement" in problem and "99" in problem for problem in failures)
