@@ -41,6 +41,16 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 identifiers = service._identifier_tokens(known["text"]) & names
                 subjects.setdefault(cite["document_id"], set()).update(identifiers)
         subjects = {doc: sorted(names)[:4] for doc, names in subjects.items()}
+        for document, _ in missing:
+            if subjects.get(document):
+                continue
+            own_snapshot = [block for block in retrieval["_snapshot_blocks"] if block.document_id == document]
+            names = service._named_attribution_identifiers(service._citation_spans(service._excerpts(own_snapshot)))
+            # A paper with no retained fact still needs a lexical identity hint.
+            # Names are search candidates only; no metadata becomes claim proof.
+            preferred = service._identifier_tokens(instruction + " " + own_snapshot[0].document_title) & names
+            subjects[document] = (sorted(preferred) or sorted(names, key=lambda name: (
+                -sum(name in service._identifier_tokens(block.text) for block in own_snapshot), name)))[:2]
         cited_ids = {cite["evidence_id"] for known in record["claim_catalog"] for cite in known["citations"]}
         feedback_source_ids = {cite["evidence_id"] for attempt in audit["attempts"][-4:]
             for known in attempt.get("claims", []) for cite in known["citations"]

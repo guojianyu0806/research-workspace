@@ -289,22 +289,31 @@ class ChatCompletionProvider:
             max_tokens = 4096
         elif output_model is ReviewMessageRepairPayload:
             max_tokens = 2048
+        official_deepseek = urlsplit(endpoint).hostname == 'api.deepseek.com'
+        review_task = (payload.get('task') in {'review', 'complete_review_missing_dimensions',
+                        'verify_review_claim_coverage'} or payload.get('response_kind') == 'review')
+        review_reasoning = official_deepseek and self.config.model == 'deepseek-v4-pro' and review_task
+        if review_reasoning:
+            # Reasoning and the visible JSON share the output budget. Only final
+            # JSON is parsed; private reasoning is neither retained nor exposed.
+            max_tokens += 8192
         messages = [
             {"role": "system", "content": prompt + "\nReturn only a JSON object matching this schema:\n"
              + json.dumps(output_model.model_json_schema(), ensure_ascii=False)},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
         async with httpx.AsyncClient(transport=self._transport,
-                                    timeout=httpx.Timeout(self.config.timeout_seconds),
+                                    timeout=httpx.Timeout(max(90, self.config.timeout_seconds)
+                                                          if review_reasoning else self.config.timeout_seconds),
                                     follow_redirects=False, trust_env=False) as client:
             for attempt in range(attempts):
                 request_body = {"model": self.config.model, "messages": messages,
                                 "temperature": 0, "max_tokens": max_tokens,
                                 "response_format": {"type": "json_object"}}
-                # The official endpoint enables thinking by default. These bounded
-                # structured tasks use the documented non-thinking mode explicitly.
-                if urlsplit(endpoint).hostname == 'api.deepseek.com':
-                    request_body['thinking'] = {'type': 'disabled'}
+                if official_deepseek:
+                    request_body['thinking'] = {'type': 'enabled' if review_reasoning else 'disabled'}
+                    if review_reasoning:
+                        request_body['reasoning_effort'] = 'low'
                 issue = "response_envelope"
                 try:
                     response = await client.post(
@@ -1335,6 +1344,13 @@ class IntelligenceService:
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v1.3"
             audit.setdefault("coverage_link_model_calls", 0)
             audit.setdefault("coverage_link_cache_hits", 0)
+            audit["claim_support_prompt_version"] = "claim-support-v1.4"
+            if isinstance(self.provider, ChatCompletionProvider):
+                config = self.provider.config
+                if config.model == "deepseek-v4-pro" and urlsplit(config.base_url).hostname == "api.deepseek.com":
+                    audit["review_model_policy"] = {"model": config.model, "thinking": "enabled",
+                        "reasoning_effort": "low", "extra_output_token_budget": 8192,
+                        "reasoning_content_retained": False, "request_timeout_seconds": max(90, config.timeout_seconds)}
         supported_review_claims: Counter[str] | None = None
         frozen_review: SynthesisPayload | None = None
         frozen_review_message: str | None = None
@@ -1374,7 +1390,8 @@ class IntelligenceService:
                 if result.status in {"answered", "generated"}:
                     if not claims:
                         raise ModelOutputError("生成结果没有可核验的来源依据，已拒绝。")
-                    if required_documents and {block.document_id for block in evidence if block.evidence_id in used} != set(required_documents):
+                    if (required_documents and {block.document_id for block in evidence if block.evidence_id in used} != set(required_documents)
+                            and not (structured_review and shared_state is not None)):
                         raise ModelOutputError("生成结果缺少选定文献的原文依据。")
                     if required_sections and not required_sections.issubset(
                             {_normalized(section.heading) for section in result.sections}):
@@ -1416,6 +1433,7 @@ class IntelligenceService:
                         # could supply precisely the support missing from this card.
                         verdict = await self.provider.generate(_prompt("claim_support_v1"), {
                             "task": "verify_single_claim", "claim_index": index, "claim": claim_data,
+                            **({"response_kind": "review"} if structured_review else {}),
                         }, ClaimSupportPayload)
                         await self._check_cancel(check_cancel)
                         support_cache[cache_key] = verdict
@@ -1440,7 +1458,8 @@ class IntelligenceService:
                 # Only a viable supported subset gets this preview; no rejected
                 # claim can be counted toward coverage or returned as supported.
                 preview_supported_subset = (structured_review and bool(coverage_claims)
-                    and coverage_source_documents == set(coverage_documents))
+                    and (coverage_source_documents == set(coverage_documents)
+                         or (shared_state is not None and coverage_source_documents.issubset(set(coverage_documents)))))
                 if (not problems or preview_supported_subset) and (structured_review or not all_direct):
                     await self._check_cancel(check_cancel)
                     coverage_input = {
@@ -1498,15 +1517,17 @@ class IntelligenceService:
             subset_repair = None
             # A short review can keep a useful, fully cited subset. Freeze it
             # before the sole repair instead of trusting the model to remove a
-            # rejected assertion. Never salvage malformed citations or omit an
-            # entire selected document, and still run the coverage gate below.
+            # rejected assertion. Legacy partial reviews must retain every paper.
+            # The complete-review workflow may temporarily lack a paper's facts,
+            # because its mandatory completion gate will retrieve and recheck them.
             if payload.get("task") == "review" and isinstance(result, SynthesisPayload) and len(reviews) == len(claims):
                 kept_indices = [item["claim_index"] for item in reviews if item["verdict"] == "supported"]
                 rejected_indices = [item["claim_index"] for item in reviews if item["verdict"] == "unsupported"]
                 kept = [claims[index] for index in kept_indices]
                 kept_sources = {citation.evidence_id for claim in kept for citation in claim.citations}
                 kept_documents = {block.document_id for block in evidence if block.evidence_id in kept_sources}
-                if kept and (not required_documents or kept_documents == set(required_documents)):
+                if kept and (not required_documents or kept_documents == set(required_documents)
+                             or (structured_review and shared_state is not None)):
                     supported_review_claims = Counter(json.dumps(claim.model_dump(), sort_keys=True, ensure_ascii=False) for claim in kept)
                     offset, retained = 0, set(kept_indices)
                     for section in previous["sections"]:
@@ -1779,7 +1800,7 @@ class IntelligenceService:
                     "source_snapshot": [{key: block.model_dump()[key] for key in
                         ("evidence_id", "document_id", "run_id", "block_id", "page", "bbox")}
                         for block in review_state.get("review_evidence", evidence)],
-                    "generation_prompt_version": "review-synthesis-v1.0"}
+                    "generation_prompt_version": "review-synthesis-v1.1"}
             raise
         claims = [claim for section in result.sections for claim in section.claims]
         used = self._validate_claims(claims, evidence)
@@ -1818,7 +1839,7 @@ class IntelligenceService:
                 "limitations": limitations, "prompt_version": PROMPT_VERSION,
                 "retrieval": retrieval_audit,
                 "grounding": grounding,
-                "generation_prompt_version": "review-synthesis-v1.0" if kind == "review" else "synthesis-v5",
+                "generation_prompt_version": "review-synthesis-v1.1" if kind == "review" else "synthesis-v5",
                 "trace": trace + [self._trace("model", "已调用模型生成分节内容。"),
                     self._trace("validate", "已回填并核验原文引句，对改述论断执行支持度复核，来源清单取自本地文献记录。")],
                 "future_work_verification": "evidence_insufficient" if kind == "future_work" else None,

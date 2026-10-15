@@ -89,10 +89,10 @@ class Provider:
         return self.coverage or CoveragePayload(unverified_statements=[], missing_aspects=[])
 
 
-def run(tmp_path, provider, *, task="review", instruction="Compare structures and scores."):
+def run(tmp_path, provider, *, task="review", instruction="Compare structures and scores.", shared_state=None):
     service = IntelligenceService(Library(tmp_path), provider)
     return asyncio.run(service._generate_grounded("fixture", {"task": task, "instruction": instruction},
-                        SynthesisPayload, SOURCES, required_documents=["doc-a", "doc-b"]))
+                        SynthesisPayload, SOURCES, required_documents=["doc-a", "doc-b"], shared_state=shared_state))
 
 
 def correction(provider):
@@ -151,6 +151,22 @@ def test_subset_does_not_trigger_when_it_would_remove_an_entire_required_documen
     assert "review_subset_repair" not in audit
     assert audit["coverage_model_calls"] == 1
     assert audit["review_coverage"][0]["attempt"] == 2
+
+
+def test_complete_review_can_preserve_sound_facts_before_recovering_a_missing_paper(tmp_path):
+    def partial_matrix(payload):
+        source_docs = {item.evidence_id: item.document_id for item in SOURCES}
+        return ReviewCoveragePayload(requested_aspects=["structure"], assessments=[{
+            "document_id": document, "aspect": "structure", "gap_quote": "", "gap_is_appropriate": False,
+            "answer_claim_indices": [claim["claim_index"] for claim in payload["claims"]
+                if any(source_docs[citation["evidence_id"]] == document for citation in claim["citations"])],
+            "reason": "Record the missing paper honestly for mandatory completion.",
+        } for document in ["doc-a", "doc-b"]], unverified_statements=[])
+    provider = Provider([review(good_a(), claim("NOVA 得分为99。", "b"))], coverage=partial_matrix)
+    result, _, audit = run(tmp_path, provider, shared_state={})
+    assert [claim.text for section in result.sections for claim in section.claims] == [good_a().text]
+    assert audit["review_coverage"][-1]["assessments"][1]["answer_claim_indices"] == []
+    assert "doc-b" in result.message
 
 
 def test_invalid_citation_keeps_original_repair_path_instead_of_salvaging(tmp_path):
