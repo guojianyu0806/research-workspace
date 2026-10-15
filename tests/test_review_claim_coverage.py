@@ -5,7 +5,7 @@ import pytest
 
 from research_workspace.intelligence import (
     Claim, ClaimSupportPayload, Evidence, IntelligenceService, ModelOutputError,
-    ReviewClaimCoveragePayload, ReviewCoveragePayload, SynthesisPayload,
+    ReviewClaimCoveragePayload, ReviewCoveragePayload, ReviewMessageRepairPayload, SynthesisPayload,
 )
 from research_workspace.library import Library
 
@@ -38,6 +38,10 @@ def synthesis(values=None, message=""):
         for index in range(0, len(values), 15)], message=message)
 
 
+def repair(message=""):
+    return ReviewMessageRepairPayload(status="generated", message=message)
+
+
 class Provider:
     configured = True
 
@@ -52,8 +56,10 @@ class Provider:
 
     async def generate(self, prompt, payload, output_model):
         self.calls.append((payload, output_model))
-        if output_model is SynthesisPayload:
-            return next(self.results)
+        if output_model in {SynthesisPayload, ReviewMessageRepairPayload}:
+            response = next(self.results)
+            assert isinstance(response, output_model)
+            return response
         if output_model is ClaimSupportPayload:
             return ClaimSupportPayload(verdict="supported", reason="The fixture claim matches its own source.")
         if output_model is ReviewCoveragePayload:
@@ -129,24 +135,52 @@ def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
     assert resolved[("doc-nova", "architecture")]["answer_claim_ids"] == [catalog[2]["claim_id"]]
 
 
-@pytest.mark.parametrize("reorder", [False, True])
-def test_message_only_or_reordered_repair_reuses_stable_claim_coverage(tmp_path, reorder):
+def test_message_only_repair_reuses_stable_claim_coverage(tmp_path):
     gaps = {("doc-orion", "objective"): "所给摘录未独立支持 ORION 的训练目标。",
             ("doc-nova", "objective"): "所给摘录未独立支持 NOVA 的训练目标。"}
-    repaired = claims()
-    if reorder:
-        repaired = [repaired[index] for index in [2, 0, 1, 3, 4]]
-    provider = Provider([synthesis(), synthesis(repaired, "".join(gaps.values()))], aspects=("architecture", "objective"), gaps=gaps)
-    _, _, audit = run(tmp_path, provider)
+    provider = Provider([synthesis(), repair("".join(gaps.values()))], aspects=("architecture", "objective"), gaps=gaps)
+    result, _, audit = run(tmp_path, provider)
+    assert [item.text for item in result.sections[0].claims] == [item.text for item in claims()]
     assert len(classifier_calls(provider)) == 5
     first = {item["text"]: item["claim_id"] for item in audit["review_coverage"][0]["claim_catalog"]}
     final = {item["text"]: item["claim_id"] for item in audit["review_coverage"][-1]["claim_catalog"]}
     assert first == final
     resolved = final_assessments(audit)
-    assert resolved[("doc-nova", "architecture")]["answer_claim_indices"] == ([0] if reorder else [2])
-    assert resolved[("doc-orion", "architecture")]["answer_claim_indices"] == ([1] if reorder else [0])
+    assert resolved[("doc-nova", "architecture")]["answer_claim_indices"] == [2]
+    assert resolved[("doc-orion", "architecture")]["answer_claim_indices"] == [0]
     assert resolved[("doc-nova", "objective")]["gap_quote"] == gaps[("doc-nova", "objective")]
     assert not resolved[("doc-nova", "objective")]["answer_claim_indices"]
+
+
+def test_reordered_claims_reuse_cached_links_and_recompute_current_indices(tmp_path):
+    values = claims()
+    for item, cited_source in zip(values, SOURCES):
+        item.citations[0].quote = cited_source.text
+    proposal = ReviewCoveragePayload(requested_aspects=["architecture"], assessments=[{
+        "document_id": document, "aspect": "architecture", "answer_claim_indices": [3, 4],
+        "gap_is_appropriate": False, "reason": "Intentionally unreliable original positions.",
+    } for document in ("doc-orion", "doc-nova")], unverified_statements=[])
+    provider = Provider([])
+    service = IntelligenceService(Library(tmp_path), provider)
+    cache, audit = {}, {"coverage_link_model_calls": 0, "coverage_link_cache_hits": 0}
+
+    async def exercise():
+        first = await service._resolve_review_coverage(proposal, values, SOURCES, ["doc-orion", "doc-nova"],
+            "Architecture?", list(range(5)), cache, audit)
+        order = [2, 0, 1, 3, 4]
+        final = await service._resolve_review_coverage(proposal, [values[index] for index in order], SOURCES,
+            ["doc-orion", "doc-nova"], "Architecture?", order, cache, audit)
+        return first, final
+
+    (_, first_record, first_problems), (resolved, final_record, final_problems) = asyncio.run(exercise())
+    assert not first_problems and not final_problems
+    assert len(classifier_calls(provider)) == 5
+    assert audit == {"coverage_link_model_calls": 5, "coverage_link_cache_hits": 5}
+    assert {item["text"]: item["claim_id"] for item in first_record["claim_catalog"]} == {
+        item["text"]: item["claim_id"] for item in final_record["claim_catalog"]}
+    assert {item.document_id: item.answer_claim_indices for item in resolved.assessments} == {
+        "doc-orion": [1], "doc-nova": [0]}
+    assert [item["original_claim_index"] for item in final_record["claim_catalog"]] == [2, 0, 1, 3, 4]
 
 
 @pytest.mark.parametrize("field,value", [
@@ -157,20 +191,20 @@ def test_message_only_or_reordered_repair_reuses_stable_claim_coverage(tmp_path,
 def test_tampered_or_cross_document_coverage_links_are_rejected(tmp_path, field, value):
     def mutate(links):
         return [{**link, field: value} for link in links]
-    provider = Provider([synthesis(), synthesis()], mutate_link=mutate)
+    provider = Provider([synthesis(), repair()], mutate_link=mutate)
     with pytest.raises(ModelOutputError):
         run(tmp_path, provider)
 
 
 def test_duplicate_coverage_links_are_rejected(tmp_path):
-    provider = Provider([synthesis(), synthesis()], mutate_link=lambda links: links + links)
+    provider = Provider([synthesis(), repair()], mutate_link=lambda links: links + links)
     with pytest.raises(ModelOutputError):
         run(tmp_path, provider)
 
 
 def test_generic_claim_alone_does_not_answer_a_named_model_dimension(tmp_path):
     generic = claims()[3]
-    provider = Provider([synthesis([generic]), synthesis([generic.model_copy(deep=True)])])
+    provider = Provider([synthesis([generic]), repair()])
     with pytest.raises(ModelOutputError, match="Unanswered request aspect"):
         run(tmp_path, provider, evidence=[SOURCES[3]], documents=("doc-nova",))
     assert len(classifier_calls(provider)) == 1
@@ -210,7 +244,7 @@ def test_unique_claim_coverage_requests_never_exceed_the_24_call_budget(tmp_path
 
 
 def test_second_round_cannot_replace_the_original_requested_dimensions(tmp_path):
-    provider = Provider([synthesis(), synthesis()], aspects=("architecture", "objective"), change_aspects=True)
+    provider = Provider([synthesis(), repair()], aspects=("architecture", "objective"), change_aspects=True)
     with pytest.raises(ModelOutputError, match="dimensions changed"):
         run(tmp_path, provider)
     assert len(classifier_calls(provider)) == 5

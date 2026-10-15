@@ -294,6 +294,7 @@ def test_split_does_not_cut_protected_marker():
 @pytest.mark.parametrize("schema_name,budget,reply", [
     ("ClaimSupportPayload", 1024, {"verdict": "supported", "reason": ""}),
     ("CoveragePayload", 2048, {"unverified_statements": [], "missing_aspects": []}),
+    ("ReviewMessageRepairPayload", 2048, {"status": "generated", "message": ""}),
     ("ReviewClaimCoveragePayload", 4096, {"answers": []}),
     ("ReviewCoveragePayload", 8192, {"requested_aspects": ["structure"], "assessments": [{
         "document_id": "doc", "aspect": "structure", "answer_claim_indices": [0],

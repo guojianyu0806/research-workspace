@@ -185,6 +185,11 @@ class ReviewClaimCoveragePayload(StrictModel):
     answers: list[ReviewClaimCoverageLink] = Field(max_length=240)
 
 
+class ReviewMessageRepairPayload(StrictModel):
+    status: Literal["generated", "insufficient_evidence"]
+    message: str = Field(max_length=3000)
+
+
 class Section(StrictModel):
     heading: str = Field(min_length=1, max_length=200)
     claims: list[Claim] = Field(default_factory=list, max_length=15)
@@ -272,6 +277,8 @@ class ChatCompletionProvider:
             max_tokens = MAX_OUTPUT_TOKENS
         elif output_model is ReviewClaimCoveragePayload:
             max_tokens = 4096
+        elif output_model is ReviewMessageRepairPayload:
+            max_tokens = 2048
         messages = [
             {"role": "system", "content": prompt + "\nReturn only a JSON object matching this schema:\n"
              + json.dumps(output_model.model_json_schema(), ensure_ascii=False)},
@@ -1240,6 +1247,7 @@ class IntelligenceService:
             audit.update(coverage_link_prompt_version="review-claim-coverage-v1.0",
                          coverage_link_model_calls=0, coverage_link_cache_hits=0)
         supported_review_claims: Counter[str] | None = None
+        frozen_review: SynthesisPayload | None = None
         catalog = self._citation_spans(evidence, omit_trailing_fragment=(
             payload.get("task") == "review" and output_model is SynthesisPayload))
         named_identifiers = self._named_attribution_identifiers(catalog)
@@ -1249,7 +1257,15 @@ class IntelligenceService:
         current_payload = dict(payload)
         for attempt in range(2):
             await self._check_cancel(check_cancel)
-            result = await self.provider.generate(prompt, current_payload, output_model)
+            if frozen_review is not None:
+                repaired_message = await self.provider.generate(_prompt("review_message_repair_v1"),
+                    current_payload, ReviewMessageRepairPayload)
+                await self._check_cancel(check_cancel)
+                result = (SynthesisPayload.model_validate({**frozen_review.model_dump(), "message": repaired_message.message})
+                          if repaired_message.status == "generated" else
+                          SynthesisPayload(status="insufficient_evidence", message=repaired_message.message))
+            else:
+                result = await self.provider.generate(prompt, current_payload, output_model)
             claims = result.claims if isinstance(result, AnswerPayload) else [
                 claim for section in result.sections for claim in section.claims]
             problems = []
@@ -1393,11 +1409,15 @@ class IntelligenceService:
                         original = section["claims"]
                         section["claims"] = [claim for index, claim in enumerate(original, offset) if index in retained]
                         offset += len(original)
+                    frozen_review = SynthesisPayload.model_validate(previous)
                     subset_repair = {
                         "mode": "preserve_supported_review_claims",
+                        "repair_output": "message_only",
+                        "reconstructed_by_program": True,
+                        "prompt_version": "review-message-repair-v1.0",
                         "retained_original_indices": kept_indices,
                         "removed_original_indices": rejected_indices,
-                        "rule": "The previous_result below contains ONLY independently supported claims. Keep every retained claim text and citation ID exactly, once each. Do not add, rewrite or reinstate any claim. You may reorganize sections. Explain all requested aspects not answered by this subset in message as limitations of the supplied excerpts, without asserting new facts. Coverage will still be checked; return insufficient_evidence if this subset cannot form a useful review.",
+                        "rule": "The application has frozen the supported sections and citations in previous_result. Return ONLY status and message, never sections, claims, citations, headings or architecture. The application will retain the frozen content itself. Explain all requested aspects not answered by this subset in message as limitations of the supplied excerpts, without asserting new facts. Coverage will still be checked; return insufficient_evidence if this subset cannot form a useful review.",
                     }
                     audit["review_subset_repair"] = {key: value for key, value in subset_repair.items() if key != "rule"}
             previous_claims = previous.get("claims", []) + [claim for section in previous.get("sections", [])
