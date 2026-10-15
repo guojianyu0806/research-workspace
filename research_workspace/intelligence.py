@@ -550,22 +550,23 @@ class IntelligenceService:
             return first, False, ""
         return None
 
-    def _section_candidates(self, query: str, blocks: list[Evidence], index: tuple,
-                            document_id: str) -> list[Evidence]:
-        """Retrieve real paragraphs under matching headings, including subparts.
-
-        This is bounded structural recall, not text concatenation or synthetic
-        evidence. Two-column pages are read down each column before moving right.
-        """
-        source = [item for item in blocks if item.document_id == document_id]
+    @staticmethod
+    def _reading_order(source: list[Evidence]) -> list[Evidence]:
+        """Read down each column before moving right; never alter source text."""
         two_column = set()
         for page in {item.page for item in source}:
             bodies = [item for item in source if item.page == page and len(item.text) > 150
                       and item.bbox[2] - item.bbox[0] < 0.55]
             if any(item.bbox[0] < 0.4 for item in bodies) and any(item.bbox[0] > 0.45 for item in bodies):
                 two_column.add(page)
-        source.sort(key=lambda item: (item.page, int(item.bbox[0] > 0.45) if item.page in two_column else 0,
-                                      item.bbox[1], item.bbox[0]))
+        return sorted(source, key=lambda item: (
+            item.page, int(item.bbox[0] > 0.45) if item.page in two_column else 0,
+            item.bbox[1], item.bbox[0]))
+
+    def _section_candidates(self, query: str, blocks: list[Evidence], index: tuple,
+                            document_id: str) -> list[Evidence]:
+        """Retrieve bounded canonical paragraphs under matching headings."""
+        source = self._reading_order([item for item in blocks if item.document_id == document_id])
         query_terms = set(self._search_terms(query))
         if not query_terms.intersection({"architecture", "encoder", "decoder", "objective", "training", "method",
                                          "algorithm", "procedure", "mechanism", "framework", "design", "implementation"}):
@@ -625,6 +626,96 @@ class IntelligenceService:
             combined.remove(source[start])
             combined.insert(0, source[start])
         return combined[:3]
+
+    def _attribution_context(self, queries: list[dict], blocks: list[Evidence],
+                             selected: list[Evidence], document_ids: list[str], index: tuple) -> list[Evidence]:
+        """Add a bounded set of attribution candidates from the frozen snapshot.
+
+        Introduction/section prose and nearby continuations are retrieval hints,
+        never proof of attribution. Each remains an independent canonical block;
+        generation must cite the necessary passages and pass isolated review.
+        """
+        budget = min(6, MAX_EVIDENCE - len(selected))
+        if budget <= 0 or not selected:
+            return []
+        request = " ".join(item["text"] for item in queries)
+        stop = {"a", "an", "the", "of", "in", "and", "or", "to", "for", "is", "are", "on", "with",
+                "we", "our", "this", "that", "it", "model", "paper", "use", "using", "based"}
+        terms = set(self._search_terms(request)) - stop
+        facets = [
+            {"architecture", "encoder", "decoder", "attention", "mechanism", "design", "structure"},
+            {"train", "training", "pretrain", "objective", "loss", "masked", "prediction", "likelihood"},
+            {"knowledge", "memory", "retrieval", "retriever", "parametric", "external"},
+        ]
+        wanted = [facet for facet in facets if terms & facet]
+        seen = {(item.document_id, _normalized(unicodedata.normalize("NFKC", item.text))) for item in selected}
+        selected_ids = {item.block_id for item in selected}
+        candidates = []
+        for document_id in document_ids:
+            seeds = [item for item in selected if item.document_id == document_id]
+            if not seeds:
+                continue
+            runs = {item.run_id for item in seeds}
+            source = self._reading_order([item for item in blocks
+                                          if item.document_id == document_id and item.run_id in runs])
+            positions = {item.block_id: position for position, item in enumerate(source)}
+            seed_positions = [positions[item.block_id] for item in seeds]
+            ranked = []
+            for position, item in enumerate(source):
+                key = (document_id, _normalized(unicodedata.normalize("NFKC", item.text)))
+                if item.block_id in selected_ids or key in seen or item.block_id in index[3]:
+                    continue
+                text = unicodedata.normalize("NFKC", item.text)
+                text = re.sub(r"(?<=[A-Za-z])-\s*\n\s*(?=[a-z])", "", text)
+                text = " ".join(text.split())
+                words = set(self._search_terms(text))
+                if len(words) < 8 or self._evidence_quality(item, request, index[3]) < 0.85:
+                    continue
+                # Source-code footnotes and benchmark inventories often contain
+                # names but do not explain a model's identity or methods.
+                if re.search(r"https?://|\b(?:code|software)\b.{0,50}\b(?:available|released|open.sourc)", text, re.I):
+                    continue
+                overlap = len(terms & words)
+                facet_overlap = sum(min(3, len(words & facet)) for facet in wanted)
+                introduction = bool(re.search(
+                    r"\b(?:we\s+(?:introduce|propose|present|develop|build)|(?:called|refer to as)\s|by proposing\b)", text, re.I))
+                training_intro = bool(re.search(
+                    r"\b(?i:we\s+(?:pre[ -]?train|train))\s+[A-Z][A-Za-z0-9_-]+\b", text))
+                definition = bool(re.search(
+                    r"\b[A-Z][A-Za-z0-9_-]+\s+(?:uses?|combines?|alleviates?|adopts?|is designed|consists?)\b", text))
+                # Keep the preceding section introduction, even when the body
+                # says 'we' and the heading supplies its explicitly named scope.
+                heading_context = False
+                for previous in source[max(0, position - 2):position]:
+                    heading = self._heading(previous)
+                    if heading and terms.intersection(self._search_terms(heading[0])):
+                        heading_context = True
+                nearest = min(abs(position - seed) for seed in seed_positions)
+                nearby = nearest <= 3 and any(abs(item.page - seed.page) <= 1 for seed in seeds)
+                anchor = introduction or training_intro or definition
+                if overlap == 0 or (wanted and facet_overlap == 0):
+                    continue
+                if not anchor and not (nearby and heading_context):
+                    continue
+                score = (4 * anchor + 4 * training_intro + 1.5 * heading_context
+                         + min(4, overlap) + min(6, facet_overlap) + 0.5 * nearby)
+                ranked.append((score, position, item))
+            ranked.sort(key=lambda value: (-value[0], value[1]))
+            candidates.extend(item for _, _, item in ranked)
+        # Round robin prevents one name-heavy document consuming the context
+        # budget; at most three additions from any one selected document.
+        fair = self._fair_blocks(candidates, document_ids, len(candidates))
+        counts, additions = Counter(), []
+        for item in fair:
+            key = (item.document_id, _normalized(unicodedata.normalize("NFKC", item.text)))
+            if counts[item.document_id] >= 3 or key in seen:
+                continue
+            additions.append(item)
+            counts[item.document_id] += 1
+            seen.add(key)
+            if len(additions) >= budget:
+                break
+        return additions
 
     @staticmethod
     def _excerpts(selected: list[Evidence]) -> list[Evidence]:
@@ -699,7 +790,7 @@ class IntelligenceService:
 
     async def retrieve_for_question(self, question: str, document_ids: list[str], *, limit: int = 12,
                                    expansion: Literal["auto", "off", "always"] = "auto",
-                                   check_cancel=None) -> dict:
+                                   check_cancel=None, include_attribution_context: bool = False) -> dict:
         """Bilingual query expansion + BM25/RRF, not embeddings or factual evidence.
 
         Auto expands Chinese questions over predominantly English source samples,
@@ -831,7 +922,14 @@ class IntelligenceService:
             selected = self._fair_blocks(reserved + fused, document_ids, limit)
             mode = "bilingual_query_expansion_bm25_rrf" if len(queries) > 1 else "bm25_with_bibliographic_candidates"
             trace.append(self._trace("rank_fusion", f"对{len(rankings)}组候选进行RRF融合，去除篇内重复文本，兼顾正文质量、子问题和各篇文献；选出{len(selected)}个真实原文块。"))
+        additions = self._attribution_context(queries, blocks, selected, document_ids, index) if include_attribution_context else []
+        selected.extend(additions)
+        if include_attribution_context:
+            trace.append(self._trace("attribution_context", f"从同一固定版本快照补充{len(additions)}个模型介绍或章节上下文块；各块保持独立来源，仍需逐条引用审核。"))
         return {"evidence": self._excerpts(selected), "mode": mode, "queries": queries,
+                "attribution_context": {"enabled": include_attribution_context,
+                                        "added_block_ids": [item.block_id for item in additions],
+                                        "max_added": 6, "max_per_document": 3},
                 # Internal snapshot data, excluded from persisted/public audit.
                 "_opening_candidates": self._excerpts(list(opening_by_document.values())),
                 "query_terms": [item["text"] for item in queries[1:]], "expansion": info,
@@ -1181,7 +1279,7 @@ class IntelligenceService:
                                       if kind == "future_work" else "abstract introduction conclusion results contribution")
         retrieval = await self.retrieve_for_question(query, document_ids, limit=max(12, len(document_ids)),
                                                      expansion="auto" if instruction.strip() else "off",
-                                                     check_cancel=check_cancel)
+                                                     check_cancel=check_cancel, include_attribution_context=True)
         evidence = retrieval["evidence"]
         retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace", "_opening_candidates"}}
         # Reviews may include a selected document's opening passage when none of
