@@ -13,7 +13,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.4", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
+        "prompt_version": "review-completion-v1.5", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -51,6 +51,21 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
             preferred = service._identifier_tokens(instruction + " " + own_snapshot[0].document_title) & names
             subjects[document] = (sorted(preferred) or sorted(names, key=lambda name: (
                 -sum(name in service._identifier_tokens(block.text) for block in own_snapshot), name)))[:2]
+        repair_queries = {}
+        stop = {"the", "a", "an", "we", "our", "of", "to", "in", "on", "and", "or", "is", "are",
+                "for", "with", "as", "that", "this", "by", "be", "was", "were", "it", "from", "at"}
+        for document, aspect in missing:
+            candidates = [known for attempt in audit["attempts"][-4:] for known in attempt.get("claims", [])
+                if any(cite["document_id"] == document for cite in known["citations"])
+                and any(review["claim_index"] == known["claim_index"] and review["verdict"] == "unsupported"
+                        for review in attempt["reviews"])]
+            for known in candidates[-4:]:
+                terms = service._search_terms(" ".join(cite["quote"] for cite in known["citations"]))
+                terms = [term for term in dict.fromkeys(terms) if re.fullmatch(r"[a-z][a-z0-9_-]*", term)
+                         and term not in stop]
+                if terms:
+                    repair_queries.setdefault((document, aspect), []).append(
+                        " ".join(subjects.get(document, []) + terms[:24]))
         cited_ids = {cite["evidence_id"] for known in record["claim_catalog"] for cite in known["citations"]}
         feedback_source_ids = {cite["evidence_id"] for attempt in audit["attempts"][-4:]
             for known in attempt.get("claims", []) for cite in known["citations"]
@@ -59,7 +74,8 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
         retained_sources = [block for block in evidence if block.evidence_id in cited_ids | feedback_source_ids]
         retired = [block.block_id for block in evidence if block.evidence_id not in cited_ids | feedback_source_ids]
         evidence, search = supplement_review_evidence(service, retrieval["_snapshot_blocks"], retained_sources,
-            retrieval["queries"], request=instruction, missing_pairs=missing, subject_names=subjects)
+            retrieval["queries"], request=instruction, missing_pairs=missing, subject_names=subjects,
+            repair_queries=repair_queries)
         search["retired_uncited_block_ids"] = [identifier for identifier in retired
                                                if identifier not in {block.block_id for block in evidence}]
         shared_state["review_evidence"] = evidence

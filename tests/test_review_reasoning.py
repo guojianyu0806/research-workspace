@@ -10,8 +10,11 @@ from research_workspace.intelligence import ChatCompletionProvider, ClaimSupport
 
 @pytest.mark.parametrize("model,host,payload,thinking,tokens", [
     ("deepseek-v4-pro", "api.deepseek.com", {"task": "review"}, "enabled", 9216),
-    ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_single_claim", "response_kind": "review"}, "enabled", 9216),
-    ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_review_claim_coverage"}, "enabled", 9216),
+    ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_single_claim", "response_kind": "review", "claim": {"citations": [{}, {}]}}, "enabled", 9216),
+    ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_review_claim_coverage", "claim": {"citations": [{}, {}]}}, "enabled", 9216),
+    ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_single_claim", "response_kind": "review", "claim": {"citations": [{}]}}, "disabled", 1024),
+    ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_review_claim_coverage", "claim": {"citations": [{}]}}, "disabled", 1024),
+    ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_response_coverage", "response_kind": "review"}, "disabled", 1024),
     ("deepseek-v4-pro", "api.deepseek.com", {"task": "complete_review_missing_dimensions"}, "enabled", 9216),
     ("deepseek-v4-pro", "api.deepseek.com", {"task": "qa"}, "disabled", 1024),
     ("deepseek-flash", "api.deepseek.com", {"task": "review"}, "disabled", 1024),

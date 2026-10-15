@@ -272,6 +272,15 @@ class ChatCompletionProvider:
     def configured(self) -> bool:
         return self.config.configured
 
+    def _uses_review_reasoning(self, payload: dict) -> bool:
+        official_pro = (self.config.model == 'deepseek-v4-pro'
+                        and urlsplit(self.config.base_url).hostname == 'api.deepseek.com')
+        writing = payload.get('task') in {'review', 'complete_review_missing_dimensions'}
+        multi_quote_review = (payload.get('task') in {'verify_single_claim', 'verify_review_claim_coverage'}
+            and len(payload.get('claim', {}).get('citations', [])) > 1
+            and (payload.get('response_kind') == 'review' or payload.get('task') == 'verify_review_claim_coverage'))
+        return official_pro and (writing or multi_quote_review)
+
     async def generate(self, prompt: str, payload: dict, output_model: type[T]) -> T:
         endpoint = self.config.endpoint()
         # Query expansion is optional retrieval help, so it never buys a repair
@@ -290,9 +299,7 @@ class ChatCompletionProvider:
         elif output_model is ReviewMessageRepairPayload:
             max_tokens = 2048
         official_deepseek = urlsplit(endpoint).hostname == 'api.deepseek.com'
-        review_task = (payload.get('task') in {'review', 'complete_review_missing_dimensions',
-                        'verify_review_claim_coverage'} or payload.get('response_kind') == 'review')
-        review_reasoning = official_deepseek and self.config.model == 'deepseek-v4-pro' and review_task
+        review_reasoning = self._uses_review_reasoning(payload)
         if review_reasoning:
             # Reasoning and the visible JSON share the output budget. Only final
             # JSON is parsed; private reasoning is neither retained nor exposed.
@@ -1341,14 +1348,16 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
-            audit["coverage_link_prompt_version"] = "review-claim-coverage-v1.3"
+            audit["coverage_link_prompt_version"] = "review-claim-coverage-v1.4"
             audit.setdefault("coverage_link_model_calls", 0)
             audit.setdefault("coverage_link_cache_hits", 0)
             audit["claim_support_prompt_version"] = "claim-support-v1.4"
             if isinstance(self.provider, ChatCompletionProvider):
                 config = self.provider.config
                 if config.model == "deepseek-v4-pro" and urlsplit(config.base_url).hostname == "api.deepseek.com":
-                    audit["review_model_policy"] = {"model": config.model, "thinking": "enabled",
+                    audit["review_model_policy"] = {"model": config.model, "thinking": "adaptive",
+                        "generation_thinking": "enabled", "multi_quote_review_thinking": "enabled",
+                        "single_quote_review_thinking": "disabled", "global_coverage_thinking": "disabled",
                         "reasoning_effort": "low", "extra_output_token_budget": 8192,
                         "reasoning_content_retained": False, "request_timeout_seconds": max(90, config.timeout_seconds)}
         supported_review_claims: Counter[str] | None = None

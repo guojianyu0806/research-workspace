@@ -48,7 +48,7 @@ def request_aspects(request: str, expanded_queries: list[dict]) -> list[str]:
 
 def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
                                request: str, missing_pairs=None, max_evidence=MAX_REVIEW_EVIDENCE,
-                               subject_names=None):
+                               subject_names=None, repair_queries=None):
     """Search every target fairly; never reopen the database after a model await."""
     documents = list(dict.fromkeys(item.document_id for item in snapshot))
     aspects = request_aspects(request, expanded_queries)
@@ -72,6 +72,7 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
                        if re.search(r"知识|knowledge|external|corpus", aspect, re.I) else
                        ["trained", "negative log likelihood", "prediction task"])
             queries = [" ".join(names) + " " + query for query in focused + queries] + queries
+        queries = list(dict.fromkeys((repair_queries or {}).get((document, aspect), []) + queries))
         rankings = []
         for query in queries:
             structural = service._section_candidates(query, source, index, document)
