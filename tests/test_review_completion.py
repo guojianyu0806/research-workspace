@@ -193,6 +193,22 @@ def test_completion_output_schema_cannot_replace_frozen_sections():
         ReviewCompletionPayload.model_validate({"additions": [], "sections": []})
 
 
+def test_missing_literal_subject_gets_focused_citation_repair_before_fact_audit(tmp_path, monkeypatch):
+    import sys
+    anonymous = source("anonymous", "The pre-training task predicts masked words.")
+    monkeypatch.setattr(sys.modules[__name__], "SOURCES", SOURCES + [anonymous])
+    provider = Provider([[addition(evidence="E_anonymous")], [addition()]])
+    result, _, audit, _ = run(tmp_path, provider)
+    calls = [payload for model, payload in provider.calls if model is ReviewCompletionPayload]
+    assert len(calls) == 2
+    assert all(len(payload["missing_pairs"]) == 1 for payload in calls)
+    assert calls[1]["citation_correction"]["missing_subject_identifiers"] == ["orion"]
+    assert calls[1]["own_named_passages"]
+    assert audit["review_completion"]["status"] == "complete"
+    assert audit["claim_model_calls"] == 1  # The invalid literal attribution was repaired before semantic spending.
+    assert result.sections[-1].claims[0].citations[0].evidence_id == "E_objective"
+
+
 def test_cancellation_happens_before_paid_completion(tmp_path):
     class Cancelled(Exception):
         pass

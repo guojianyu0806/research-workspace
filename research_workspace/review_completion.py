@@ -1,6 +1,8 @@
 """Add missing, independently checked review facts without rewriting sound cards."""
 from __future__ import annotations
 
+import re
+
 from .review_retrieval import supplement_review_evidence
 
 
@@ -11,7 +13,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.1", "max_rounds": 2, "model_calls": 0,
+        "prompt_version": "review-completion-v1.2", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -29,8 +31,19 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
         if round_number == 2:
             raise ModelOutputError(f"已补充检索和原文核验，但仍有{len(missing)}项文献维度没有可靠答案；未将缺口说明计作完整综述。")
 
+        subjects = {}
+        for known in record["claim_catalog"]:
+            for cite in known["citations"]:
+                # These are only lexical hints taken from already verified cards.
+                # They never establish a subject/property relation for a new card.
+                names = service._named_attribution_identifiers(service._citation_spans(
+                    [item for item in evidence if item.document_id == cite["document_id"]]))
+                identifiers = service._identifier_tokens(known["text"]) & names
+                subjects.setdefault(cite["document_id"], set()).update(identifiers)
+        subjects = {doc: sorted(names)[:4] for doc, names in subjects.items()}
         evidence, search = supplement_review_evidence(service, retrieval["_snapshot_blocks"], evidence,
-            retrieval["queries"], request=instruction, missing_pairs=missing)
+            retrieval["queries"], request=instruction, missing_pairs=missing, subject_names=subjects)
+        shared_state["review_evidence"] = evidence
         catalog = service._citation_spans(evidence, omit_trailing_fragment=True)
         frozen = [claim for section in result.sections for claim in section.claims]
         original_ids = [service._review_claim_identity(claim, evidence)["claim_id"] for claim in frozen]
@@ -48,22 +61,65 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                            for attempt in audit["attempts"] if attempt["problems"]][-3:]
         entry["received_feedback_attempts"] = [item["attempt"] for item in failed_feedback]
         await service._check_cancel(check_cancel)
-        completion["model_calls"] += 1
-        additions = await service.provider.generate(_prompt("review_completion_v1"), {
-            "task": "complete_review_missing_dimensions", "instruction": instruction,
-            "missing_pairs": entry["missing_pairs"], "requested_aspects": record["requested_aspects"],
-            "retained_claims": record["claim_catalog"],
-            "evidence": [{**block.model_dump(), "citation_spans": [
-                {"quote_id": identifier, "text": text}
-                for identifier, text in catalog[block.evidence_id].items()]} for block in evidence],
-            "remaining_pairs": completion.get("remaining_pairs", []),
-            "previous_rejected_fact_feedback": failed_feedback,
-        }, ReviewCompletionPayload)
-        await service._check_cancel(check_cancel)
+        additions = ReviewCompletionPayload()
+        entry["pair_generations"] = []
+        for document, aspect in missing:
+            own_evidence = [block for block in evidence if block.document_id == document]
+            own_names = service._named_attribution_identifiers(service._citation_spans(own_evidence))
+            target_names = subjects.get(document, [])
+            name_spans = [{"evidence_id": block.evidence_id, "quote_id": identifier, "text": text,
+                           "page": block.page, "block_id": block.block_id}
+                          for block in own_evidence for identifier, text in catalog[block.evidence_id].items()
+                          if service._identifier_tokens(text).intersection(target_names)]
+            pair_payload = {
+                "task": "complete_review_missing_dimensions", "instruction": instruction,
+                "missing_pairs": [{"document_id": document, "aspect": aspect}],
+                "requested_aspects": record["requested_aspects"],
+                "retained_claims": [known for known in record["claim_catalog"]
+                                    if any(c["document_id"] == document for c in known["citations"])],
+                "target_subject_search_hints": target_names,
+                "own_named_passages": name_spans,
+                "evidence": [{**block.model_dump(), "citation_spans": [
+                    {"quote_id": identifier, "text": text}
+                    for identifier, text in catalog[block.evidence_id].items()]} for block in own_evidence],
+                "previous_rejected_fact_feedback": failed_feedback,
+            }
+            pair_record = {"document_id": document, "aspect": aspect, "attempts": []}
+            entry["pair_generations"].append(pair_record)
+            for protocol_attempt in range(2):
+                await service._check_cancel(check_cancel)
+                if completion["model_calls"] >= completion["max_model_calls"]:
+                    raise ModelOutputError("综述补全已达到24次生成调用上限；未将局部结果标作完整综述。")
+                completion["model_calls"] += 1
+                proposed = await service.provider.generate(_prompt("review_completion_v1"), pair_payload,
+                                                           ReviewCompletionPayload)
+                await service._check_cancel(check_cancel)
+                pair_record["attempts"].append(proposed.model_dump())
+                if any((item.document_id, item.aspect) != (document, aspect) for item in proposed.additions):
+                    raise ModelOutputError("单项补全返回了其他文献或维度，结果已拒绝。")
+                missing_names = []
+                preflight_problems = []
+                for item in proposed.additions:
+                    service._resolve_citation_spans([item.claim], catalog)
+                    missing_names.extend(service._missing_named_attribution(item.claim, own_names))
+                    if (re.search(r"知识|knowledge|external", aspect, re.I)
+                            and re.search(r"未描述|未使用|没有|不使用|仅依赖|no external|no retrieval|only relies", item.claim.text, re.I)
+                            and not re.search(r"knowledge|retriev|外部知识|检索", " ".join(c.quote for c in item.claim.citations), re.I)):
+                        preflight_problems.append("A negative knowledge/retrieval assertion has only unrelated structure quotations. Replace it with a positively supported corpus/input-information role and its actual named-method source; absence of a topic is not proof of non-use.")
+                if (missing_names or preflight_problems) and protocol_attempt == 0:
+                    pair_payload["citation_correction"] = {
+                        "previous_result": proposed.model_dump(), "missing_subject_identifiers": sorted(set(missing_names)),
+                        "preflight_problems": preflight_problems,
+                        "rule": "Your proposed own quotations omit the named subject. Select relevant own_named_passages that ACTUALLY link this model to this property, plus its task/corpus details on this SAME card. Do not merely change the claim wording, copy the same citations, or borrow retained cards. The program will independently judge the complete relation. If no supported link exists, use a narrower source-supported task/variant scope or additions [].",
+                    }
+                    continue
+                additions.additions.extend(proposed.additions)
+                break
         if not additions.additions:
             raise ModelOutputError(f"补充检索后未获得{len(missing)}项缺口的可靠新结论，未将局部结果标作完整综述。")
         if len(frozen) + len(additions.additions) > MAX_ISOLATED_CLAIMS:
             raise ModelOutputError("补充后综述超过24条独立结论上限，请减少文献或维度。")
+        entry["proposed_added_claims"] = [item.model_dump() for item in additions.additions]
         sources = {item.evidence_id: item for item in evidence}
         seen_pairs, identities = set(), set(original_ids)
         rebuilt = result.model_copy(deep=True)
@@ -88,7 +144,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 section = Section(heading=addition.aspect)
                 rebuilt.sections.append(section)
             section.claims.append(claim)
-        entry["proposed_added_claims"] = [item.model_dump() for item in additions.additions]
+        rebuilt = SynthesisPayload.model_validate(rebuilt.model_dump())
         result, _, audit = await service._generate_grounded(_prompt("review_synthesis_v1"), {
             "task": "review", "instruction": instruction,
             "external_freshness_verified": False,

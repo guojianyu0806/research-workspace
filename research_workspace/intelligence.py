@@ -1778,7 +1778,8 @@ class IntelligenceService:
                     "grounding": review_state.get("audit", {}), "retrieval": retrieval_audit,
                     "source_snapshot": [{key: block.model_dump()[key] for key in
                         ("evidence_id", "document_id", "run_id", "block_id", "page", "bbox")}
-                        for block in evidence], "generation_prompt_version": "review-synthesis-v1.0"}
+                        for block in review_state.get("review_evidence", evidence)],
+                    "generation_prompt_version": "review-synthesis-v1.0"}
             raise
         claims = [claim for section in result.sections for claim in section.claims]
         used = self._validate_claims(claims, evidence)
