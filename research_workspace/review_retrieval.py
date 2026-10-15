@@ -152,6 +152,20 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
                 if position < len(ranking) and ranking[position].block_id not in seed_ids:
                     seeds.append(ranking[position])
                     seed_ids.add(ranking[position].block_id)
+        # Reserve a real method/task declaration and a corpus definition before
+        # broad headings and adjacent paragraphs consume the fair-search slots.
+        # These are canonical candidates, not inferred facts or attribution.
+        scope_anchors = [item for item in source if item.block_id not in index[3]
+            and directly_named_training(item.text, names, service)
+            and re.search(r"\btasks?\b|\bobjectives?\b", " ".join(item.text.split()), re.I)]
+        corpus_anchors = [item for item in source if item.block_id not in index[3]
+            and re.search(r"\b(?:pre[- ]?)?training\s+corpus\b|\b(?:we\s+)?trained\s+on\b|\btraining\s+data\b",
+                          " ".join(item.text.split()), re.I)]
+        corpus_anchors.sort(key=lambda item: not directly_named_training(item.text, names, service))
+        anchors = (scope_anchors[:2] if re.search(r"训练|目标|train|objective|loss", aspect, re.I) else
+                   corpus_anchors[:2] if re.search(r"知识|语料|knowledge|external|corpus", aspect, re.I) else [])
+        if anchors:
+            seeds = anchors + [item for item in seeds if item.block_id not in {anchor.block_id for anchor in anchors}]
         positions = {item.block_id: i for i, item in enumerate(source)}
         contexts = []
         for seed in seeds[:6]:
@@ -168,6 +182,7 @@ def supplement_review_evidence(service, snapshot, current, expanded_queries, *,
                     break
         observations.append({"document_id": document, "aspect": aspect, "queries": queries,
                              "candidate_block_ids": [item.block_id for item in seeds],
+                             "role_anchor_block_ids": [item.block_id for item in anchors],
                              "context_block_ids": list(dict.fromkeys(item.block_id for item in contexts))})
         queues.append(seeds[:6] + contexts + seeds[6:])
     # Round robin over document/dimension pairs bounds starvation, including

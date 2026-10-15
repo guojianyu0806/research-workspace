@@ -1142,11 +1142,13 @@ class IntelligenceService:
         """Reject visibly absent scope words; presence still needs semantic review."""
         quotes = unicodedata.normalize("NFKC", " ".join(cite.quote for cite in claim.citations))
         quotes = re.sub(r"(?<=[A-Za-z])-\s*\n\s*(?=[A-Za-z])", "", quotes)
+        quotes = " ".join(quotes.split())
         rules = [
             (r"开放域|open[- ]domain", r"open[- ]?domain|开放域", "open-domain scope"),
             (r"英文|英语", r"\bEnglish\b|英文|英语", "English language"),
             (r"预训练", r"\bpre[- ]?train\w*\b|预训练", "pre-training stage"),
             (r"文档级", r"document[- ]?level|文档级", "document-level corpus"),
+            (r"平行语料|平行句对|parallel corpus|parallel data", r"\bparallel\b|\baligned\b|sentence[- ]pairs?|平行|对齐", "parallel/aligned corpus"),
             (r"推理时|测试时", r"\binference\b|\b(?:at|during|for)\s+(?:the\s+)?test(?:ing)?\b|test[- ]time|推理时|测试时", "inference/test-time scope"),
         ]
         return [label for trigger, required, label in rules

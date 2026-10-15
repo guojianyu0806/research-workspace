@@ -15,6 +15,7 @@ def card(text, *quotes):
     ("ORION 使用该语料预训练。", "ORION is trained on this corpus.", "pre-training stage"),
     ("ORION 使用文档级语料。", "ORION uses this corpus.", "document-level corpus"),
     ("ORION 在测试时替换索引。", "ORION accesses the index.", "inference/test-time scope"),
+    ("ORION 使用某双语数据集的平行语料训练。", "ORION is trained on a French-to-German dataset.", "parallel/aligned corpus"),
 ])
 def test_missing_scope_is_not_supplied_by_model_familiarity(text, quote, scope):
     assert scope in IntelligenceService._missing_review_qualifiers(card(text, quote))
@@ -35,3 +36,8 @@ def test_ordinary_training_must_not_be_relabelled_as_pretraining():
         "ORION 用该语料训练。", "ORION is trained on the corpus.")) == []
     assert IntelligenceService._missing_review_qualifiers(card(
         "ORION 用该语料预训练。", "ORION is trained on the corpus.")) == ["pre-training stage"]
+
+
+def test_explicit_aligned_or_sentence_pair_quotes_can_supply_parallel_corpus_scope():
+    for wording in ["ORION trains on aligned bilingual sentences.", "ORION trains on source-target sentence\npairs."]:
+        assert IntelligenceService._missing_review_qualifiers(card("ORION使用平行语料训练。", wording)) == []

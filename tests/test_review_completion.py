@@ -226,6 +226,46 @@ def test_invalid_span_gets_one_explicit_protocol_repair_without_fabricating_quot
     assert audit["claim_model_calls"] == 1
 
 
+def test_missing_scope_is_repaired_before_spending_a_completion_round(tmp_path, monkeypatch):
+    import sys
+    scoped = source("scoped", "ORION pre-training predicts English masked words.")
+    monkeypatch.setattr(sys.modules[__name__], "SOURCES", SOURCES + [scoped])
+    text = "ORION的预训练目标是预测被遮蔽的英语词。"
+    provider = Provider([[addition(text=text)], [addition(text=text, evidence="E_scoped")]])
+    result, _, audit, _ = run(tmp_path, provider)
+    requests = [payload for model, payload in provider.calls if model is ReviewCompletionPayload]
+    assert any("English language" in p for p in requests[-1]["citation_correction"]["preflight_problems"])
+    assert audit["claim_model_calls"] == 1 and len(audit["review_completion"]["rounds"]) == 1
+    assert result.sections[-1].claims[0].citations[0].evidence_id == "E_scoped"
+
+
+def test_corpus_role_repair_keeps_real_data_without_adding_unquoted_knowledge_interpretation(tmp_path, monkeypatch):
+    import sys
+    corpus = source("objective", "ORION is trained on BookArchive.")
+    monkeypatch.setattr(sys.modules[__name__], "SOURCES", [SOURCES[0], corpus])
+    class CorpusProvider(Provider):
+        async def generate(self, prompt, payload, model):
+            if model is ReviewCoveragePayload:
+                return ReviewCoveragePayload(requested_aspects=["architecture", "corpus"], assessments=[{
+                    "document_id":"doc", "aspect":aspect,
+                    "answer_claim_indices":[c["claim_index"] for c in payload["claims"]
+                        if ("attention" in c["text"]) == (aspect == "architecture")],
+                    "gap_quote":"", "gap_is_appropriate":False, "reason":"Check corpus's actual training role."}
+                    for aspect in ["architecture", "corpus"]], unverified_statements=[])
+            if model is ReviewClaimCoveragePayload:
+                return ReviewClaimCoveragePayload(answers=[{"document_id":"doc",
+                    "aspect":"architecture" if "attention" in payload["claim"]["text"] else "corpus",
+                    "subject_citation_id":"R1", "answer_citation_id":"R1", "reason":"Actual own corpus role."}])
+            return await super().generate(prompt, payload, model)
+    provider = CorpusProvider([[addition(text="ORION使用BookArchive训练，这些语料作为外部知识来源。", aspect="corpus")],
+                               [addition(text="ORION使用BookArchive训练。", aspect="corpus")]])
+    result, _, audit, _ = run(tmp_path, provider)
+    requests = [payload for model, payload in provider.calls if model is ReviewCompletionPayload]
+    assert any("knowledge-source interpretation" in p for p in requests[-1]["citation_correction"]["preflight_problems"])
+    assert result.sections[-1].claims[0].text == "ORION使用BookArchive训练。"
+    assert audit["claim_model_calls"] == 1 and len(audit["review_completion"]["rounds"]) == 1
+
+
 def test_uncited_initial_hits_do_not_exhaust_completion_source_budget(tmp_path):
     unused = [source(f"irrelevant-{i}", f"Copper sensors measured temperature sample {i}.") for i in range(95)]
     provider = Provider([[addition()]])

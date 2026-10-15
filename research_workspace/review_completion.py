@@ -13,7 +13,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.7", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
+        "prompt_version": "review-completion-v1.8", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -166,6 +166,14 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                         preflight_problems.append(str(problem) + " Select only evidence_id and quote_id pairs currently present in this call's evidence citation_spans; rejected feedback is not a citation catalog.")
                         continue
                     missing_names.extend(service._missing_named_attribution(item.claim, own_names))
+                    missing_scope = service._missing_review_qualifiers(item.claim)
+                    if missing_scope:
+                        preflight_problems.append("This card's own quotes lack the following asserted scope: "
+                            + ", ".join(missing_scope) + ". Attach the actual scope passage from this CURRENT catalog on the SAME card, or state only the positively quoted relation without the extra qualifier.")
+                    if (re.search(r"知识|语料|knowledge|external|corpus", aspect, re.I)
+                            and re.search(r"提供.{0,12}知识|作为.{0,6}知识来源|provide.{0,20}knowledge|as.{0,12}knowledge source", item.claim.text, re.I)
+                            and not re.search(r"knowledge|知识", " ".join(c.quote for c in item.claim.citations), re.I)):
+                        preflight_problems.append("The quoted training corpus does not state the added knowledge-source interpretation. Keep the actual model/corpus/training role, and attach any needed language/stage scope. Do not add 'provides knowledge' or 'as an external knowledge source' merely to echo the aspect label.")
                     if (re.search(r"知识|knowledge|external", aspect, re.I)
                             and re.search(r"未描述|未使用|没有|不使用|仅依赖|no external|no retrieval|only relies", item.claim.text, re.I)
                             and not re.search(r"knowledge|retriev|外部知识|检索", " ".join(c.quote for c in item.claim.citations), re.I)):
@@ -174,7 +182,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                     pair_payload["citation_correction"] = {
                         "previous_result": proposed.model_dump(), "missing_subject_identifiers": sorted(set(missing_names)),
                         "preflight_problems": preflight_problems,
-                        "rule": "Your proposed own quotations omit the named subject. Select relevant own_named_passages that ACTUALLY link this model to this property, plus its task/corpus details on this SAME card. Do not merely change the claim wording, copy the same citations, or borrow retained cards. The program will independently judge the complete relation. If no supported link exists, use a narrower source-supported task/variant scope or additions [].",
+                        "rule": "Repair the listed subject, current quotation-ID and/or scope problems as applicable. Select relevant own passages that ACTUALLY link this model to this property, plus its task/corpus details on this SAME card. A present model name does not repair missing language/stage scope or an unsupported interpretation. Keep the positively quoted relation and do not borrow retained cards. The program will independently judge the whole relation. If no supported link exists, use a narrower source-supported task/variant scope or additions [].",
                     }
                     continue
                 additions.additions.extend(proposed.additions)

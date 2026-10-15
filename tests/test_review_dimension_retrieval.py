@@ -112,3 +112,19 @@ def test_focused_catalog_has_bounded_source_count_and_never_invents_an_objective
     assert len(focused) == 12 and all(item in paragraphs for item in focused)
     unrelated = block("unrelated", "doc", "Copper sensors record temperature.")
     assert focus_review_evidence(service, [unrelated], "training objective", ["orion"]) == [unrelated]
+
+
+def test_named_task_scope_and_actual_corpus_reserve_search_slots_before_generic_context(tmp_path):
+    service = IntelligenceService(Library(tmp_path))
+    architecture = block("arch", "doc", "ORION uses an attention encoder architecture.")
+    scope = block("scope", "doc", "We pre-train ORION using two unsupervised tasks described in this section.")
+    anonymous_corpus = block("corpus", "doc", "For the pre-training corpus we use BookArchive and PublicEncyclopaedia.")
+    prior = block("prior", "doc", "We pre-train NOVA using two tasks described in this section.")
+    snapshot = [architecture, prior, scope, anonymous_corpus]
+    evidence, audit = supplement_review_evidence(service, snapshot, [], [], request="training objectives",
+        missing_pairs=[("doc", "training objective")], max_evidence=1, subject_names={"doc":["orion"]})
+    assert evidence == [scope] and audit["searches"][0]["role_anchor_block_ids"] == ["scope"]
+    evidence, audit = supplement_review_evidence(service, snapshot, [], [], request="external knowledge",
+        missing_pairs=[("doc", "external knowledge")], max_evidence=1, subject_names={"doc":["orion"]})
+    assert evidence == [anonymous_corpus]
+    assert audit["searches"][0]["role_anchor_block_ids"] == ["corpus"]
