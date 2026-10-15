@@ -1135,8 +1135,10 @@ class IntelligenceService:
         problems, seen = [], set()
         for link in links.answers:
             pair = (link.document_id, link.aspect)
-            if link.document_id not in documents or link.aspect not in aspects or pair in seen:
-                problems.append("Invalid or duplicate review coverage link target.")
+            if link.document_id not in documents or link.aspect not in aspects:
+                problems.append(f"Invalid review coverage link target: document={link.document_id}, aspect={link.aspect}.")
+            elif pair in seen:
+                problems.append(f"Duplicate review coverage link target: document={link.document_id}, aspect={link.aspect}.")
             seen.add(pair)
             own_ids = {item["citation_id"] for item in identity["citations"] if item["document_id"] == link.document_id}
             if any(identifier not in own_ids for identifier in (link.subject_citation_id, link.answer_citation_id)):
@@ -1165,20 +1167,43 @@ class IntelligenceService:
                 links = cache[key]
                 audit["coverage_link_cache_hits"] += 1
                 method = "cached_isolated_claim_coverage"
+                protocol_attempts = []
             else:
                 if audit["coverage_link_model_calls"] >= MAX_ISOLATED_CLAIMS:
                     raise ModelOutputError("综述覆盖关联已达到24次独立核验上限；结果已拒绝。")
-                links = await self.provider.generate(_prompt("review_claim_coverage_v1"), {
+                link_payload = {
                     "task": "verify_review_claim_coverage", "request": request,
                     "requested_aspects": coverage.requested_aspects, "targets": targets,
+                    "allowed_pairs": [{"document_id": doc, "aspect": aspect}
+                                      for doc in own_documents for aspect in coverage.requested_aspects],
                     "claim": identity,
-                }, ReviewClaimCoveragePayload)
+                }
+                links = await self.provider.generate(_prompt("review_claim_coverage_v1"), link_payload,
+                                                      ReviewClaimCoveragePayload)
                 await self._check_cancel(check_cancel)
                 audit["coverage_link_model_calls"] += 1
                 method = "isolated_claim_coverage"
             invalid = self._review_link_problems(links, identity, own_documents, coverage.requested_aspects)
+            if method == "isolated_claim_coverage":
+                protocol_attempts = [{"problems": invalid, **links.model_dump()}]
+            if invalid and method == "isolated_claim_coverage":
+                # Repair the single-card association protocol, never silently
+                # normalize unknown targets or count a duplicate as extra coverage.
+                if audit["coverage_link_model_calls"] >= MAX_ISOLATED_CLAIMS:
+                    raise ModelOutputError("综述覆盖关联已达到24次独立核验上限；结果已拒绝。")
+                await self._check_cancel(check_cancel)
+                links = await self.provider.generate(_prompt("review_claim_coverage_v1"), {
+                    **link_payload, "protocol_correction": {"previous_result": links.model_dump(),
+                        "problems": invalid, "rule": "Return one link at most for each EXACT allowed_pair. Reuse the exact document_id and aspect, without aliases. Choose existing own R citation IDs. Several supporting citations or tasks do not require duplicate links for one document/aspect. Do not add semantic links just to fix format; use answers [] when this claim does not answer a target."},
+                }, ReviewClaimCoveragePayload)
+                await self._check_cancel(check_cancel)
+                audit["coverage_link_model_calls"] += 1
+                invalid = self._review_link_problems(links, identity, own_documents, coverage.requested_aspects)
+                protocol_attempts.append({"problems": invalid, **links.model_dump()})
+                method = "isolated_claim_coverage_protocol_repair"
             checked.append({"claim_id": identity["claim_id"], "claim_index": index,
-                            "method": method, "problems": invalid, **links.model_dump()})
+                            "method": method, "problems": invalid, "protocol_attempts": protocol_attempts,
+                            **links.model_dump()})
             if invalid:
                 problems.extend(invalid)
                 continue
@@ -1307,7 +1332,7 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
-            audit["coverage_link_prompt_version"] = "review-claim-coverage-v1.2"
+            audit["coverage_link_prompt_version"] = "review-claim-coverage-v1.3"
             audit.setdefault("coverage_link_model_calls", 0)
             audit.setdefault("coverage_link_cache_hits", 0)
         supported_review_claims: Counter[str] | None = None

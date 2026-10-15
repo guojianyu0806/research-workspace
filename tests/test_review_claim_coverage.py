@@ -117,7 +117,7 @@ def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
     provider = Provider([synthesis()])
     _, _, audit = run(tmp_path, provider)
     assert audit["coverage_prompt_version"] == "review-coverage-v1.2"
-    assert audit["coverage_link_prompt_version"] == "review-claim-coverage-v1.2"
+    assert audit["coverage_link_prompt_version"] == "review-claim-coverage-v1.3"
     resolved = final_assessments(audit)
     assert resolved[("doc-nova", "architecture")]["answer_claim_indices"] == [2]
     assert resolved[("doc-orion", "architecture")]["answer_claim_indices"] == [0]
@@ -126,7 +126,7 @@ def test_wrong_generic_proposals_resolve_to_the_correct_named_claim(tmp_path):
     calls = classifier_calls(provider)
     assert len(calls) == 5
     for payload in calls:
-        assert set(payload) == {"task", "request", "requested_aspects", "targets", "claim"}
+        assert set(payload) == {"task", "request", "requested_aspects", "targets", "allowed_pairs", "claim"}
         assert payload["task"] == "verify_review_claim_coverage"
         assert set(payload["claim"]) == {"claim_id", "text", "citations"}
         assert all(set(target) == {"document_id", "title"} for target in payload["targets"])
@@ -240,6 +240,28 @@ def test_duplicate_coverage_links_are_rejected(tmp_path):
     provider = Provider([synthesis(), repair()], mutate_link=lambda links: links + links)
     with pytest.raises(ModelOutputError):
         run(tmp_path, provider)
+
+
+def test_single_card_protocol_error_can_be_repaired_without_rewriting_facts(tmp_path):
+    calls = 0
+    def transient_duplicate(links):
+        nonlocal calls
+        calls += 1
+        return links + links if calls == 1 else links
+    provider = Provider([synthesis()], mutate_link=transient_duplicate)
+    result, _, audit = run(tmp_path, provider)
+    record = audit["review_coverage"][-1]
+    repaired = next(item for item in record["claim_link_reviews"]
+                    if item["method"] == "isolated_claim_coverage_protocol_repair")
+    assert len(repaired["protocol_attempts"]) == 2
+    assert repaired["protocol_attempts"][0]["problems"]
+    assert repaired["protocol_attempts"][1]["problems"] == []
+    assert record["assessments"][0]["answer_claim_indices"] == [0]
+    assert audit["coverage_link_model_calls"] == 6
+    assert len([c for section in result.sections for c in section.claims]) == 5
+    corrected = next(payload for payload in classifier_calls(provider) if "protocol_correction" in payload)
+    assert corrected["allowed_pairs"]
+    assert corrected["claim"]["claim_id"] == repaired["claim_id"]
 
 
 def test_generic_claim_alone_requires_an_explicit_gap_for_the_named_model_dimension(tmp_path):
