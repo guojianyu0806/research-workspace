@@ -13,7 +13,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.3", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
+        "prompt_version": "review-completion-v1.4", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -42,8 +42,12 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 subjects.setdefault(cite["document_id"], set()).update(identifiers)
         subjects = {doc: sorted(names)[:4] for doc, names in subjects.items()}
         cited_ids = {cite["evidence_id"] for known in record["claim_catalog"] for cite in known["citations"]}
-        retained_sources = [block for block in evidence if block.evidence_id in cited_ids]
-        retired = [block.block_id for block in evidence if block.evidence_id not in cited_ids]
+        feedback_source_ids = {cite["evidence_id"] for attempt in audit["attempts"][-4:]
+            for known in attempt.get("claims", []) for cite in known["citations"]
+            if any(review["claim_index"] == known["claim_index"] and review["verdict"] == "unsupported"
+                   for review in attempt["reviews"])}
+        retained_sources = [block for block in evidence if block.evidence_id in cited_ids | feedback_source_ids]
+        retired = [block.block_id for block in evidence if block.evidence_id not in cited_ids | feedback_source_ids]
         evidence, search = supplement_review_evidence(service, retrieval["_snapshot_blocks"], retained_sources,
             retrieval["queries"], request=instruction, missing_pairs=missing, subject_names=subjects)
         search["retired_uncited_block_ids"] = [identifier for identifier in retired
@@ -116,10 +120,15 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 pair_record["attempts"].append(proposed.model_dump())
                 if any((item.document_id, item.aspect) != (document, aspect) for item in proposed.additions):
                     raise ModelOutputError("单项补全返回了其他文献或维度，结果已拒绝。")
-                missing_names = []
-                preflight_problems = []
+                missing_names, preflight_problems = [], []
                 for item in proposed.additions:
-                    service._resolve_citation_spans([item.claim], catalog)
+                    try:
+                        service._resolve_citation_spans([item.claim], catalog)
+                    except ModelOutputError as problem:
+                        if protocol_attempt:
+                            raise
+                        preflight_problems.append(str(problem) + " Select only evidence_id and quote_id pairs currently present in this call's evidence citation_spans; rejected feedback is not a citation catalog.")
+                        continue
                     missing_names.extend(service._missing_named_attribution(item.claim, own_names))
                     if (re.search(r"知识|knowledge|external", aspect, re.I)
                             and re.search(r"未描述|未使用|没有|不使用|仅依赖|no external|no retrieval|only relies", item.claim.text, re.I)

@@ -178,7 +178,7 @@ def test_unrelated_exception_does_not_get_saved_as_review_diagnostics(tmp_path):
     addition(aspect="invented dimension"),
 ])
 def test_completion_cannot_borrow_document_or_invent_source_or_dimension(tmp_path, value):
-    provider = Provider([[value]])
+    provider = Provider([[value], [value]])
     with pytest.raises(ModelOutputError):
         run(tmp_path, provider)
 
@@ -207,6 +207,18 @@ def test_missing_literal_subject_gets_focused_citation_repair_before_fact_audit(
     assert audit["review_completion"]["status"] == "complete"
     assert audit["claim_model_calls"] == 1  # The invalid literal attribution was repaired before semantic spending.
     assert result.sections[-1].claims[0].citations[0].evidence_id == "E_objective"
+
+
+def test_invalid_span_gets_one_explicit_protocol_repair_without_fabricating_quote(tmp_path):
+    invalid = addition()
+    invalid["claim"]["citations"][0]["quote_id"] = "Q99"
+    provider = Provider([[invalid], [addition()]])
+    result, _, audit, _ = run(tmp_path, provider)
+    requests = [payload for model, payload in provider.calls if model is ReviewCompletionPayload]
+    assert len(requests) == 2 and requests[1]["citation_correction"]["preflight_problems"]
+    assert result.sections[-1].claims[0].citations[0].quote == SOURCES[1].text
+    assert result.sections[-1].claims[0].citations[0].quote_id == "Q1"
+    assert audit["claim_model_calls"] == 1
 
 
 def test_uncited_initial_hits_do_not_exhaust_completion_source_budget(tmp_path):
