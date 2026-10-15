@@ -171,6 +171,20 @@ class ReviewCoveragePayload(StrictModel):
     unverified_statements: list[str] = Field(max_length=12)
 
 
+class ReviewClaimCoverageLink(StrictModel):
+    document_id: str = Field(min_length=1, max_length=80)
+    aspect: str = Field(min_length=1, max_length=120)
+    subject_text: str = Field(min_length=1, max_length=6000)
+    subject_quote: str = Field(min_length=1, max_length=3000)
+    answer_text: str = Field(min_length=1, max_length=6000)
+    answer_quote: str = Field(min_length=1, max_length=3000)
+    reason: str = Field(min_length=1, max_length=400)
+
+
+class ReviewClaimCoveragePayload(StrictModel):
+    answers: list[ReviewClaimCoverageLink] = Field(max_length=240)
+
+
 class Section(StrictModel):
     heading: str = Field(min_length=1, max_length=200)
     claims: list[Claim] = Field(default_factory=list, max_length=15)
@@ -256,6 +270,8 @@ class ChatCompletionProvider:
             max_tokens = 2048
         elif output_model is ReviewCoveragePayload:
             max_tokens = MAX_OUTPUT_TOKENS
+        elif output_model is ReviewClaimCoveragePayload:
+            max_tokens = 4096
         messages = [
             {"role": "system", "content": prompt + "\nReturn only a JSON object matching this schema:\n"
              + json.dumps(output_model.model_json_schema(), ensure_ascii=False)},
@@ -1087,6 +1103,95 @@ class IntelligenceService:
         return min((sorted(named - quoted) for named in named_forms), key=lambda missing: (len(missing), missing))
 
     @staticmethod
+    def _review_claim_identity(claim: Claim, evidence: list[Evidence]) -> dict:
+        sources = {item.evidence_id: item for item in evidence}
+        citations = [{**citation.model_dump(), **sources[citation.evidence_id].model_dump(
+            include={"document_id", "run_id", "block_id", "page", "bbox"})} for citation in claim.citations]
+        identity = {"text": claim.text, "citations": citations}
+        digest = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+        return {"claim_id": "C_" + digest, **identity}
+
+    @staticmethod
+    def _review_link_problems(links: ReviewClaimCoveragePayload, identity: dict,
+                              documents: list[str], aspects: list[str]) -> list[str]:
+        problems, seen = [], set()
+        for link in links.answers:
+            pair = (link.document_id, link.aspect)
+            if link.document_id not in documents or link.aspect not in aspects or pair in seen:
+                problems.append("Invalid or duplicate review coverage link target.")
+            seen.add(pair)
+            own_quotes = [item["quote"] for item in identity["citations"] if item["document_id"] == link.document_id]
+            if not own_quotes or any(not span.strip() or span not in identity["text"]
+                                     for span in (link.subject_text, link.answer_text)):
+                problems.append("Review coverage text anchors must occur in this claim for the target document.")
+            if any(not span.strip() or not any(_quote_normalized(span) in _quote_normalized(quote)
+                                              for quote in own_quotes)
+                   for span in (link.subject_quote, link.answer_quote)):
+                problems.append("Review coverage quote anchors must occur in this claim's own target-document quotations.")
+        return problems
+
+    async def _resolve_review_coverage(self, coverage: ReviewCoveragePayload, claims: list[Claim],
+                                       evidence: list[Evidence], documents: list[str], request: str,
+                                       original_indices: list[int], cache: dict, audit: dict,
+                                       *, check_cancel=None) -> tuple[ReviewCoveragePayload, dict, list[str]]:
+        """Derive indices from isolated claim-to-dimension links, not a global guess."""
+        if len(claims) > MAX_ISOLATED_CLAIMS:
+            raise ModelOutputError("综述覆盖关联超过24条结论的核验上限，请缩小范围；结果已拒绝。")
+        resolved = coverage.model_copy(deep=True)
+        catalog, checked, problems, by_pair = [], [], [], {}
+        titles = {item.document_id: item.document_title for item in evidence}
+        for index, claim in enumerate(claims):
+            await self._check_cancel(check_cancel)
+            identity = self._review_claim_identity(claim, evidence)
+            catalog.append({"claim_index": index, "original_claim_index": original_indices[index], **identity})
+            own_documents = sorted({item["document_id"] for item in identity["citations"]} & set(documents))
+            targets = [{"document_id": document, "title": titles[document]} for document in own_documents]
+            key = json.dumps({"claim_id": identity["claim_id"], "request": request,
+                "aspects": sorted(coverage.requested_aspects), "targets": targets}, ensure_ascii=False, sort_keys=True)
+            if key in cache:
+                links = cache[key]
+                audit["coverage_link_cache_hits"] += 1
+                method = "cached_isolated_claim_coverage"
+            else:
+                if audit["coverage_link_model_calls"] >= MAX_ISOLATED_CLAIMS:
+                    raise ModelOutputError("综述覆盖关联已达到24次独立核验上限；结果已拒绝。")
+                links = await self.provider.generate(_prompt("review_claim_coverage_v1"), {
+                    "task": "verify_review_claim_coverage", "request": request,
+                    "requested_aspects": coverage.requested_aspects, "targets": targets,
+                    "claim": identity,
+                }, ReviewClaimCoveragePayload)
+                await self._check_cancel(check_cancel)
+                audit["coverage_link_model_calls"] += 1
+                method = "isolated_claim_coverage"
+            invalid = self._review_link_problems(links, identity, own_documents, coverage.requested_aspects)
+            checked.append({"claim_id": identity["claim_id"], "claim_index": index,
+                            "method": method, "problems": invalid, **links.model_dump()})
+            if invalid:
+                problems.extend(invalid)
+                continue
+            cache[key] = links
+            for link in links.answers:
+                by_pair.setdefault((link.document_id, link.aspect), []).append((index, link))
+        for item in resolved.assessments:
+            verified = by_pair.get((item.document_id, item.aspect), [])
+            item.answer_claim_indices = [index for index, _ in verified]
+            if verified:
+                if item.gap_quote.strip():
+                    problems.append(f"Evidence-gap statement conflicts with an independently linked answer: {item.document_id} / {item.aspect}.")
+                item.reason = ("Independent claim links: " + "; ".join(
+                    f"claim[{index}]: {link.reason}" for index, link in verified))[:400]
+                item.gap_quote, item.gap_is_appropriate = "", False
+            elif item.answer_claim_indices != next((proposal.answer_claim_indices for proposal in coverage.assessments
+                    if proposal.document_id == item.document_id and proposal.aspect == item.aspect), []):
+                item.reason = "The proposed indices did not independently answer this document-specific dimension."
+        record = {**resolved.model_dump(), "index_space": "claim_catalog.claim_index (zero-based)",
+                  "proposed_assessments": [item.model_dump() for item in coverage.assessments],
+                  "claim_catalog": catalog, "claim_link_reviews": checked}
+        for item in record["assessments"]:
+            item["answer_claim_ids"] = [catalog[index]["claim_id"] for index in item["answer_claim_indices"]]
+        return resolved, record, problems
+
+    @staticmethod
     def _review_coverage_problems(coverage: ReviewCoveragePayload, claims: list[Claim],
                                   evidence: list[Evidence], required_documents: list[str],
                                   message: str) -> list[str]:
@@ -1127,9 +1232,13 @@ class IntelligenceService:
                  "claim_model_calls": 0, "coverage_model_calls": 0, "cache_hits": 0,
                  "limitation": "model_semantic_review_is_not_a_proof"}
         support_cache: dict[str, ClaimSupportPayload] = {}
+        coverage_link_cache: dict[str, ReviewClaimCoveragePayload] = {}
+        frozen_coverage_aspects: list[str] | None = None
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if structured_review:
-            audit["coverage_prompt_version"] = "review-coverage-v1"
+            audit["coverage_prompt_version"] = "review-coverage-v1.1"
+            audit.update(coverage_link_prompt_version="review-claim-coverage-v1.0",
+                         coverage_link_model_calls=0, coverage_link_cache_hits=0)
         supported_review_claims: Counter[str] | None = None
         catalog = self._citation_spans(evidence, omit_trailing_fragment=(
             payload.get("task") == "review" and output_model is SynthesisPayload))
@@ -1230,6 +1339,8 @@ class IntelligenceService:
                         "evidence": [block.model_dump() for block in evidence],
                     }
                     if structured_review:
+                        if frozen_coverage_aspects is not None:
+                            coverage_input["requested_aspects"] = frozen_coverage_aspects
                         coverage = await self.provider.generate(_prompt("review_coverage_v1"),
                                                                 coverage_input, ReviewCoveragePayload)
                     else:
@@ -1238,8 +1349,19 @@ class IntelligenceService:
                     audit["model_checked"] = True
                     audit["coverage_model_calls"] += 1
                     if structured_review:
+                        if frozen_coverage_aspects is None:
+                            frozen_coverage_aspects = list(coverage.requested_aspects)
+                        if set(coverage.requested_aspects) != set(frozen_coverage_aspects):
+                            problems.append("Review coverage dimensions changed during correction; preserve the original requested dimensions.")
+                            coverage_record = {**coverage.model_dump(), "status": "rejected_dimension_change"}
+                        else:
+                            coverage, coverage_record, link_problems = await self._resolve_review_coverage(
+                                coverage, coverage_claims, evidence, coverage_documents,
+                                coverage_input["request"], coverage_indices, coverage_link_cache, audit,
+                                check_cancel=check_cancel)
+                            problems.extend(link_problems)
                         audit.setdefault("review_coverage", []).append({"attempt": attempt + 1,
-                            "original_claim_indices": coverage_indices, **coverage.model_dump()})
+                            "original_claim_indices": coverage_indices, **coverage_record})
                         problems.extend(self._review_coverage_problems(coverage, coverage_claims, evidence,
                             coverage_input["selected_document_ids"], result.message))
                     else:

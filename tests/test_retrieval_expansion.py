@@ -9,7 +9,7 @@ import pytest
 
 from research_workspace.intelligence import (
     AnswerPayload, ChatCompletionProvider, IntelligenceService, ModelConfig,
-    ModelOutputError, RetrievalQueryPayload, ReviewCoveragePayload, SynthesisPayload,
+    ModelOutputError, RetrievalQueryPayload, ReviewClaimCoveragePayload, ReviewCoveragePayload, SynthesisPayload,
 )
 from research_workspace.jobs import TaskCancelled
 from research_workspace.library import Library, LibraryError
@@ -57,6 +57,13 @@ class MockProvider:
                 self.on_expansion()
             return output_model.model_validate({"terms": self.terms})
         assert "query_terms" not in payload and "queries" not in payload
+        if output_model is ReviewClaimCoveragePayload:
+            current = payload["claim"]
+            return ReviewClaimCoveragePayload(answers=[{
+                "document_id": citation["document_id"], "aspect": aspect,
+                "subject_text": current["text"], "subject_quote": citation["quote"],
+                "answer_text": current["text"], "answer_quote": citation["quote"], "reason": "Canonical background fixture.",
+            } for citation in current["citations"] for aspect in payload["requested_aspects"]])
         if output_model is ReviewCoveragePayload:
             documents = {source["evidence_id"]: source["document_id"] for source in payload["evidence"]}
             return ReviewCoveragePayload(requested_aspects=["background"], assessments=[{
@@ -209,7 +216,11 @@ def test_review_opening_fallback_uses_same_snapshot_when_reparse_finishes_during
     assert retrieved[0]["block_id"] == old_block["id"]
     assert retrieved[0]["text"] == old_block["text"]
     assert retrieved[0]["bbox"] == old_block["bbox"]
-    assert any(source["block_id"] == old_block["id"] for source in provider.calls[-1][1]["evidence"])
+    generation_payload = next(payload for model, payload in provider.calls if model is SynthesisPayload)
+    assert any(source["block_id"] == old_block["id"] for source in generation_payload["evidence"])
+    assert any(citation["block_id"] == old_block["id"] and citation["run_id"] == old_run
+               for model, payload in provider.calls if model is ReviewClaimCoveragePayload
+               for citation in payload["claim"]["citations"])
     assert "_opening_candidates" not in result["retrieval"]
     json.dumps(result)  # Internal Evidence objects must never leak into API/job audit data.
 
@@ -344,7 +355,8 @@ def test_synthesis_can_expand_chinese_instruction_without_changing_citation_rule
     doc = document(library, "LayerNorm normalizes feature activations within each example.")
     provider = MockProvider([term("层归一化", "LayerNorm")])
     result = run(IntelligenceService(library, provider).synthesize("review", [doc], instruction="总结层归一化"))
-    assert [model for model, _ in provider.calls] == [RetrievalQueryPayload, SynthesisPayload, ReviewCoveragePayload]
+    assert [model for model, _ in provider.calls] == [RetrievalQueryPayload, SynthesisPayload, ReviewCoveragePayload,
+                                                   ReviewClaimCoveragePayload]
     assert result["retrieval"]["mode"] == "bilingual_query_expansion_bm25_rrf"
     assert result["references"][0]["document_id"] == doc
     assert result["sources"][0]["document_id"] == doc

@@ -294,6 +294,7 @@ def test_split_does_not_cut_protected_marker():
 @pytest.mark.parametrize("schema_name,budget,reply", [
     ("ClaimSupportPayload", 1024, {"verdict": "supported", "reason": ""}),
     ("CoveragePayload", 2048, {"unverified_statements": [], "missing_aspects": []}),
+    ("ReviewClaimCoveragePayload", 4096, {"answers": []}),
     ("ReviewCoveragePayload", 8192, {"requested_aspects": ["structure"], "assessments": [{
         "document_id": "doc", "aspect": "structure", "answer_claim_indices": [0],
         "gap_is_appropriate": False, "reason": "Fixture coverage."}], "unverified_statements": []}),
@@ -310,6 +311,13 @@ def test_short_review_uses_bounded_output_budget(schema_name, budget, reply):
 
 def synthesis_reply(request):
     payload = json.loads(json.loads(request.content)["messages"][1]["content"])
+    if payload["task"] == "verify_review_claim_coverage":
+        current = payload["claim"]
+        return envelope({"answers": [{
+            "document_id": cite["document_id"], "aspect": aspect,
+            "subject_text": current["text"], "subject_quote": cite["quote"],
+            "answer_text": current["text"], "answer_quote": cite["quote"], "reason": "Fixture source coverage.",
+        } for cite in current["citations"] for aspect in payload["requested_aspects"]]})
     if payload["task"] == "verify_single_claim":
         return envelope({"verdict": "supported", "reason": ""})
     if payload["task"] == "verify_response_coverage" and payload.get("response_kind") == "review":

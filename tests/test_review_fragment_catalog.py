@@ -1,7 +1,9 @@
 """A review cannot select the unfinished tail of a cross-page paragraph."""
 import asyncio
 
-from research_workspace.intelligence import Evidence, IntelligenceService, ReviewCoveragePayload, SynthesisPayload
+from research_workspace.intelligence import (
+    Evidence, IntelligenceService, ReviewClaimCoveragePayload, ReviewCoveragePayload, SynthesisPayload,
+)
 from research_workspace.library import Library
 
 
@@ -34,6 +36,13 @@ def test_review_generation_cannot_reintroduce_omitted_span_id(tmp_path):
 
         async def generate(self, prompt, payload, output_model):
             calls.append(payload)
+            if output_model is ReviewClaimCoveragePayload:
+                current = payload["claim"]
+                return ReviewClaimCoveragePayload(answers=[{
+                    "document_id": "doc", "aspect": "objective", "subject_text": "ORION", "subject_quote": "ORION",
+                    "answer_text": "uses a masked objective", "answer_quote": "uses a masked objective",
+                    "reason": "The complete objective sentence explicitly names its model.",
+                }])
             if output_model is ReviewCoveragePayload:
                 return ReviewCoveragePayload(requested_aspects=["objective"], assessments=[{
                     "document_id": "doc", "aspect": "objective", "answer_claim_indices": [0],

@@ -5,7 +5,7 @@ import pytest
 
 from research_workspace.intelligence import (
     Claim, ClaimSupportPayload, CoveragePayload, Evidence, IntelligenceService,
-    ModelOutputError, ReviewCoveragePayload, SynthesisPayload,
+    ModelOutputError, ReviewClaimCoveragePayload, ReviewCoveragePayload, SynthesisPayload,
 )
 from research_workspace.library import Library
 
@@ -59,6 +59,15 @@ class Provider:
             rejected = "99" in payload["claim"]["text"]
             return ClaimSupportPayload(verdict="unsupported" if rejected else "supported",
                                        reason="The quoted score is not 99." if rejected else "Identity and mechanism are quoted.")
+        if output_model is ReviewClaimCoveragePayload:
+            current = payload["claim"]
+            return ReviewClaimCoveragePayload(answers=[{
+                "document_id": citation["document_id"], "aspect": aspect,
+                "subject_text": name, "subject_quote": name, "answer_text": current["text"],
+                "answer_quote": citation["quote"], "reason": "The fixture names its model and structure.",
+            } for name in ("ORION", "NOVA") if name in current["text"]
+              for citation in current["citations"] if name in citation["quote"]
+              for aspect in payload["requested_aspects"] if aspect == "structure"])
         if output_model is ReviewCoveragePayload:
             if self.coverage is not None:
                 return self.coverage(payload) if callable(self.coverage) else self.coverage
@@ -150,11 +159,11 @@ def test_invalid_citation_keeps_original_repair_path_instead_of_salvaging(tmp_pa
 
 def test_subset_still_fails_if_coverage_or_message_is_unacceptable(tmp_path):
     provider = Provider([review(good_a(), bad_a(), good_b()), review(good_a(), good_b())],
-                        ReviewCoveragePayload(requested_aspects=["structure"], assessments=[
-                            {"document_id": "doc-a", "aspect": "structure", "answer_claim_indices": [0],
-                             "gap_is_appropriate": False, "reason": "Supported structure."},
-                            {"document_id": "doc-b", "aspect": "structure", "answer_claim_indices": [],
-                             "gap_is_appropriate": False, "reason": "Requested structure is unacknowledged."},
+                        ReviewCoveragePayload(requested_aspects=["training objective"], assessments=[
+                            {"document_id": "doc-a", "aspect": "training objective", "answer_claim_indices": [],
+                             "gap_is_appropriate": False, "reason": "Requested objective is unacknowledged."},
+                            {"document_id": "doc-b", "aspect": "training objective", "answer_claim_indices": [],
+                             "gap_is_appropriate": False, "reason": "Requested objective is unacknowledged."},
                         ], unverified_statements=[]))
     with pytest.raises(ModelOutputError, match="Unanswered request aspect"):
         run(tmp_path, provider)
@@ -186,7 +195,9 @@ def test_review_exact_quotations_still_require_the_coverage_matrix(tmp_path):
     _, _, audit = run(tmp_path, provider)
     assert audit["claim_model_calls"] == 0
     assert audit["coverage_model_calls"] == 1
-    assert [model for _, model in provider.calls] == [SynthesisPayload, ReviewCoveragePayload]
+    models = [model for _, model in provider.calls]
+    assert models[:2] == [SynthesisPayload, ReviewCoveragePayload]
+    assert models[2:] == [ReviewClaimCoveragePayload, ReviewClaimCoveragePayload]
 
 
 def test_first_repair_receives_coverage_gaps_from_only_supported_claims(tmp_path):
