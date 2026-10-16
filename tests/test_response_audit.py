@@ -338,3 +338,50 @@ def test_attaching_scope_does_not_override_an_unsupported_predicate(tmp_path):
             "required_training_tasks":req,"allow_isolated_claim_repair":True},AnswerPayload,e))
     g=caught.value.grounding_diagnostics["grounding"]
     assert g["task_scope_attachments"] and all(v["verdict"]=="unsupported" for a in g["attempts"] for v in a["reviews"])
+
+@pytest.mark.parametrize('complete',[True,False])
+def test_literal_clause_repair_preserves_supported_required_fact_but_still_requires_full_coverage(tmp_path,complete):
+    initial=answer('ORION预测被移除的词；输出概率达到99。','Q2')
+    class Inspect(Sequence):
+        async def generate(self,prompt,payload,model):
+            if model is ClaimSupportPayload:
+                assert set(payload)=={'task','claim_index','claim','response_kind'}
+            if model is CoveragePayload:
+                assert payload['claims'][0]['text']=='ORION预测被移除的词'
+            return await super().generate(prompt,payload,model)
+    provider=Inspect([initial,ClaimSupportPayload(verdict='unsupported',reason='Prediction supported; probability detail unsupported.'),
+        ClaimSupportPayload(verdict='supported',reason='Own original-word prediction definition.'),
+        ClaimSupportPayload(verdict='supported',reason='Final whole card independently supported.'),
+        CoveragePayload(unverified_statements=[],missing_aspects=[] if complete else ['Requested second task is still absent.'])])
+    service=IntelligenceService(Library(tmp_path),provider)
+    run=service._generate_grounded('fixture',{'task':'qa','question':'Prediction?' if complete else 'Both tasks?',
+        'allow_isolated_claim_repair':True,'require_request_coverage':True},AnswerPayload,[source()])
+    if not complete:
+        with pytest.raises(ModelOutputError) as caught:asyncio.run(run)
+        audit=caught.value.grounding_diagnostics['grounding']
+        assert audit['response_coverage'][-1]['missing_aspects']
+    else:
+        result,_,audit=asyncio.run(run)
+        assert result.claims[0].text=='ORION预测被移除的词'
+        assert audit['claim_reviews'][0]['claim_id']==audit['claim_catalog'][0]['claim_id']
+    projection=audit['literal_clause_projections'][0]
+    assert projection['original_claim']['text']==initial.claims[0].text
+    assert projection['checks'][0]['verdict']=='supported'
+    assert projection['checks'][1]['status']=='not_reviewed_subject_not_explicit'
+    assert audit['claim_repairs'][0]['repair_method']=='literal_supported_clause_projection'
+    assert audit['claim_repairs'][0]['original_claim_id']==projection['original_claim']['claim_id']
+    assert 'claim_repair_prompt_version' not in audit
+
+
+def test_literal_projection_cannot_approve_wrong_clause_or_exceed_recorded_budget(tmp_path):
+    from research_workspace.claim_projection import project_supported_clauses
+    initial=answer('ORION预测99个词；输出异常。','Q2').claims[0]
+    service=IntelligenceService(Library(tmp_path),Sequence([ClaimSupportPayload(verdict='unsupported',reason='Wrong quantity.')]))
+    catalog=service._citation_spans([source()]);service._resolve_citation_spans([initial],catalog)
+    audit={'response_kind':'qa','claim_model_calls':0}
+    assert asyncio.run(project_supported_clauses(service,initial,[source()],catalog,audit)) is None
+    assert audit['literal_clause_projections'][0]['checks'][0]['verdict']=='unsupported'
+    audit['literal_projection_model_calls']=4
+    assert asyncio.run(project_supported_clauses(service,initial,[source()],catalog,audit)) is None
+    assert audit['literal_clause_projections'][-1]['stopped_reason']=='four_projection_check_budget_reached'
+    assert audit['claim_model_calls']==1

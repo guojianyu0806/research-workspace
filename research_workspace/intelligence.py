@@ -1743,7 +1743,6 @@ class IntelligenceService:
             if payload.get("allow_isolated_claim_repair") and len(reviews)==len(claims) and any(
                     review["verdict"]=="unsupported" for review in reviews):
                 from .claim_repair import repair_rejected_claims
-                audit["claim_repair_prompt_version"] = "claim-repair-v1.1"
                 try:
                     isolated_repair_result = await repair_rejected_claims(self,result,reviews,evidence,catalog,payload,audit,
                         check_cancel=check_cancel)

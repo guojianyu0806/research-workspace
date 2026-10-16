@@ -30,16 +30,22 @@ async def repair_rejected_claims(service, result, reviews, evidence, catalog, pa
         conditional_methodology=bool(re.search(
             r"不同.{0,15}(?:任务|数据集).{0,45}(?:不构成|不能|无法).{0,35}(?:比较|优劣)|"
             r"(?:different|unlike).{0,40}(?:tasks|datasets).{0,70}(?:not|cannot).{0,35}(?:compar|superior|rank)",claim.text,re.I))
-        repaired=await service.provider.generate(_prompt("claim_repair_v1"),{
-            "task":"repair_grounded_claim","response_kind":payload["task"],
-            "request":payload.get("question") or payload.get("instruction",""),
-            "claim":claim.model_dump(),"rejection_reason":review["reason"],
-            "allow_methodology_relocation":conditional_methodology,
-            "required_training_tasks":{d:payload["required_training_tasks"][d] for d in documents
-                if d in payload.get("required_training_tasks",{})},
-            "evidence":[{**b.model_dump(),"citation_spans":[{"quote_id":qid,"text":text}
-                for qid,text in catalog[b.evidence_id].items()]} for b in focused],
-        },ClaimRepairPayload)
+        from .claim_projection import project_supported_clauses
+        projected=await project_supported_clauses(service,claim,evidence,catalog,audit,check_cancel=check_cancel)
+        if projected is not None:
+            repaired=ClaimRepairPayload(claim=projected)
+        else:
+            audit["claim_repair_prompt_version"]="claim-repair-v1.1"
+            repaired=await service.provider.generate(_prompt("claim_repair_v1"),{
+                "task":"repair_grounded_claim","response_kind":payload["task"],
+                "request":payload.get("question") or payload.get("instruction",""),
+                "claim":claim.model_dump(),"rejection_reason":review["reason"],
+                "allow_methodology_relocation":conditional_methodology,
+                "required_training_tasks":{d:payload["required_training_tasks"][d] for d in documents
+                    if d in payload.get("required_training_tasks",{})},
+                "evidence":[{**b.model_dump(),"citation_spans":[{"quote_id":qid,"text":text}
+                    for qid,text in catalog[b.evidence_id].items()]} for b in focused],
+            },ClaimRepairPayload)
         await service._check_cancel(check_cancel)
         if repaired.claim is None:
             if not conditional_methodology or not repaired.limitation:
@@ -58,6 +64,7 @@ async def repair_rejected_claims(service, result, reviews, evidence, catalog, pa
             {"stage":"isolated_repair","source_attempt":len(audit["attempts"]),"claim_index":i})
         records.append({"claim_index":i,"original_claim_id":service._review_claim_identity(claim,evidence)["claim_id"],
             "repaired_claim_id":service._review_claim_identity(repaired.claim,evidence)["claim_id"],
+            "repair_method":"literal_supported_clause_projection" if projected is not None else "model_local_rewrite",
             "rejection_reason":review["reason"],"focused_evidence_ids":[b.evidence_id for b in focused],
             "policy":"replace_rejected_card_only_then_reaudit; supported_cards_and_plans_unchanged"})
         claim.text=repaired.claim.text;claim.citations=repaired.claim.citations
