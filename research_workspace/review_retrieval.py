@@ -23,6 +23,25 @@ def is_information_role_comparison(request, aspect):
                 and not re.search(r"是否|有无|是不是|whether|yes.?no|does.{0,40}retriev", request, re.I))
 
 
+def _positive_training_data_predicate(text):
+    plain = " ".join(text.split())
+    return bool(re.search(
+        r"(?:预训练|训练)(?:阶段|时|中|过程|信息|的)?(?:使用|采用|利用|基于|来自|源于)"
+        r"|(?:预训练|训练)(?:的)?(?:数据|语料)(?:来源)?(?:为|是|包括|来自|源于)"
+        r"|(?:使用|采用|用)[^，,。；;]{1,100}(?:作为(?:预训练|训练)(?:数据|语料)|用于(?:预训练|训练)|进行(?:预训练|训练)|来(?:预训练|训练))"
+        r"|(?:语料|数据集)[^，,。；;]{0,30}上(?:预训练|训练)"
+        r"|\b(?:pre[- ]?)?train(?:ed|s|ing)?\b[^,.;]{0,70}\b(?:on|using|with)\b"
+        r"|\b(?:pre[- ]?)?training\s+(?:corpus|data)\s+(?:is|includes|contains|comes)\b", plain, re.I))
+
+
+def _quoted_data_usage(text):
+    plain = " ".join(text.split())
+    return (_positive_training_data_predicate(plain) or bool(re.search(
+        r"\b(?:we\s+)?(?:use|used|uses)\b[^.;]{0,160}(?:corpus|corpora|data\s*set)"
+        r"|\b(?:pre[- ]?)?training\s+corpus\b.{0,50}\b(?:use|used|uses|contains|includes)\b"
+        r"|(?:使用|采用|用)[^。；;]{0,100}(?:语料|数据集)", plain, re.I)))
+
+
 def verified_training_corpus_role(service, identity, document, names):
     """Organize an ALREADY supported own-card training/data relation by its stage.
 
@@ -32,15 +51,18 @@ def verified_training_corpus_role(service, identity, document, names):
     text = identity["text"]
     if not service._identifier_tokens(text).intersection(names):
         return None
-    if re.search(r"未使用|没有使用|不使用|未用|not\s+(?:trained|used)|no\s+training|without\s+data", text, re.I):
+    if re.search(r"未使用|没有|不使用|从未|未(?:用|在|曾)|不在|\b(?:not|never)\s+(?:(?:been|directly)\s+)?(?:train\w*|used)|no\s+training|without\s+data", text, re.I):
         return None
     if not (re.search(r"训练|\b(?:pre[- ]?)?train\w*\b", text, re.I)
             and re.search(r"语料|数据集|训练数据|数据来源|corpus|corpora|data\s*set|training\s+data", text, re.I)):
         return None
+    if not _positive_training_data_predicate(text):
+        return None
     own = [cite for cite in identity["citations"] if cite["document_id"] == document]
     subjects = [cite for cite in own if service._identifier_tokens(cite["quote"]).intersection(names)
                 and directly_named_training(cite["quote"], names, service)]
-    corpora = [cite for cite in own if re.search(r"corpus|corpora|data\s*set|training\s+data|语料|数据集|训练数据", cite["quote"], re.I)]
+    corpora = [cite for cite in own if re.search(r"corpus|corpora|data\s*set|training\s+data|语料|数据集|训练数据", cite["quote"], re.I)
+               and _quoted_data_usage(cite["quote"])]
     if not subjects or not corpora:
         return None
     return {"document_id": document, "role": "training_corpus",

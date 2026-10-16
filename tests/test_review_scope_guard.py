@@ -41,3 +41,32 @@ def test_ordinary_training_must_not_be_relabelled_as_pretraining():
 def test_explicit_aligned_or_sentence_pair_quotes_can_supply_parallel_corpus_scope():
     for wording in ["ORION trains on aligned bilingual sentences.", "ORION trains on source-target sentence\npairs."]:
         assert IntelligenceService._missing_review_qualifiers(card("ORION使用平行语料训练。", wording)) == []
+
+
+def test_parallel_qualifier_cannot_transfer_between_different_named_datasets():
+    current=card("ORION在ArchiveAlpha和ArchiveBeta平行句对语料上训练。",
+        "ORION is trained on the ArchiveAlpha dataset containing sentence pairs.",
+        "We use the ArchiveBeta dataset containing many sentences.")
+    assert any("ArchiveBeta" in missing for missing in IntelligenceService._missing_review_qualifiers(current))
+    current.text="ORION使用ArchiveAlpha和ArchiveBeta数据集训练。"
+    assert IntelligenceService._missing_review_qualifiers(current)==[]
+
+
+def test_each_dataset_can_supply_its_own_parallel_attribute_on_the_same_card():
+    current=card("ORION在ArchiveAlpha和ArchiveBeta平行语料上训练。",
+        "ORION is trained on the ArchiveAlpha dataset containing sentence pairs.",
+        "We use the ArchiveBeta dataset containing many sentences.",
+        "The ArchiveBeta dataset is parallel text.")
+    assert IntelligenceService._missing_review_qualifiers(current)==[]
+
+
+def test_prediction_conditioning_alone_does_not_establish_marginalization():
+    current=card("ORION在文档上进行边缘化。","ORION predicts target tokens conditioned on a document.")
+    assert "marginalization operation" in IntelligenceService._missing_review_qualifiers(current)
+    current=card(current.text,current.citations[0].quote,"ORION marginalizes over documents for each output.")
+    assert IntelligenceService._missing_review_qualifiers(current)==[]
+
+
+def test_token_prediction_does_not_silently_supply_an_unquoted_vocabulary_id():
+    current=card("ORION预测被遮盖词元的原始词汇id。","ORION predicts the original masked token.")
+    assert "vocabulary/token identifier" in IntelligenceService._missing_review_qualifiers(current)

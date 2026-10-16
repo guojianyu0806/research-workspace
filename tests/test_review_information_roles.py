@@ -28,7 +28,9 @@ def test_corpus_role_uses_own_named_training_scope_and_own_dataset_quote(tmp_pat
     assert "does not assert inference-time retrieval" in role["interpretation"]
 
 
-@pytest.mark.parametrize("text",["ORION使用PublicArchive数据集。","一些混合系统的训练使用PublicArchive数据集。","ORION未使用PublicArchive数据集训练。"])
+@pytest.mark.parametrize("text",["ORION使用PublicArchive数据集。","一些混合系统的训练使用PublicArchive数据集。","ORION未使用PublicArchive数据集训练。",
+    "ORION训练很快，PublicArchive数据集包含许多文本。", "ORION已经完成训练；另一个PublicArchive数据集包含样本。",
+    "ORION不在PublicArchive数据集上训练。", "ORION is never trained on the PublicArchive dataset."])
 def test_dataset_name_background_or_negative_statement_cannot_supply_positive_corpus_role(tmp_path,text):
     service=IntelligenceService(Library(tmp_path));e,c=inputs();c.text=text
     assert verified_training_corpus_role(service,service._review_claim_identity(c,e),"doc",["orion"]) is None
@@ -40,6 +42,8 @@ def test_architecture_name_or_another_documents_dataset_cannot_supply_a_training
     identity["citations"][0]["quote"]="ORION uses an attention encoder."
     assert verified_training_corpus_role(service,identity,"doc",["orion"]) is None
     identity=service._review_claim_identity(c,e);identity["citations"][1]["document_id"]="other"
+    assert verified_training_corpus_role(service,identity,"doc",["orion"]) is None
+    identity=service._review_claim_identity(c,e);identity["citations"][1]["quote"]="PublicArchive is a dataset of many sentences."
     assert verified_training_corpus_role(service,identity,"doc",["orion"]) is None
 
 

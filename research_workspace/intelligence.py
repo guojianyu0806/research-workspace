@@ -1151,10 +1151,28 @@ class IntelligenceService:
             (r"预训练", r"\bpre[- ]?train\w*\b|预训练", "pre-training stage"),
             (r"文档级", r"document[- ]?level|文档级", "document-level corpus"),
             (r"平行语料|平行句对|parallel corpus|parallel data", r"\bparallel\b|\baligned\b|sentence[- ]pairs?|平行|对齐", "parallel/aligned corpus"),
+            (r"边缘化|marginali[sz]", r"marginali[sz]|边缘化", "marginalization operation"),
+            (r"(?:词汇|词元)\s*(?:id|编号)|vocabulary\s+id|token\s+id", r"\b(?:vocabulary|token|word)\s+(?:id|identifier|index)\b|(?:词汇|词元)\s*(?:id|编号)", "vocabulary/token identifier"),
             (r"推理时|测试时", r"\binference\b|\b(?:at|during|for)\s+(?:the\s+)?test(?:ing)?\b|test[- ]time|推理时|测试时", "inference/test-time scope"),
         ]
-        return [label for trigger, required, label in rules
-                if re.search(trigger, claim.text, re.I) and not re.search(required, quotes, re.I)]
+        missing = [label for trigger, required, label in rules
+                   if re.search(trigger, claim.text, re.I) and not re.search(required, quotes, re.I)]
+        if re.search(r"平行|句对|parallel|aligned|sentence[- ]pairs?", claim.text, re.I):
+            original = [" ".join(unicodedata.normalize("NFKC", cite.quote).split()) for cite in claim.citations]
+            entities = {}
+            for text in original:
+                for match in re.finditer(r"\b((?:[A-Z][A-Za-z0-9_-]*|\d{2,4})(?:\s+(?:[A-Z][A-Za-z0-9_-]*|\d{2,4})){0,5})\s+(?:[Dd]ata\s*[Ss]ets?|[Cc]orpus)\b", text):
+                    label = match[1]
+                    tokens = frozenset(re.findall(r"[a-z0-9]+", label.lower())) - {"the", "a", "an", "to", "for"}
+                    if tokens:
+                        entities.setdefault(tokens, label)
+            if len(entities) > 1:
+                for tokens, label in entities.items():
+                    if not any(tokens.issubset(set(re.findall(r"[a-z0-9]+", text.lower())))
+                               and re.search(r"\bparallel\b|\baligned\b|sentence[- ]pairs?|平行|对齐", text, re.I)
+                               for text in original):
+                        missing.append("parallel/aligned property independently quoted for dataset " + label)
+        return missing
 
     @staticmethod
     def _review_claim_identity(claim: Claim, evidence: list[Evidence]) -> dict:
@@ -1419,7 +1437,7 @@ class IntelligenceService:
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.2"
             audit.setdefault("coverage_link_model_calls", 0)
             audit.setdefault("coverage_link_cache_hits", 0)
-            audit["claim_support_prompt_version"] = "review-claim-support-v1.2"
+            audit["claim_support_prompt_version"] = "review-claim-support-v1.3"
             audit["training_requirements"] = state.get("training_requirements", {})
             audit["source_role_policy"] = {"version": "information-source-stage-v1.0",
                 "scope": "broad information-source and usage-stage comparisons only",
