@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from research_workspace.intelligence import (AnswerPayload, ClaimSupportPayload, CoveragePayload,
+from research_workspace.intelligence import (AnswerPayload, ClaimSupportPayload, ClaimRepairPayload, CoveragePayload,
     Evidence, IntelligenceService, ModelOutputError)
 from research_workspace.library import Library
 
@@ -139,3 +139,50 @@ def test_public_comparison_adds_actual_main_task_definitions_from_one_frozen_sna
     monkeypatch.setattr(service,"_blocks",lambda *x:(_ for _ in ()).throw(AssertionError("Snapshot reopened")))
     result=asyncio.run(service.answer("比较模型结构和训练目标。",["doc","other"],mode="compare"))
     assert result["retrieval"]["response_dimension_search"]["selected_runs"]=={"doc":"frozen","other":"frozen"}
+
+
+def test_isolated_repair_freezes_supported_fact_and_rechecks_replacement_identity(tmp_path):
+    first=answer().claims[0];bad=answer("ORION预测99个词。","Q2").claims[0]
+    fixed=answer("ORION预测被移除的词。","Q2").claims[0]
+    provider=Sequence([AnswerPayload(status="answered",claims=[first,bad]),
+        ClaimSupportPayload(verdict="supported",reason="Own attention relation."),
+        ClaimSupportPayload(verdict="unsupported",reason="Wrong quantity."),ClaimRepairPayload(claim=fixed),
+        ClaimSupportPayload(verdict="supported",reason="Own prediction statement."),
+        CoveragePayload(unverified_statements=[],missing_aspects=[])])
+    service=IntelligenceService(Library(tmp_path),provider)
+    result,_,g=asyncio.run(service._generate_grounded("fixture",{"task":"qa","question":"Architecture and prediction?",
+        "allow_isolated_claim_repair":True,"require_request_coverage":True},AnswerPayload,[source()]))
+    assert result.claims[0].text==first.text and result.claims[1].text==fixed.text
+    assert g["attempts"][0]["claims"][0]["claim_id"]==g["claim_catalog"][0]["claim_id"]
+    repair=g["claim_repairs"][0]
+    assert repair["original_claim_id"]==g["attempts"][0]["claims"][1]["claim_id"]
+    assert repair["repaired_claim_id"]==g["claim_catalog"][1]["claim_id"]
+    assert repair["source_attempt"]==1 and repair["claim_index"]==repair["result_claim_index"]==1
+    assert g["attempts"][-1]["reviews"][0]["method"]=="cached_isolated_review"
+
+
+def test_only_conditional_methodology_can_move_outside_fact_cards_without_being_deleted(tmp_path):
+    valid=answer().claims[0]
+    caution=answer("不同任务上的分数不能直接比较。","Q2").claims[0]
+    provider=Sequence([AnswerPayload(status="answered",claims=[caution,valid]),
+        ClaimSupportPayload(verdict="unsupported",reason="A methodological caution belongs in message."),
+        ClaimSupportPayload(verdict="supported",reason="Own attention relation."),
+        ClaimRepairPayload(claim=None,limitation=caution.text),CoveragePayload(unverified_statements=[],missing_aspects=[])])
+    service=IntelligenceService(Library(tmp_path),provider)
+    result,_,g=asyncio.run(service._generate_grounded("fixture",{"task":"compare","question":"Compare?",
+        "allow_isolated_claim_repair":True,"require_request_coverage":True},AnswerPayload,[source()]))
+    assert len(result.claims)==1 and result.message==caution.text
+    assert g["claim_repairs"][0]["repaired_claim_id"] is None
+    assert g["response_coverage"][-1]["response_message"]==caution.text
+    assert g["attempts"][0]["claims"][1]["claim_id"]==g["claim_catalog"][0]["claim_id"]
+    assert g["claim_reviews"][0]["claim_index"]==0
+    assert g["claim_repairs"][0]["claim_index"]==0 and g["claim_repairs"][0]["result_claim_index"] is None
+
+
+def test_isolated_repair_cannot_replace_requested_positive_fact_with_gap_text(tmp_path):
+    provider=Sequence([answer("ORION预测99个词。","Q2"),ClaimSupportPayload(verdict="unsupported",reason="Wrong quantity."),
+        ClaimRepairPayload(claim=None,limitation="Prediction not supplied.")])
+    service=IntelligenceService(Library(tmp_path),provider)
+    with pytest.raises(ModelOutputError,match="不能用缺口说明删除事实"):
+        asyncio.run(service._generate_grounded("fixture",{"task":"qa","question":"Prediction?",
+            "allow_isolated_claim_repair":True},AnswerPayload,[source()]))

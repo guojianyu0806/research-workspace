@@ -215,7 +215,8 @@ def test_adjacent_claim_and_uncited_source_text_are_isolated_until_cited(tmp_pat
 
     support_calls = [payload for payload, model in provider.calls if model is ClaimSupportPayload]
     assert len(support_calls) == 2
-    assert all(set(payload) == {"task", "claim_index", "claim"} for payload in support_calls)
+    assert all(set(payload) == {"task", "claim_index", "claim", "response_kind"} for payload in support_calls)
+    assert all(payload["response_kind"] == "review" for payload in support_calls)
     first = support_calls[0]
     assert first["task"] == "verify_single_claim" and first["claim_index"] == 0
     assert first["claim"]["citations"][0]["quote"] == "Most competitive models use an encoder and decoder."

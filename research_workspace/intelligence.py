@@ -134,6 +134,11 @@ class Claim(StrictModel):
     citations: list[Citation] = Field(min_length=1, max_length=12)
 
 
+class ClaimRepairPayload(StrictModel):
+    claim: Claim | None
+    limitation: str = Field(default="",max_length=1000)
+
+
 class AnswerPayload(StrictModel):
     status: Literal["answered", "insufficient_evidence"]
     claims: list[Claim] = Field(default_factory=list, max_length=30)
@@ -279,8 +284,9 @@ class ChatCompletionProvider:
     def _uses_review_reasoning(self, payload: dict) -> bool:
         official_pro = (self.config.model == 'deepseek-v4-pro'
                         and urlsplit(self.config.base_url).hostname == 'api.deepseek.com')
-        writing = payload.get('task') in {'review', 'complete_review_missing_dimensions'}
-        fact_review = payload.get('task') == 'verify_single_claim' and payload.get('response_kind') == 'review'
+        writing = payload.get('task') in {'qa', 'compare', 'draft', 'review', 'complete_review_missing_dimensions', 'repair_grounded_claim'}
+        fact_review = (payload.get('task') == 'verify_single_claim'
+                       and payload.get('response_kind') in {'qa','compare','draft','review'})
         multi_quote_coverage = (payload.get('task') == 'verify_review_claim_coverage'
                                 and len(payload.get('claim', {}).get('citations', [])) > 1)
         return official_pro and (writing or fact_review or multi_quote_coverage)
@@ -1460,6 +1466,8 @@ class IntelligenceService:
                 "requested_model": self.provider.config.model,
                 "provider_host": urlsplit(self.provider.config.base_url).hostname,
                 "generation_thinking": "enabled" if self.provider._uses_review_reasoning(payload) else "disabled",
+                "claim_support_thinking": "enabled" if self.provider._uses_review_reasoning({
+                    "task":"verify_single_claim","response_kind":payload.get("task")}) else "disabled",
                 "private_reasoning_retained": False,
             })
         support_cache: dict[str, ClaimSupportPayload] = state.setdefault("support_cache", {})
@@ -1467,7 +1475,7 @@ class IntelligenceService:
         frozen_coverage_aspects: list[str] | None = state.get("coverage_aspects")
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if not structured_review:
-            audit["claim_support_prompt_version"] = "claim-support-v1.4"
+            audit["claim_support_prompt_version"] = "claim-support-v1.5"
             audit["coverage_prompt_version"] = "coverage-v1.5"
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
@@ -1498,6 +1506,7 @@ class IntelligenceService:
         supported_review_claims: Counter[str] | None = None
         frozen_review: SynthesisPayload | None = None
         frozen_review_message: str | None = None
+        isolated_repair_result = None
         catalog = self._citation_spans(evidence, omit_trailing_fragment=(
             payload.get("task") == "review" and output_model is SynthesisPayload))
         named_identifiers = self._named_attribution_identifiers(catalog)
@@ -1517,6 +1526,8 @@ class IntelligenceService:
                 result = (SynthesisPayload.model_validate({**frozen_review.model_dump(), "message": repaired_message.message})
                           if repaired_message.status == "generated" else
                           SynthesisPayload(status="insufficient_evidence", message=repaired_message.message))
+            elif isolated_repair_result is not None:
+                result = isolated_repair_result
             elif attempt == 0 and initial_result is not None:
                 result = initial_result.model_copy(deep=True)
             else:
@@ -1585,7 +1596,7 @@ class IntelligenceService:
                         # could supply precisely the support missing from this card.
                         verdict = await self.provider.generate(_prompt("review_claim_support_v1" if structured_review else "claim_support_v1"), {
                             "task": "verify_single_claim", "claim_index": index, "claim": claim_data,
-                            **({"response_kind": "review"} if structured_review else {}),
+                            "response_kind": payload.get("task"),
                         }, ClaimSupportPayload)
                         await self._check_cancel(check_cancel)
                         support_cache[cache_key] = verdict
@@ -1689,6 +1700,20 @@ class IntelligenceService:
                         "source_snapshot": [{key:block.model_dump()[key] for key in
                             ("document_id", "run_id", "block_id", "page", "bbox")} for block in evidence]}
                 raise error
+            if payload.get("allow_isolated_claim_repair") and len(reviews)==len(claims) and any(
+                    review["verdict"]=="unsupported" for review in reviews):
+                from .claim_repair import repair_rejected_claims
+                audit["claim_repair_prompt_version"] = "claim-repair-v1.0"
+                try:
+                    isolated_repair_result = await repair_rejected_claims(self,result,reviews,evidence,catalog,payload,audit,
+                        check_cancel=check_cancel)
+                except ModelOutputError as error:
+                    error.grounding_diagnostics = {"status":"validation_failed","diagnostic_only":True,
+                        "response_kind":payload.get("task"),"grounding":audit,
+                        "source_snapshot":[{key:b.model_dump()[key] for key in
+                            ("document_id","run_id","block_id","page","bbox")} for b in evidence]}
+                    raise
+                continue
             previous = result.model_dump()
             subset_repair = None
             # A short review can keep a useful, fully cited subset. Freeze it
@@ -1794,7 +1819,7 @@ class IntelligenceService:
         await self._check_cancel(check_cancel)
         result, used, grounding = await self._generate_grounded(_prompt("qa_v5"), {
             "task": mode, "question": question, "selected_document_ids": document_ids,
-            "require_request_coverage": True, "dimension_reading_sets": reading_sets,
+            "require_request_coverage": True, "allow_isolated_claim_repair":True, "dimension_reading_sets": reading_sets,
             "required_training_tasks": requirements,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,
@@ -2007,6 +2032,7 @@ class IntelligenceService:
                 _prompt("review_synthesis_v1" if kind == "review" else "synthesis_v5"), {
                 "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
                 "require_request_coverage": kind == "draft",
+                "allow_isolated_claim_repair":kind == "draft",
                 "external_freshness_verified": False,
                 **({"dimension_reading_sets": reading_sets,
                     "required_training_tasks": review_state.get("training_requirements", {})} if kind == "review" else {}),

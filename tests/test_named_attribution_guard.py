@@ -124,7 +124,8 @@ def test_guard_records_denial_repairs_then_keeps_judge_isolated(tmp_path):
     assert "orion" in provider.calls[1][0]["correction"]["problems"][0]
     assert audit["claim_model_calls"] == 1 and audit["coverage_model_calls"] == 1
     judge = next(payload for payload, model in provider.calls if model is ClaimSupportPayload)
-    assert set(judge) == {"task", "claim_index", "claim"}
+    assert set(judge) == {"task", "claim_index", "claim", "response_kind"}
+    assert judge["response_kind"] == "qa"
     assert judge["claim"] == good.claims[0].model_dump()
 
 
