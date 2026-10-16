@@ -27,7 +27,7 @@ from .structure import extract_structure
 # PyMuPDF objects must never be used concurrently by API threads. The parser runs
 # in a separate process; its lock therefore does not block API rendering.
 MUPDF_LOCK = threading.RLock()
-PARSER_VERSION = f"pymupdf-{pymupdf.VersionBind}/text-blocks-v2"
+PARSER_VERSION = f"pymupdf-{pymupdf.VersionBind}/text-blocks-v3-column-order"
 
 
 class LibraryError(ValueError):
@@ -658,6 +658,7 @@ class Library:
     def _page_blocks(source_page: pymupdf.Page, textpage=None) -> list[dict]:
         width, height = source_page.rect.width, source_page.rect.height
         result = []
+        unrotated_boxes = {}
         for raw in source_page.get_text("blocks", sort=True, textpage=textpage):
             if raw[6] != 0 or not raw[4].strip():
                 continue
@@ -668,8 +669,15 @@ class Library:
                 continue
             bbox = [max(0.0, min(1.0, value)) for value in
                     (rect.x0 / width, rect.y0 / height, rect.x1 / width, rect.y1 / height)]
-            result.append({"id": uuid4().hex, "text": raw[4].strip(), "bbox": bbox})
-        return result
+            item={"id": uuid4().hex, "text": raw[4].strip(), "bbox": bbox}
+            result.append(item)
+            unrotated_boxes[item["id"]]=raw[:4]
+        # Detect columns in the PDF text coordinate system, before display
+        # rotation. Only ordinal changes; quotes and rendered bbox stay intact.
+        from .reading_order import reading_order
+        order=reading_order(result,unrotated_boxes,source_page.cropbox.width)
+        by_id={item["id"]:item for item in result}
+        return [by_id[identifier] for identifier in order["region_ids"]]
 
     def _save_page(self, run_id: str, page: int, width: float, height: float,
                    rotation: int, blocks: list[dict], error: str | None = None,
