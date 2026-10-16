@@ -345,7 +345,12 @@ def test_literal_clause_repair_preserves_supported_required_fact_but_still_requi
     class Inspect(Sequence):
         async def generate(self,prompt,payload,model):
             if model is ClaimSupportPayload:
-                assert set(payload)=={'task','claim_index','claim','response_kind'}
+                expected={'task','claim_index','claim','response_kind'}
+                if 'citation_provenance' in payload:
+                    expected.add('citation_provenance')
+                    assert len(payload['citation_provenance'])==len(payload['claim']['citations'])
+                    assert all(set(c)=={'citation_id','document_id','run_id','block_id','page','bbox'} for c in payload['citation_provenance'])
+                assert set(payload)==expected
             if model is CoveragePayload:
                 assert payload['claims'][0]['text']=='ORION预测被移除的词'
             return await super().generate(prompt,payload,model)
