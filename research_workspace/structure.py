@@ -84,6 +84,10 @@ def extract_structure(blocks: list[dict], document_id: str, run_id: str) -> dict
     if reference_start is not None:
         for line in lines[reference_start + 1:reference_end]:
             match = _REF_ENTRY.match(line["text"])
+            # An author-year entry may wrap its publication year onto a new
+            # line. "2020." is a year here, not numbered reference 2020.
+            if match and match[2] and 1900 <= int(match[2]) <= 2099:
+                match = None
             if match:
                 current = {"id": f"reference-{len(references) + 1}", "label": match[1] or match[2],
                            "text": line["text"], "evidence": _anchor(line["block"], line["start"], line["end"]),
@@ -92,6 +96,9 @@ def extract_structure(blocks: list[dict], document_id: str, run_id: str) -> dict
             elif current:
                 current["text"] += " " + line["text"]
                 current["continuation_evidence"].append(_anchor(line["block"], line["start"], line["end"]))
+    if not references and reference_start is not None:
+        from .author_year import bibliography
+        references=bibliography(lines[reference_start+1:reference_end],_anchor)
     for reference in references:
         doi = re.search(r"\b10\.\d{4,9}/[^\s<>]+", reference["text"], re.I)
         arxiv = re.search(r"(?:arxiv\s*:\s*|arxiv\.org/(?:abs|pdf)/)(\d{4}\.\d{4,5}|[a-z][a-z.\-]+/\d{7})(?:v\d+)?", reference["text"], re.I)
@@ -99,7 +106,7 @@ def extract_structure(blocks: list[dict], document_id: str, run_id: str) -> dict
         reference.update(doi=doi[0].rstrip(".,;)") if doi else None,
                          arxiv_id=arxiv[1].lower() if arxiv else None,
                          year=int(years[0]) if years else None,
-                         method="numbered_reference_heuristic")
+                         method=reference.get('method','numbered_reference_heuristic'))
     by_label = {reference["label"]: reference for reference in references}
     citations = []
     # Reference-list brackets are not treated as in-text citation occurrences.
@@ -123,6 +130,9 @@ def extract_structure(blocks: list[dict], document_id: str, run_id: str) -> dict
                 if label in by_label:
                     by_label[label]["citation_ids"].append(citation["id"])
 
+    from .author_year import link_citations
+    citations.extend(link_citations(body_lines,references,_anchor,len(citations)))
+
     abstract = None
     abstract_start = next((i for i, line in enumerate(lines)
                            if re.fullmatch(r"abstract|摘要", line["text"], re.I)), None)
@@ -142,12 +152,12 @@ def extract_structure(blocks: list[dict], document_id: str, run_id: str) -> dict
                         "evidence": [_anchor(line["block"], line["start"], line["end"]) for line in collected],
                         "method": "abstract_heading_heuristic", "truncated": truncated}
     unavailable = ["author_affiliations", "latex_formulas", "table_cell_structure", "figure_structure",
-                   "author_year_citation_alignment"]
+                   "complex_or_cross_line_author_year_alignment"]
     if not references:
         unavailable.append("numbered_references_not_detected")
-    return {"document_id": document_id, "run_id": run_id, "method": "heuristic", "version": "structure-v1",
+    return {"document_id": document_id, "run_id": run_id, "method": "heuristic", "version": "structure-v2-author-year",
             "headings": headings, "references": references, "citations": citations, "abstract": abstract,
             "unavailable_fields": unavailable,
             "limitations": ["标题与参考文献使用规则识别，可能漏检或误判，需核对原文。",
                             "位置精度为已保存的文本块；字符偏移帮助定位块内内容，不声称精确字形坐标。",
-                            "当前支持数字型引用标记；作者年份型引用和复杂书目仍未可靠解析。"]}
+                            "作者年份书目按首行作者、年份与悬挂缩进识别；跨行引文、同作者同年份歧义及复杂书目保持未确认。"]}

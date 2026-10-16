@@ -185,3 +185,20 @@ def test_pagerank_isolated_and_dangling_mass():
     result = pagerank(["a", "b"], [{"source": "a", "target": "b"}])
     assert result["b"] > result["a"]
     assert sum(result.values()) == pytest.approx(1)
+
+
+def test_real_title_split_into_adjacent_pdf_blocks_has_all_identity_anchors(library):
+    title='Reliable Evidence Retrieval for Scientific Research'
+    with pymupdf.open() as pdf:
+        page=pdf.new_page()
+        page.insert_text((40,60),'Reliable Evidence Retrieval for')
+        page.insert_text((100,80),'Scientific Research')
+        page.insert_text((40,140),'Actual paper body.')
+        target=library.import_document(pdf.tobytes(),'split-title.pdf')['document']
+    library.process_next_job();library.update_metadata(target['id'],title=title)
+    source=import_paper(library,'Applications of Scientific Evidence Retrieval',references='[1] Example Author. '+title+'. 2024.')
+    graph=GraphService(library).build([source['id'],target['id']])
+    assert len(graph['edges'])==1 and graph['edges'][0]['target']==target['id']
+    node=next(n for n in graph['nodes'] if n['id']==target['id'])
+    assert len(node['evidence'])==2
+    assert all(e['document_id']==target['id'] for e in node['evidence'])

@@ -37,6 +37,28 @@ def _contains_title(text: str, title: str) -> bool:
     return f" {title} " in f" {normalized_title(text)} "
 
 
+def _title_proof(blocks: list[dict], title: str) -> list[dict]:
+    """A PDF title may span adjacent blocks; metadata alone is never proof."""
+    if not _specific_title(title):
+        return []
+    for start in range(len(blocks)):
+        group=[]
+        for block in blocks[start:start+4]:
+            box=json.loads(block['bbox']) if isinstance(block['bbox'],str) else block['bbox']
+            if group:
+                previous=group[-1]
+                prior=json.loads(previous['bbox']) if isinstance(previous['bbox'],str) else previous['bbox']
+                if block['page']!=previous['page'] or box[1]-prior[3]>.06:
+                    break
+            group.append(block)
+            combined=' '.join(item['text'] for item in group)
+            if len(combined)>1600:
+                break
+            if _contains_title(combined,title):
+                return group
+    return []
+
+
 def _evidence(block: dict, document_id: str, run_id: str) -> dict:
     bbox = block["bbox"]
     return {"document_id": document_id, "run_id": run_id, "page": block["page"],
@@ -161,7 +183,7 @@ class GraphService:
             document_blocks[doc["id"]] = blocks
             first_page = [block for block in blocks if block["page"] == 1]
             title = normalized_title(doc["title"])
-            title_proof = [block for block in first_page if _specific_title(title) and _contains_title(block["text"], title)]
+            title_proof = _title_proof(first_page,title)
             node_evidence = [_evidence(block, doc["id"], run["id"]) for block in title_proof]
             identity = {"titles": {title} if title_proof else set(), "arxiv_ids": set(), "dois": set()}
             for block in first_page:
