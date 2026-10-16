@@ -455,7 +455,9 @@
             if (imageUrl) life.revoke(imageUrl); imageUrl = url;
               if (scriptUrl) life.revoke(scriptUrl); scriptUrl = life.blob(script.script, "text/x-python");
             const image = node("img", "rs-chart-image"); image.src = url; image.alt = "根据任务中的方案节点实际渲染的结构图";
-            preview.replaceChildren(image, link("下载SVG结构图", url, `architecture-${job.id}.svg`), link("下载Python复现脚本", scriptUrl, `architecture-${job.id}.py`));
+            const downloads = node("div", "rs-actions");
+            downloads.append(link("下载SVG结构图", url, `architecture-${job.id}.svg`), link("下载Python复现脚本", scriptUrl, `architecture-${job.id}.py`));
+            preview.replaceChildren(image, downloads);
           } catch (error) { life.show(error.message, true); } finally { if (life.alive) renderButton.disabled = false; }
         });
       }
