@@ -203,3 +203,21 @@ def test_corpus_counts_are_not_mistaken_for_measured_performance_results():
     c=answer("ORION训练使用36M句。").claims[0]
     c.citations[0].quote="Our model trains on 36M sentences."
     assert IntelligenceService._missing_quantitative_result_scope(c,{"orion"})==[]
+
+
+def test_public_response_catalog_does_not_offer_unfinished_page_tail_as_a_citable_fact(tmp_path):
+    prose=source().model_copy(update={"text":"ORION predicts removed words. The objective is to predict the original vocabulary id of the masked"})
+    class Inspect:
+        configured=True
+        async def generate(self,prompt,payload,model):
+            if model is AnswerPayload:
+                spans=payload["evidence"][0]["citation_spans"]
+                assert spans==[{"quote_id":"Q1","text":"ORION predicts removed words."}]
+                return AnswerPayload(status="answered",claims=[{"text":"ORION predicts removed words.","citations":[{"evidence_id":"E_scope","quote_id":"Q1"}]}])
+            assert model is CoveragePayload
+            return CoveragePayload(unverified_statements=[],missing_aspects=[])
+    service=IntelligenceService(Library(tmp_path),Inspect())
+    result,_,g=asyncio.run(service._generate_grounded("fixture",{"task":"qa","question":"Prediction?",
+        "allow_isolated_claim_repair":True,"require_request_coverage":True},AnswerPayload,[prose]))
+    assert result.claims[0].citations[0].quote=="ORION predicts removed words."
+    assert g["citation_catalog_policy"].startswith("omit_unfinished_trailing_prose")

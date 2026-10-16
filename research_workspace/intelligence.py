@@ -1053,7 +1053,7 @@ class IntelligenceService:
                 if remaining:
                     spans.append(remaining)
             catalog[block.evidence_id] = {f"Q{index + 1}": text for index, text in enumerate(spans)}
-            # Reviews should not select a visibly unfinished final sentence after
+            # Responses should not select a visibly unfinished final sentence after
             # complete prose (common at PDF page boundaries). Keep standalone
             # headings, formulas and tables; this is not a general grammar test.
             complete = lambda text: bool(re.search(r'''[.!?。！？]["'”’\)\]]*(?:\d{1,3}|\[\d+\])?\s*$''', text))
@@ -1526,7 +1526,9 @@ class IntelligenceService:
         frozen_review_message: str | None = None
         isolated_repair_result = None
         catalog = self._citation_spans(evidence, omit_trailing_fragment=(
-            payload.get("task") == "review" and output_model is SynthesisPayload))
+            structured_review or bool(payload.get("allow_isolated_claim_repair"))))
+        if payload.get("allow_isolated_claim_repair"):
+            audit["citation_catalog_policy"] = "omit_unfinished_trailing_prose; preserve_original_ids_and_standalone_headings_formulas_tables"
         named_identifiers = self._named_attribution_identifiers(catalog)
         payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
             {"quote_id": quote_id, "text": text} for quote_id, text in catalog[block.evidence_id].items()]}
