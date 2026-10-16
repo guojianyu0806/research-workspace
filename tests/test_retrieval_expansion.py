@@ -9,7 +9,7 @@ import pytest
 
 from research_workspace.intelligence import (
     AnswerPayload, ChatCompletionProvider, IntelligenceService, ModelConfig,
-    ModelOutputError, RetrievalQueryPayload, ReviewClaimCoveragePayload, ReviewCoveragePayload, SynthesisPayload,
+    ModelOutputError, RetrievalQueryPayload, ReviewClaimCoveragePayload, ReviewCoveragePayload, SynthesisPayload, CoveragePayload,
 )
 from research_workspace.jobs import TaskCancelled
 from research_workspace.library import Library, LibraryError
@@ -57,6 +57,8 @@ class MockProvider:
                 self.on_expansion()
             return output_model.model_validate({"terms": self.terms})
         assert "query_terms" not in payload and "queries" not in payload
+        if output_model is CoveragePayload:
+            return CoveragePayload(unverified_statements=[],missing_aspects=[])
         if output_model is ReviewClaimCoveragePayload:
             current = payload["claim"]
             return ReviewClaimCoveragePayload(answers=[{
@@ -123,7 +125,7 @@ def test_answer_preserves_original_question_and_uses_only_real_evidence(library)
     result = run(IntelligenceService(library, provider).answer("层归一化的作用是什么？", [doc]))
     assert result["status"] == "answered"
     assert result["retrieval"]["mode"] == "bilingual_query_expansion_bm25_rrf"
-    assert [model for model, _ in provider.calls] == [RetrievalQueryPayload, AnswerPayload]
+    assert [model for model, _ in provider.calls] == [RetrievalQueryPayload, AnswerPayload, CoveragePayload]
     assert provider.calls[1][1]["question"] == "层归一化的作用是什么？"
     assert result["sources"] and all(source["document_id"] == doc for source in result["sources"])
     assert all(not source["evidence_id"].startswith("query") for source in result["sources"])

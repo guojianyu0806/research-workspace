@@ -1612,7 +1612,7 @@ class IntelligenceService:
                 preview_supported_subset = (structured_review and bool(coverage_claims)
                     and (coverage_source_documents == set(coverage_documents)
                          or (shared_state is not None and coverage_source_documents.issubset(set(coverage_documents)))))
-                if (not problems or preview_supported_subset) and (structured_review or not all_direct):
+                if (not problems or preview_supported_subset) and (structured_review or not all_direct or payload.get("require_request_coverage")):
                     await self._check_cancel(check_cancel)
                     coverage_input = {
                         "task": "verify_response_coverage", "request": payload.get("question") or payload.get("instruction", ""),
@@ -1755,8 +1755,31 @@ class IntelligenceService:
         if mode == "compare" and len(document_ids) < 2:
             raise LibraryError("跨文献比较需要至少两篇文献。")
         retrieval = await self.retrieve_for_question(question, document_ids, limit=max(12, len(document_ids)),
-                                                     check_cancel=check_cancel)
+                                                     check_cancel=check_cancel, include_attribution_context=True)
         evidence = retrieval["evidence"]
+        snapshot = retrieval.get("_snapshot_blocks", evidence)
+        names = subject_hints(self, snapshot) if snapshot else {}
+        explicit_aspects = request_aspects(question, [])
+        reading_sets, requirements = [], {}
+        if explicit_aspects:
+            evidence, dimensions = supplement_review_evidence(self, snapshot, evidence,
+                retrieval.get("queries", []), request=question,
+                max_evidence=min(64,max(24,8*len(document_ids)*len(explicit_aspects))), subject_names=names)
+            retrieval["response_dimension_search"] = dimensions
+            spans = self._citation_spans(evidence, omit_trailing_fragment=True)
+            for document in document_ids:
+                own = [block for block in evidence if block.document_id == document]
+                requirement = training_task_requirements(self,
+                    [block for block in snapshot if block.document_id == document], names.get(document, []))
+                if requirement:
+                    requirements[document] = requirement
+                for aspect in explicit_aspects:
+                    focused = focus_review_evidence(self, own, aspect, names.get(document, []))
+                    reading_sets.append({"document_id":document,"aspect":aspect,
+                        "preferred_evidence_ids":[block.evidence_id for block in focused],
+                        "direct_training_relation_spans":[{"evidence_id":block.evidence_id,"quote_id":qid,"text":text}
+                            for block in focused for qid,text in spans[block.evidence_id].items()
+                            if directly_named_training(text,names.get(document,[]),self)]})
         retrieval_audit = {key: value for key, value in retrieval.items() if key not in {"evidence", "trace"} and not key.startswith("_")}
         represented = {block.document_id for block in evidence}
         missing = [value for value in document_ids if value not in represented]
@@ -1771,6 +1794,8 @@ class IntelligenceService:
         await self._check_cancel(check_cancel)
         result, used, grounding = await self._generate_grounded(_prompt("qa_v5"), {
             "task": mode, "question": question, "selected_document_ids": document_ids,
+            "require_request_coverage": True, "dimension_reading_sets": reading_sets,
+            "required_training_tasks": requirements,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,
             required_documents=document_ids if mode == "compare" else None)
@@ -1981,6 +2006,7 @@ class IntelligenceService:
             result, used, grounding = await self._generate_grounded(
                 _prompt("review_synthesis_v1" if kind == "review" else "synthesis_v5"), {
                 "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
+                "require_request_coverage": kind == "draft",
                 "external_freshness_verified": False,
                 **({"dimension_reading_sets": reading_sets,
                     "required_training_tasks": review_state.get("training_requirements", {})} if kind == "review" else {}),

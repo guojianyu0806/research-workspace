@@ -50,6 +50,8 @@ def library(tmp_path: Path):
 
 def cited_answer(request):
     data = json.loads(json.loads(request.content)["messages"][1]["content"])
+    if data.get("task") == "verify_response_coverage":
+        return envelope({"unverified_statements":[],"missing_aspects":[]})
     return envelope({"status": "answered", "claims": [
         {"text": item["text"], "citations": [{"evidence_id": item["evidence_id"], "quote": item["text"]}]}
         for item in data["evidence"]

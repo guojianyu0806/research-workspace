@@ -92,3 +92,50 @@ def test_common_architecture_descriptors_are_not_treated_as_named_models():
         "Recurrent models are sequential. Convolutional models use kernels. ORION models use attention. The Transformer model uses attention."}})
     assert "orion" in names and "transformer" in names
     assert not {"recurrent","convolutional"}.intersection(names)
+
+
+def test_exact_quotes_still_require_requested_coverage_when_public_answer_requires_it(tmp_path):
+    initial=answer(source().text.split('. ')[0]+'.')
+    initial.claims[0].citations[0].quote=initial.claims[0].text
+    fixed=answer("ORION预测被移除的词。","Q2")
+    provider=Sequence([initial,CoveragePayload(unverified_statements=[],missing_aspects=["Prediction objective was not answered."]),
+        fixed,ClaimSupportPayload(verdict="supported",reason="Q2 explicitly names ORION and its prediction task."),
+        CoveragePayload(unverified_statements=[],missing_aspects=[])])
+    service=IntelligenceService(Library(tmp_path),provider)
+    result,_,g=asyncio.run(service._generate_grounded("fixture",{"task":"qa","question":"Prediction objective?",
+        "require_request_coverage":True},AnswerPayload,[source()]))
+    assert result.claims[0].text==fixed.claims[0].text
+    assert len(g["response_coverage"])==2
+    assert g["response_coverage"][0]["missing_aspects"]
+
+
+def test_public_comparison_adds_actual_main_task_definitions_from_one_frozen_snapshot(tmp_path,monkeypatch):
+    def block(key,text,y):return source().model_copy(update={"evidence_id":"E_"+key,"block_id":key,
+        "text":text,"bbox":[.1,y,.8,y+.04]})
+    architecture=block("architecture","ORION models use attention.",.1)
+    scope=block("scope","We pre-train ORION with two unsupervised tasks described below.",.2)
+    word=block("word","Task #1: Word Prediction\nWe predict removed words from context.",.3)
+    order=block("order","Task #2: Sentence Order\nWe classify whether sentence B follows A.",.4)
+    other=block("other","NOVA models use attention.",.1).model_copy(update={"document_id":"other"})
+    snapshot=[architecture,scope,word,order,other]
+    class Inspect:
+        configured=True
+        async def generate(self,prompt,payload,model):
+            if model is AnswerPayload:
+                assert payload["require_request_coverage"]
+                ids={b["evidence_id"] for b in payload["evidence"]}
+                assert {"E_scope","E_word","E_order"}<=ids
+                assert all(b["run_id"]=="frozen" for b in payload["evidence"])
+                assert len(payload["required_training_tasks"]["doc"]["tasks"])==2
+                return AnswerPayload(status="answered",claims=[{"text":b.text,"citations":[{"evidence_id":b.evidence_id,"quote_id":"Q1"}]} for b in [architecture,other]])
+            assert model is CoveragePayload
+            return CoveragePayload(unverified_statements=[],missing_aspects=[])
+    service=IntelligenceService(Library(tmp_path),Inspect())
+    monkeypatch.setattr(service,"_validate_documents",lambda x:x)
+    async def retrieve(*args,**kwargs):
+        assert kwargs["include_attribution_context"]
+        return {"evidence":[architecture,other],"queries":[],"trace":[],"_snapshot_blocks":snapshot}
+    monkeypatch.setattr(service,"retrieve_for_question",retrieve)
+    monkeypatch.setattr(service,"_blocks",lambda *x:(_ for _ in ()).throw(AssertionError("Snapshot reopened")))
+    result=asyncio.run(service.answer("比较模型结构和训练目标。",["doc","other"],mode="compare"))
+    assert result["retrieval"]["response_dimension_search"]["selected_runs"]=={"doc":"frozen","other":"frozen"}
