@@ -27,3 +27,12 @@ def test_author_initials_do_not_truncate_compact_affiliation_email_block():
     original=b('header','Alice N. Example\nExample University\nalice@example.org')
     spans=IntelligenceService._citation_spans([original],omit_trailing_fragment=True)
     assert spans['header']=={'Q1':original.text}
+
+
+def test_bounded_paragraph_quote_keeps_model_antecedent_and_training_scope():
+    text='On translation, the ORION big model scored 28.4. This model uses the listed configuration. Training took 3.5 days.'
+    source=b('result',text,page=8)
+    catalog=IntelligenceService._citation_spans([source],omit_trailing_fragment=True)['result']
+    assert catalog['Q3']=='Training took 3.5 days.' and catalog['Q4']==text
+    fragment=source.model_copy(update={'text':text+' This paragraph continues'})
+    assert fragment.text not in IntelligenceService._citation_spans([fragment],omit_trailing_fragment=True)['result'].values()

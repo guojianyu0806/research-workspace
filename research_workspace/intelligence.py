@@ -1099,6 +1099,12 @@ class IntelligenceService:
             if (omit_trailing_fragment and len(spans) > 1 and not complete(spans[-1])
                     and any(complete(text) for text in spans[:-1])):
                 del catalog[block.evidence_id][f"Q{len(spans)}"]
+            # A bounded complete paragraph retains antecedents for statements
+            # such as "this model" or "Training took" without changing source.
+            paragraph=block.text.strip()
+            if (len(spans)>1 and len(paragraph)<=1800 and complete(paragraph)
+                    and re.search(r'\b(?:this|these|our|their)\b|\bTraining took\b',paragraph,re.I)):
+                catalog[block.evidence_id][f"Q{len(spans)+1}"]=paragraph
         return catalog
 
     @staticmethod
@@ -1567,7 +1573,7 @@ class IntelligenceService:
         catalog = self._citation_spans(evidence, omit_trailing_fragment=(
             structured_review or bool(payload.get("allow_isolated_claim_repair"))))
         if payload.get("allow_isolated_claim_repair"):
-            audit["citation_catalog_policy"] = "omit_unfinished_trailing_prose; preserve_original_ids_and_standalone_headings_formulas_tables"
+            audit["citation_catalog_policy"] = "omit_unfinished_trailing_prose; preserve_original_ids_and_standalone_headings_formulas_tables; bounded_complete_antecedent_paragraph_v1"
         named_identifiers = self._named_attribution_identifiers(catalog)
         payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
             {"quote_id": quote_id, "text": text} for quote_id, text in catalog[block.evidence_id].items()]}
