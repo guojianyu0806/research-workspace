@@ -1538,8 +1538,8 @@ class IntelligenceService:
         frozen_coverage_aspects: list[str] | None = state.get("coverage_aspects")
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if not structured_review:
-            audit["claim_support_prompt_version"] = "claim-support-v1.6"
-            audit["coverage_prompt_version"] = "coverage-v2.0"
+            audit["claim_support_prompt_version"] = "claim-support-v1.7"
+            audit["coverage_prompt_version"] = "coverage-v2.1"
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.2"
@@ -1666,11 +1666,15 @@ class IntelligenceService:
                         # The judge must not see neighbouring claims, titles, the
                         # question, or unquoted parts of the source block. These
                         # could supply precisely the support missing from this card.
+                        from .question_facets import header_author_links
+                        by_id={b.evidence_id:b for b in evidence}
+                        own_layout=header_author_links([by_id[q.evidence_id].model_copy(update={'text':q.quote}) for q in claim.citations])
                         verdict = await self.provider.generate(_prompt("review_claim_support_v1" if structured_review else "claim_support_v1"), {
                             "task": "verify_single_claim", "claim_index": index, "claim": claim_data,
                             "response_kind": payload.get("task"),
                             "citation_provenance": [{k:c[k] for k in ('citation_id','document_id','run_id','block_id','page','bbox')}
                                 for c in self._review_claim_identity(claim,evidence)['citations']],
+                            **({'bibliographic_layout_links':own_layout} if own_layout else {}),
                         }, ClaimSupportPayload)
                         await self._check_cancel(check_cancel)
                         support_cache[cache_key] = verdict
@@ -1917,6 +1921,7 @@ class IntelligenceService:
             "task": mode, "question": question, "selected_document_ids": document_ids,
             "require_request_coverage": True, "allow_isolated_claim_repair":True, "dimension_reading_sets": reading_sets,
             "required_training_tasks": requirements,
+            "bibliographic_layout_links":facet_context['bibliographic_layout_links'],
             "coverage_contract":coverage_contract,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,

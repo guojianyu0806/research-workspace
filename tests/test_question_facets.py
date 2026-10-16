@@ -1,7 +1,7 @@
 import asyncio
 from research_workspace.intelligence import IntelligenceService,Evidence
 from research_workspace.library import Library
-from research_workspace.question_facets import supplement_question_facets
+from research_workspace.question_facets import supplement_question_facets,header_author_links
 
 
 def b(name,text,page=1):
@@ -36,3 +36,44 @@ def test_bounded_paragraph_quote_keeps_model_antecedent_and_training_scope():
     assert catalog['Q3']=='Training took 3.5 days.' and catalog['Q4']==text
     fragment=source.model_copy(update={'text':text+' This paragraph continues'})
     assert fragment.text not in IntelligenceService._citation_spans([fragment],omit_trailing_fragment=True)['result'].values()
+
+
+def test_header_pairs_require_unique_geometry_same_version_and_visible_names():
+    author=b('name','Alice Example∗').model_copy(update={'bbox':[.2,.2,.3,.22]})
+    institution=b('org','Example University\nalice@example.org').model_copy(update={'bbox':[.18,.225,.32,.26]})
+    links=header_author_links([author,institution])
+    assert len(links)==1 and links[0]['author_evidence_id']=='name' and links[0]['affiliation_evidence_id']=='org'
+    assert not header_author_links([author,institution.model_copy(update={'run_id':'other'})])
+    assert not header_author_links([author,institution.model_copy(update={'bbox':[.6,.225,.8,.26]})])
+    assert not header_author_links([author,institution,institution.model_copy(update={'evidence_id':'ambiguous'})])
+    assert not header_author_links([author.model_copy(update={'text':'No author name quoted.'}),institution])
+
+
+def test_author_marker_footnote_is_retrieved_from_below_abstract(tmp_path):
+    service=IntelligenceService(Library(tmp_path))
+    header=b('author','Alice Example∗†\nExample University\nalice@example.org')
+    footnote=b('footnote','†Work performed while at Example Research.')
+    evidence,meta=supplement_question_facets(service,[header,b('abstract','Abstract'),b('body','Unrelated abstract.'),footnote],[],
+        '作者所属机构',['doc'],{})
+    assert 'footnote' in {x.evidence_id for x in evidence} and footnote.text==next(x.text for x in evidence if x.evidence_id=='footnote')
+
+
+def test_isolated_reviewer_receives_only_own_cited_header_layout_pair(tmp_path):
+    from research_workspace.intelligence import AnswerPayload,ClaimSupportPayload,CoveragePayload
+    author=b('E_name','Alice Example∗').model_copy(update={'bbox':[.2,.2,.3,.22]})
+    institution=b('E_org','Example University\nalice@example.org').model_copy(update={'bbox':[.18,.225,.32,.26]})
+    hidden=b('E_hidden','Forbidden uncited author detail.')
+    class Provider:
+        configured=True
+        def __init__(self):self.seen=[]
+        async def generate(self,prompt,payload,model):
+            self.seen.append((payload,model))
+            if model is AnswerPayload:return AnswerPayload(status='answered',claims=[{'text':'Alice Example所属机构标注为Example University。',
+                'citations':[{'evidence_id':'E_name','quote_id':'Q1'},{'evidence_id':'E_org','quote_id':'Q1'}]}])
+            if model is ClaimSupportPayload:return ClaimSupportPayload(verdict='supported',reason='Own quoted author and uniquely aligned affiliation.')
+            return CoveragePayload(unverified_statements=[],missing_aspects=[])
+    provider=Provider();service=IntelligenceService(Library(tmp_path),provider)
+    asyncio.run(service._generate_grounded('fixture',{'task':'qa','question':'作者机构'},AnswerPayload,[author,institution,hidden]))
+    review=next(p for p,m in provider.seen if m is ClaimSupportPayload)
+    assert review['bibliographic_layout_links'][0]['author_evidence_id']=='E_name'
+    assert 'Forbidden' not in str(review) and 'E_hidden' not in str(review)
