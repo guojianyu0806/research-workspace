@@ -63,7 +63,8 @@ def test_unconfigured_service_never_invokes_transport(library):
     adapter = ChatCompletionProvider(ModelConfig(), transport=httpx.MockTransport(lambda req: calls.append(req)))
     service = IntelligenceService(library, adapter)
     assert service.capabilities()["configured"] is False
-    assert set(service.capabilities()) == {"configured", "prompt_version", "retrieval", "max_documents", "external_freshness_verification"}
+    assert set(service.capabilities()) == {"configured", "prompt_version", "retrieval", "semantic", "max_documents", "external_freshness_verification"}
+    assert service.capabilities()['semantic']['status']=='disabled'
     with pytest.raises(ModelNotConfigured):
         run(service.answer("Any question?", ["unknown"]))
     assert calls == []

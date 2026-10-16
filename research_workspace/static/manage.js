@@ -317,6 +317,7 @@
         item.append(el("span", "rm-badge", "待确认"), el("h4", "", other.title || other.filename));
         const reasons = [];
         if (candidate.reason === "same_arxiv_id") reasons.push("arXiv论文编号一致");
+        if (Number.isFinite(candidate.semantic_similarity)) reasons.push(`开篇语义相似 ${Math.round(candidate.semantic_similarity * 100)}%（仅为版本候选）`);
         if (Number.isFinite(candidate.body_similarity)) reasons.push(`正文指纹重合 ${Math.round(candidate.body_similarity * 100)}%`);
         if (candidate.arxiv?.version) reasons.push(`候选标注 v${candidate.arxiv.version}`);
         item.append(el("p", "rm-muted", reasons.join(" · ")));

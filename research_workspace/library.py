@@ -339,27 +339,36 @@ class Library:
         shingles = {hashlib.blake2b(" ".join(tokens[i:i + 5]).encode(), digest_size=8).hexdigest()
                     for i in range(max(0, len(tokens) - 4))}
         return {"document": doc, "arxiv": identity, "shingles": shingles,
+                "body_preview": body[:1600],
                 "token_count": len(tokens), "body_sha256": hashlib.sha256(body.encode()).hexdigest() if body else None}
 
     def find_version_candidates(self, document_id: str) -> list[dict]:
         source = self._version_signature(document_id)
         candidates = []
-        for document in self.list_documents():
-            if document["id"] == document_id:
-                continue
-            other = self._version_signature(document["id"])
+        others=[self._version_signature(d['id']) for d in self.list_documents() if d['id']!=document_id]
+        try:
+            from .semantic import document_similarities
+            semantic_scores=document_similarities(self,[source,*others])
+        except (ImportError,OSError,ValueError,RuntimeError):
+            semantic_scores={}
+        for other in others:
+            document=other['document']
             same_id = bool(source["arxiv"] and other["arxiv"] and source["arxiv"]["id"] == other["arxiv"]["id"])
             union = source["shingles"] | other["shingles"]
             similarity = len(source["shingles"] & other["shingles"]) / len(union) if union else 0
             exact_body = bool(source["body_sha256"] and source["body_sha256"] == other["body_sha256"])
             enough_body = min(source["token_count"], other["token_count"]) >= 60
-            if not (same_id or (enough_body and (similarity >= 0.8 or exact_body))):
+            semantic_score=semantic_scores.get(document['id'])
+            semantic_candidate=(semantic_score is not None and semantic_score>=.95 and similarity>=.25)
+            if not (same_id or (enough_body and (similarity >= 0.8 or exact_body or semantic_candidate))):
                 continue
             conflicting_ids = bool(source["arxiv"] and other["arxiv"] and not same_id)
             candidates.append({"document": document, "arxiv": other["arxiv"],
                                "source_arxiv": source["arxiv"], "body_similarity": round(similarity, 4),
                                "body_fingerprint_equal": exact_body, "conflicting_identifiers": conflicting_ids,
-                               "reason": "same_arxiv_id" if same_id else "high_body_overlap",
+                               "semantic_similarity":round(semantic_score,5) if semantic_score is not None else None,
+                               "semantic_scope":"first_1600_normalized_body_chars; advisory_only" if semantic_score is not None else None,
+                               "reason": "same_arxiv_id" if same_id else "high_body_overlap" if similarity>=.8 or exact_body else "semantic_and_body_overlap",
                                "requires_confirmation": True,
                                "limitations": "正文重合和标识均为候选依据，不能自动证明同一论文。"})
         return sorted(candidates, key=lambda item: (item["reason"] == "same_arxiv_id", item["body_similarity"]), reverse=True)

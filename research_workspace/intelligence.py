@@ -432,13 +432,16 @@ def tokenize(text: str) -> list[str]:
 
 
 class IntelligenceService:
-    def __init__(self, library: Library, provider: ChatCompletionProvider | None = None):
+    def __init__(self, library: Library, provider: ChatCompletionProvider | None = None, *, semantic=None):
         self.library = library
         self.provider = provider if provider is not None else ChatCompletionProvider()
+        from .semantic import SemanticIndex
+        self.semantic = semantic if semantic is not None else SemanticIndex(library)
 
     def capabilities(self) -> dict:
         return {"configured": self.provider.configured, "prompt_version": PROMPT_VERSION,
-                "retrieval": "bilingual_query_expansion_bm25_rrf", "max_documents": MAX_DOCUMENTS,
+                "retrieval": "bm25_dense_rrf" if self.semantic.status()['status']=='ready' else "bilingual_query_expansion_bm25_rrf",
+                "semantic": self.semantic.status(), "max_documents": MAX_DOCUMENTS,
                 "external_freshness_verification": False}
 
     def _require_model(self) -> None:
@@ -946,6 +949,22 @@ class IntelligenceService:
             rankings.append(self._fair_blocks(opening, document_ids, MAX_EVIDENCE))
             weights.append(0.75)
             trace.append(self._trace("bibliographic_candidates", "作者/机构问题加入各文献最早可读页的有限文本块；这是版面候选，是否包含答案仍须原文支持。"))
+        # Only rank the original frozen snapshot. Vector similarity never
+        # supplies a quotation or changes the isolated fact-support checks.
+        await self._check_cancel(check_cancel)
+        try:
+            dense, semantic_info = await self.semantic.rank([q['text'] for q in queries], blocks,
+                limit=MAX_EVIDENCE, check_cancel=check_cancel)
+        except (ImportError, OSError, ValueError, RuntimeError):
+            dense=[];semantic_info={'status':'failed_fallback','error':'semantic_index_unavailable',
+                'fallback':'existing_bm25_and_query_expansion'}
+        await self._check_cancel(check_cancel)
+        canonical_dense={b.block_id:b for b in blocks}
+        dense=[canonical_dense[b.block_id].model_copy(update={'score':b.score}) for b in dense
+            if b.block_id in canonical_dense and math.isfinite(b.score) and -1.001<=b.score<=1.001]
+        if dense:
+            rankings.append(self._fair_blocks(dense, document_ids, MAX_EVIDENCE));weights.append(1.0)
+            trace.append(self._trace('dense_retrieval',f"本机向量模型在固定版本的{len(blocks)}个原文块上排序，向量只用于召回；返回内容仍须自身原文核验。"))
         if len(rankings) == 1:
             selected = self._fair_blocks(original, document_ids, limit)
             mode = "bm25_lexical"
@@ -1000,7 +1019,20 @@ class IntelligenceService:
             selected = self._fair_blocks(reserved + fused, document_ids, limit)
             mode = "bilingual_query_expansion_bm25_rrf" if len(queries) > 1 else "bm25_with_bibliographic_candidates"
             trace.append(self._trace("rank_fusion", f"对{len(rankings)}组候选进行RRF融合，去除篇内重复文本，兼顾正文质量、子问题和各篇文献；选出{len(selected)}个真实原文块。"))
+        if dense:
+            semantic_seeds=[]
+            for document_id in document_ids:
+                # A substantial paragraph continued from the previous page can
+                # carry the semantic answer even when its lexical quality is
+                # down-weighted. Keep it as a candidate, never as approved fact.
+                candidate=next((b for b in dense if b.document_id==document_id and b.score>=.6
+                    and self._evidence_quality(b,question,index[3])>=.35
+                    and len(self._search_terms(b.text))>=24),None)
+                if candidate:semantic_seeds.append(candidate)
+            selected=self._fair_blocks(semantic_seeds+selected,document_ids,limit)
+            semantic_info['reserved_block_ids']=[b.block_id for b in semantic_seeds]
         additions = self._attribution_context(queries, blocks, selected, document_ids, index) if include_attribution_context else []
+        if dense:mode='bilingual_bm25_dense_rrf' if len(queries)>1 else 'bm25_dense_rrf'
         selected.extend(additions)
         if include_attribution_context:
             trace.append(self._trace("attribution_context", f"从同一固定版本快照补充{len(additions)}个模型介绍或章节上下文块；各块保持独立来源，仍需逐条引用审核。"))
@@ -1012,6 +1044,7 @@ class IntelligenceService:
                 "_opening_candidates": self._excerpts(list(opening_by_document.values())),
                 "_snapshot_blocks": blocks,
                 "query_terms": [item["text"] for item in queries[1:]], "expansion": info,
+                "semantic":semantic_info,
                 "prompt_version": RETRIEVAL_PROMPT_VERSION, "trace": trace,
                 "selected_runs": {document_id: next((block.run_id for block in blocks if block.document_id == document_id), None)
                                   for document_id in document_ids},

@@ -13,6 +13,9 @@ try {
         if (-not $env:RESEARCH_OCR_LANG) { $env:RESEARCH_OCR_LANG = 'eng+chi_sim' }
     }
     Write-Host "研序本地工作台：http://127.0.0.1:$Port"
+    if (-not $env:RESEARCH_SEMANTIC_ENABLED -and (Test-Path -LiteralPath (Join-Path $projectDirectory 'data\models\semantic-model.json'))) {
+        $env:RESEARCH_SEMANTIC_ENABLED = 'auto'
+    }
     Write-Host '按 Ctrl+C 停止。本机默认空间与登录账号分别保存数据。'
     & $pythonExecutable -m uvicorn research_workspace.api:app --host 127.0.0.1 --port $Port --workers 1
     if ($LASTEXITCODE -ne 0) { throw "服务退出，代码：$LASTEXITCODE" }
