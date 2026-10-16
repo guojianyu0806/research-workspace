@@ -1075,7 +1075,11 @@ class IntelligenceService:
         for block in evidence:
             # Keep source characters exactly, including PDF hyphens and ligatures.
             # Sentence-sized spans give the reviewer enough context and bound JSON.
-            units = re.split(r"(?<=[.!?。！？])(?=\s+(?:[A-Z\u3400-\u9fff]|$))", block.text)
+            lines=[line.strip() for line in block.text.splitlines() if line.strip()]
+            author_contact=(block.page==1 and len(block.text)<=600 and lines
+                and re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',lines[-1]))
+            units = ([block.text] if author_contact else
+                re.split(r"(?<=[.!?。！？])(?=\s+(?:[A-Z\u3400-\u9fff]|$))", block.text))
             spans = []
             for unit in units:
                 remaining = unit.strip()
@@ -1856,6 +1860,9 @@ class IntelligenceService:
         evidence = retrieval["evidence"]
         snapshot = retrieval.get("_snapshot_blocks", evidence)
         names = subject_hints(self, snapshot) if snapshot else {}
+        from .question_facets import supplement_question_facets
+        evidence,facet_context=supplement_question_facets(self,snapshot,evidence,question,document_ids,names)
+        retrieval['question_facet_context']=facet_context
         explicit_aspects = request_aspects(question, [])
         positive_request=[part for part in re.split(r"[。；;，,]",question) if not re.search(
             r"不要|不用|无需|不必|不需要|不要求|勿|do not|no need|without|avoid",part,re.I)]
