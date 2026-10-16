@@ -67,6 +67,12 @@ def test_chart_and_diagram_use_real_csv_data(application):
         assert 'open("x"' in browser.get('/api/charts/'+chart['id']+'/py').text
         diagram = browser.post('/api/diagrams',json={'nodes':[{'id':'a','label':'Input'},{'id':'b','label':'Output'}], 'edges':[{'source':'a','target':'b'}]})
         assert diagram.status_code==200 and '<svg' in diagram.text
+        script = browser.post('/api/diagrams/script',json={'nodes':[{'id':'a','label':'Input'}],'edges':[]})
+        assert script.status_code==200
+        assert script.json()['overwrite_existing'] is False
+        assert 'open("x"' in script.json()['script']
+        assert browser.post('/api/diagrams/script',json={'nodes':[{'id':'a','label':'Input'}],
+            'edges':[{'source':'a','target':'missing'}]}).status_code==400
 
 
 def test_missing_model_does_not_enqueue_fake_result(application):

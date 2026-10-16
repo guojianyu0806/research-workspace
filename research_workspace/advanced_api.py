@@ -14,7 +14,7 @@ from .accounts import Accounts, AuthenticationError
 from .intelligence import IntelligenceService
 from .jobs import JobStore
 from .library import Library
-from .visualization import DataStudio, render_chart, render_diagram
+from .visualization import DataStudio, render_chart, render_diagram, export_diagram_script
 
 
 def library_for(request: Request) -> Library:
@@ -440,5 +440,10 @@ def build_router():
     @router.post('/diagrams')
     def diagram(body:DiagramInput,library:Library=Depends(library_for)):
         return Response(render_diagram(body.nodes,body.edges),media_type='image/svg+xml')
+
+    @router.post('/diagrams/script')
+    def diagram_script(body:DiagramInput,library:Library=Depends(library_for)):
+        return {'filename':'architecture.py','script':export_diagram_script(body.nodes,body.edges),
+            'runtime':'Python 3 standard library','output':'architecture.svg','overwrite_existing':False}
 
     return router

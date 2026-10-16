@@ -445,15 +445,17 @@
         const diagram = node("section", "rs-diagram-output");
         const renderButton = button("生成方案结构图"); const preview = node("div", "rs-image-output");
         diagram.append(node("h4", "", "待验证的方案结构"), renderButton, preview); resultArea.append(diagram);
-        let imageUrl = null;
+          let imageUrl = null, scriptUrl = null;
         renderButton.addEventListener("click", async () => {
           renderButton.disabled = true;
           try {
+            const script = await life.api("/api/diagrams/script", jsonOptions(output.architecture));
             const url = await life.svgBlob("/api/diagrams", jsonOptions(output.architecture));
             if (!life.alive || state.selectedJob?.id !== job.id || !diagram.isConnected) { life.revoke(url); return; }
             if (imageUrl) life.revoke(imageUrl); imageUrl = url;
+              if (scriptUrl) life.revoke(scriptUrl); scriptUrl = life.blob(script.script, "text/x-python");
             const image = node("img", "rs-chart-image"); image.src = url; image.alt = "根据任务中的方案节点实际渲染的结构图";
-            preview.replaceChildren(image, link("下载SVG结构图", url, `architecture-${job.id}.svg`));
+            preview.replaceChildren(image, link("下载SVG结构图", url, `architecture-${job.id}.svg`), link("下载Python复现脚本", scriptUrl, `architecture-${job.id}.py`));
           } catch (error) { life.show(error.message, true); } finally { if (life.alive) renderButton.disabled = false; }
         });
       }
@@ -637,7 +639,7 @@
 
   function mountData(container, options = {}) {
     const life = lifecycle(container, options);
-    const state = { datasets: [], selected: null, generation: 0, chartUrl: null, diagramUrl: null, diagramSpecUrl: null, units: {}, chartPosting: false };
+    const state = { datasets: [], selected: null, generation: 0, chartUrl: null, diagramUrl: null, diagramSpecUrl: null, diagramScriptUrl: null, units: {}, chartPosting: false };
     const heading = node("header", "rs-heading");
     const text = node("div", ""); text.append(node("span", "rs-eyebrow", "DATA & FIGURES"), node("h2", "", "数据与图表"),
       node("p", "rs-muted", "从实际CSV生成图表、图注和复现脚本；结构图使用明确的节点与连接。"));
@@ -784,12 +786,15 @@
       try {
         let spec; try { spec = { nodes: JSON.parse(nodes.value), edges: JSON.parse(edges.value || "[]") }; } catch { throw new Error("节点或连接不是有效JSON，请检查逗号、引号和数组格式。"); }
         if (!Array.isArray(spec.nodes) || !Array.isArray(spec.edges)) throw new Error("节点与连接均须为JSON数组。");
+        const script = await life.api("/api/diagrams/script", jsonOptions(spec));
         const imageUrl = await life.svgBlob("/api/diagrams", jsonOptions(spec));
         if (!life.alive) { life.revoke(imageUrl); return; }
         if (state.diagramUrl) life.revoke(state.diagramUrl); if (state.diagramSpecUrl) life.revoke(state.diagramSpecUrl);
+        if (state.diagramScriptUrl) life.revoke(state.diagramScriptUrl);
+        state.diagramScriptUrl = life.blob(script.script, "text/x-python");
         state.diagramUrl = imageUrl; state.diagramSpecUrl = life.blob(JSON.stringify(spec, null, 2), "application/json");
         const image = node("img", "rs-chart-image"); image.src = imageUrl; image.alt = "根据输入节点和连接实际渲染的结构图";
-        const downloads = node("div", "rs-actions"); downloads.append(link("下载SVG图形源文件", imageUrl, "architecture.svg"), link("下载节点与连接JSON", state.diagramSpecUrl, "architecture.json"));
+        const downloads = node("div", "rs-actions"); downloads.append(link("下载SVG图形源文件", imageUrl, "architecture.svg"), link("下载节点与连接JSON", state.diagramSpecUrl, "architecture.json"), link("下载Python复现脚本", state.diagramScriptUrl, "architecture.py"));
         diagramOutput.replaceChildren(image, downloads); life.show("结构图已生成。");
       } catch (error) { life.show(error.message, true); }
       finally { if (life.alive) makeDiagram.disabled = false; }

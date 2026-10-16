@@ -40,12 +40,12 @@ def client(app):
 def test_safe_get_does_not_expose_credentials(settings_app):
     with client(settings_app) as browser:
         initial = browser.get("/api/model")
-        assert initial.json() == {"configured": False, "provider": "DeepSeek", "defaultModel": DEFAULT_MODEL}
+        assert initial.json() == {"configured": False, "provider": "DeepSeek", "defaultModel": DEFAULT_MODEL,"model":None}
         saved = browser.post("/api/model", json={"api_key": FIXTURE_KEY, "model": DEFAULT_MODEL})
         assert saved.status_code == 200 and saved.json()["configured"] is True
         assert FIXTURE_KEY not in saved.text and "unsafe_callback_return" not in saved.text
         current = browser.get("/api/model")
-        assert current.json() == {"configured": True, "provider": "DeepSeek", "defaultModel": DEFAULT_MODEL}
+        assert current.json() == {"configured": True, "provider": "DeepSeek", "defaultModel": DEFAULT_MODEL,"model":DEFAULT_MODEL}
         assert current.headers["cache-control"] == "no-store"
         assert FIXTURE_KEY not in current.text
     assert settings_app.state.calls == [(FIXTURE_KEY, DEFAULT_MODEL)]
@@ -55,6 +55,7 @@ def test_safe_get_does_not_expose_credentials(settings_app):
 def test_explicit_supported_models_pass_to_application(settings_app, model):
     with client(settings_app) as browser:
         response = browser.post("/api/model", json={"api_key": FIXTURE_KEY, "model": model})
+        assert browser.get('/api/model').json()['model']==model
     assert response.status_code == 200
     assert settings_app.state.calls == [(FIXTURE_KEY, model)]
 

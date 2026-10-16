@@ -59,7 +59,8 @@ def safe_status() -> dict:
         and os.environ.get("RESEARCH_MODEL_BASE_URL", "").rstrip("/")
         in {DEEPSEEK_BASE_URL, DEEPSEEK_BASE_URL + "/v1"}
     )
-    return {"configured": configured, "provider": "DeepSeek", "defaultModel": DEFAULT_MODEL}
+    return {"configured": configured, "provider": "DeepSeek", "defaultModel": DEFAULT_MODEL,
+            "model": os.environ.get("RESEARCH_MODEL") if configured else None}
 
 
 @router.get("")

@@ -118,7 +118,8 @@
     api("/api/model", { signal: requestAbort.signal }).then((configuration) => {
       if (destroyed) return;
       accessible = true;
-      model.value = ["deepseek-flash", "deepseek-v4-pro"].includes(configuration.defaultModel) ? configuration.defaultModel : "deepseek-flash";
+      const currentModel = configuration.model || configuration.defaultModel;
+      model.value = ["deepseek-flash", "deepseek-v4-pro"].includes(currentModel) ? currentModel : "deepseek-flash";
       model.disabled = false; key.disabled = false; save.disabled = false;
       status.textContent = configuration.configured ? "本次服务已有配置。密钥不会回显；如需更换，请重新输入。" : "尚未配置。填写后即可在研究任务中使用真实模型。";
       key.focus();

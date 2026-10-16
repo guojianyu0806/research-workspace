@@ -5,6 +5,7 @@ import csv
 import hashlib
 import html
 import io
+import inspect
 import json
 import math
 from pathlib import Path
@@ -95,6 +96,37 @@ def render_diagram(nodes: list[dict], edges: list[dict]) -> str:
         parts.append(f'<text x="{x+120}" y="{y+32}" text-anchor="middle" font-size="14" font-family="Arial,sans-serif">{html.escape(str(node["label"])[:32])}</text>')
     parts.append('</svg>')
     return ''.join(parts)
+
+
+def export_diagram_script(nodes: list[dict], edges: list[dict]) -> str:
+    render_diagram(nodes,edges)  # Apply the same validation as the displayed SVG.
+    data=json.dumps({'nodes':nodes,'edges':edges},ensure_ascii=False)
+    return ('# Standalone Python 3; standard library only.\n'
+        '# Fixed rendering template; labels are data, never executable code.\n'
+        'import html\nimport math\nimport json\nfrom pathlib import Path\n\n'
+        +inspect.getsource(render_diagram)+'\n'
+        +f'spec=json.loads({data!r})\n'
+        +'with Path("architecture.svg").open("x",encoding="utf-8") as stream:\n'
+        +'    stream.write(render_diagram(spec["nodes"],spec["edges"]))\n')
+
+
+def describe_series(labels,series,kind):
+    descriptions=[]
+    for s in series:
+        values=s['values']
+        if kind=='line' and len(values)>1:
+            if all(v==values[0] for v in values):trend='相邻记录数值保持一致'
+            elif all(b>=a for a,b in zip(values,values[1:])):trend='沿CSV记录顺序单调不降'
+            elif all(b<=a for a,b in zip(values,values[1:])):trend='沿CSV记录顺序单调不升'
+            else:trend='沿CSV记录顺序有升降波动'
+            descriptions.append(f'{s["name"]}{trend}，首条{values[0]:.6g}、末条{values[-1]:.6g}，首末差{values[-1]-values[0]:.6g}')
+        elif kind=='bar':
+            high=max(values);low=min(values)
+            def categories(value):
+                names=[str(label) for label,v in zip(labels,values) if v==value]
+                return '、'.join(names[:3])+(f'等{len(names)}类' if len(names)>3 else '')
+            descriptions.append(f'{s["name"]}最大值{high:.6g}对应{categories(high)}，最小值{low:.6g}对应{categories(low)}')
+    return '；'.join(descriptions)
 
 
 class DataStudio:
@@ -216,6 +248,10 @@ class DataStudio:
             item['caption'] = (f'{spec["title"]}。{len(valid)}个指标映射为极角轴，半径为0至1，高度层对应{len(series)}个系列的类别顺序。'
                                + ('每个指标在所选系列间进行Min–Max归一化；常数指标半径设为0.5。' if normalize else '输入数值已在0至1之间，未归一化。')
                                + '高度不表示独立测量变量，半径大小不自动代表性能优劣；未进行显著性检验。')
+        else:
+            description=describe_series(spec['labels'],series,kind)
+            if description:item['caption']+='按图中绘图数值描述：'+description+'。顺序或类别关系不自动构成时间趋势。'
+        item['caption_version']='descriptive-v2'
         with self.library._connection() as db:
             db.execute('INSERT INTO charts VALUES(?,?,?,?)',(item['id'],dataset_id,item['created_at'],json.dumps(item,ensure_ascii=False)))
         return item
@@ -229,9 +265,12 @@ class DataStudio:
 
     def export_script(self, chart_id):
         spec = self.get_chart(chart_id)['spec']
-        return ('# Run from this repository with its Python environment.\n'
+        from .radar import render_radar
+        renderer=inspect.getsource(render_chart).replace('        from .radar import render_radar\n','')
+        return ('# Standalone Python 3; standard library only.\n'
                 '# Fixed rendering template: no user-supplied Python is executed.\n'
-                'import json\nfrom pathlib import Path\nfrom research_workspace.visualization import render_chart\n'
+                'import html\nimport math\nimport json\nfrom pathlib import Path\n'
+                +f'COLORS = {COLORS!r}\n\n'+inspect.getsource(render_radar)+'\n'+renderer+'\n'
                 f'spec = json.loads({json.dumps(spec,ensure_ascii=False)!r})\n'
                 'with Path("chart.svg").open("x", encoding="utf-8") as stream:\n'
                 '    stream.write(render_chart(spec))\n')
