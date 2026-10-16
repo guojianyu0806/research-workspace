@@ -58,8 +58,10 @@ def supplement_question_facets(service,snapshot,evidence,question,document_ids,n
                     for row in page_blocks[i+1:i+18]:
                         text=' '.join(row.text.split())
                         label=service._identifier_tokens(text).intersection(names.get(document_id,[]))
-                        header=(len(text)<100 and not re.search(r'\d',text) and
-                            re.search(r'BLEU|Model|FLOPs|EN-DE|EN-FR|accuracy|score',text,re.I))
+                        header=(len(text)<750 and (
+                            (len(text)<100 and not re.search(r'\d',text) and
+                                re.search(r'BLEU|Model|FLOPs|EN-DE|EN-FR|accuracy|score',text,re.I))
+                            or re.match(r'^[A-Z]{2,3}[-–→][A-Z]{2,3}(?:\s|$)',text)))
                         if (label and len(text)<450 and len(re.findall(r'\d',text))>=2) or header:candidates.append(row)
                     for row in candidates[:8]:additions.append(row);table_ids.append(row.evidence_id)
     selected=service._fair_blocks(additions,document_ids,24)

@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 from research_workspace.intelligence import IntelligenceService,Evidence
 from research_workspace.library import Library
 from research_workspace.question_facets import supplement_question_facets,header_author_links
@@ -9,12 +10,13 @@ def b(name,text,page=1):
         bbox=[.1,.2,.8,.3],document_title='ORION Research',filename='paper.pdf',text=text)
 
 
-def test_compound_request_retains_original_header_and_named_numeric_rows(tmp_path):
+@pytest.mark.parametrize('columns',['EN-DE\nEN-FR','EN-DE\nEN-FR\nEN-DE\nEN-FR\nByteNet [18]\n23.75\nDeep-Att [39]\n39.2\n1.0 · 1020'])
+def test_compound_request_retains_original_header_and_named_numeric_rows(tmp_path,columns):
     source=[b('copyright','Provided proper attribution grants permission.'),b('title','ORION Research'),
         *[b('author'+str(i),'Example Author '+str(i)+'\nResearch Institute\nauthor'+str(i)+'@example.org') for i in range(9)],
         b('toronto','Alice N. Example\nExample University\nalice@example.org'),b('abstract','Abstract'),
         b('body','Unrelated original body text.'),b('caption','Table 2: ORION BLEU results for two translation tasks.',2),
-        b('columns','EN-DE\nEN-FR',2),b('row','ORION (base model)\n27.3\n38.1',2),
+        b('columns',columns,2),b('row','ORION (base model)\n27.3\n38.1',2),
         b('gpu','ORION uses eight GPUs.',2)]
     service=IntelligenceService(Library(tmp_path))
     evidence,meta=supplement_question_facets(service,source,[source[-1]],'作者所属机构与BLEU分数',['doc'],{'doc':['orion']})
