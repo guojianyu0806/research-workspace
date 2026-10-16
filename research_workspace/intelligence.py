@@ -1494,7 +1494,7 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if not structured_review:
             audit["claim_support_prompt_version"] = "claim-support-v1.5"
-            audit["coverage_prompt_version"] = "coverage-v1.6"
+            audit["coverage_prompt_version"] = "coverage-v1.7"
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.2"
@@ -1559,6 +1559,12 @@ class IntelligenceService:
             try:
                 self._resolve_citation_spans(claims, catalog)
                 used = self._validate_claims(claims, evidence)
+                if payload.get("allow_isolated_claim_repair") and payload.get("required_training_tasks"):
+                    from .task_scope import attach_task_scope
+                    for index,claim in enumerate(claims):
+                        attach_task_scope(self,claim,evidence,catalog,payload["required_training_tasks"],audit,
+                            {"stage":"generation","attempt":attempt_number,"claim_index":index})
+                    used=self._validate_claims(claims,evidence)
                 citation_validation_passed = True
                 if supported_review_claims is not None and result.status == "generated":
                     repaired = Counter(json.dumps(claim.model_dump(), sort_keys=True, ensure_ascii=False) for claim in claims)
@@ -1733,7 +1739,7 @@ class IntelligenceService:
             if payload.get("allow_isolated_claim_repair") and len(reviews)==len(claims) and any(
                     review["verdict"]=="unsupported" for review in reviews):
                 from .claim_repair import repair_rejected_claims
-                audit["claim_repair_prompt_version"] = "claim-repair-v1.0"
+                audit["claim_repair_prompt_version"] = "claim-repair-v1.1"
                 try:
                     isolated_repair_result = await repair_rejected_claims(self,result,reviews,evidence,catalog,payload,audit,
                         check_cancel=check_cancel)

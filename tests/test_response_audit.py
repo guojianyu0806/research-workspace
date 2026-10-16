@@ -144,7 +144,12 @@ def test_public_comparison_adds_actual_main_task_definitions_from_one_frozen_sna
 def test_isolated_repair_freezes_supported_fact_and_rechecks_replacement_identity(tmp_path):
     first=answer().claims[0];bad=answer("ORION预测99个词。","Q2").claims[0]
     fixed=answer("ORION预测被移除的词。","Q2").claims[0]
-    provider=Sequence([AnswerPayload(status="answered",claims=[first,bad]),
+    class Inspect(Sequence):
+        async def generate(self,prompt,payload,model):
+            if model is ClaimRepairPayload:assert payload["request"]=="Architecture and prediction?"
+            if model is ClaimSupportPayload:assert "request" not in payload and "question" not in payload
+            return await super().generate(prompt,payload,model)
+    provider=Inspect([AnswerPayload(status="answered",claims=[first,bad]),
         ClaimSupportPayload(verdict="supported",reason="Own attention relation."),
         ClaimSupportPayload(verdict="unsupported",reason="Wrong quantity."),ClaimRepairPayload(claim=fixed),
         ClaimSupportPayload(verdict="supported",reason="Own prediction statement."),
@@ -276,3 +281,57 @@ def test_draft_coverage_receives_and_records_actual_proposed_diagram(tmp_path):
         "allow_isolated_claim_repair":True,"require_request_coverage":True},SynthesisPayload,[source()]))
     assert result.architecture.model_dump()==graph
     assert g["attempts"][-1]["proposed_architecture"]==g["response_coverage"][-1]["proposed_architecture"]==graph
+
+
+def task_scope_fixture():
+    scope=source().model_copy(update={"text":"We pre-train ORION using two tasks described below."})
+    definition=source().model_copy(update={"evidence_id":"E_task","block_id":"task","text":"We predict removed words from context."})
+    req={"doc":{"scope_evidence_id":"E_scope","scope_quote_id":"Q1","scope_text":scope.text,
+        "subject_identifiers":["orion"],"tasks":[{"label":"Word Prediction","evidence_ids":["E_task"]}]}}
+    c=answer("ORION的预训练任务预测被移除的词。")
+    c.claims[0].citations[0].evidence_id="E_task"
+    return [scope,definition],req,c
+
+
+def test_actual_task_scope_is_attached_before_isolated_review_with_original_selection_preserved(tmp_path):
+    e,req,c=task_scope_fixture()
+    class Inspect(Sequence):
+        async def generate(self,prompt,payload,model):
+            if model is ClaimSupportPayload:
+                assert {q['evidence_id'] for q in payload['claim']['citations']}=={'E_scope','E_task'}
+                assert 'request' not in payload and 'evidence' not in payload
+            return await super().generate(prompt,payload,model)
+    provider=Inspect([c,ClaimSupportPayload(verdict="supported",reason="Own named task scope and its definition."),
+        CoveragePayload(unverified_statements=[],missing_aspects=[])])
+    service=IntelligenceService(Library(tmp_path),provider)
+    result,_,g=asyncio.run(service._generate_grounded("fixture",{"task":"qa","question":"Word prediction?",
+        "required_training_tasks":req,"allow_isolated_claim_repair":True,"require_request_coverage":True},AnswerPayload,e))
+    record=g["task_scope_attachments"][0]
+    assert len(record["model_claim"]["citations"])==1
+    assert record["model_claim"]["claim_id"]==identity(record["model_claim"])
+    assert record["effective_claim_id"]==g["claim_catalog"][0]["claim_id"]
+    assert result.claims[0].citations[-1].quote==e[0].text
+
+
+@pytest.mark.parametrize("change",["wrong_subject","foreign_task"])
+def test_scope_attachment_never_supplies_another_subject_or_documents_training_context(tmp_path,change):
+    from research_workspace.task_scope import attach_task_scope
+    e,req,result=task_scope_fixture();c=result.claims[0]
+    service=IntelligenceService(Library(tmp_path),Sequence([]))
+    service._resolve_citation_spans([c],service._citation_spans(e))
+    if change=="wrong_subject":c.text="NOVA的训练任务预测被移除的词。"
+    else:e[1]=e[1].model_copy(update={"document_id":"other"})
+    audit={};attach_task_scope(service,c,e,service._citation_spans(e),req,audit,{"stage":"fixture"})
+    assert len(c.citations)==1 and audit=={}
+
+
+def test_attaching_scope_does_not_override_an_unsupported_predicate(tmp_path):
+    e,req,result=task_scope_fixture();result.claims[0].text="ORION预测99个词。"
+    provider=Sequence([result,ClaimSupportPayload(verdict="unsupported",reason="The attached scope does not support the number."),
+        ClaimRepairPayload(claim=result.claims[0])])
+    service=IntelligenceService(Library(tmp_path),provider)
+    with pytest.raises(ModelOutputError) as caught:
+        asyncio.run(service._generate_grounded("fixture",{"task":"qa","question":"Word prediction?",
+            "required_training_tasks":req,"allow_isolated_claim_repair":True},AnswerPayload,e))
+    g=caught.value.grounding_diagnostics["grounding"]
+    assert g["task_scope_attachments"] and all(v["verdict"]=="unsupported" for a in g["attempts"] for v in a["reviews"])

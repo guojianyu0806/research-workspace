@@ -143,6 +143,7 @@ def training_task_requirements(service, source, names):
             total = numbers[count[1].lower()]
             if [task["number"] for task in tasks[:total]] == list(range(1, total+1)):
                 return {"scope_evidence_id": block.evidence_id, "scope_quote_id": quote_id,
+                        "subject_identifiers": sorted(names),
                         "scope_text": text, "tasks": tasks[:total],
                         "rule": "Each training answer must quote this named task scope and its own prediction definitions for ALL listed tasks; labels alone do not answer them."}
     return None
