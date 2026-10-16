@@ -1,0 +1,640 @@
+{
+  "baseline_commit": "cf4bc5a",
+  "code_version": "683a40a",
+  "official_source_snapshot": "official-track-10040-20261016.json",
+  "official_package": "not obtained; user confirmed continue public substitute audit",
+  "scope": "52 requirements; separate implementation from official acceptance; no global completion percentage",
+  "items": [
+    {
+      "id": "M1-01",
+      "requirement": "单篇和批量上传、查看、修改元数据、检索及删除。上传后每个文件有独立状态，单个失败不会使整批结果丢失。",
+      "baseline_status": "已实现，合成接口验收",
+      "priority": "P0",
+      "remaining": "官方资料包批量失败隔离再验收",
+      "code": [
+        "research_workspace/api.py",
+        "research_workspace/library.py"
+      ],
+      "current_status": "已实现；接口回归及公开PDF批次已检查",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M1-02",
+      "requirement": "基于正文内容识别语义重复与论文版本。验收先传 `1706.03762v7.pdf` 再传 `1706.03762v1.pdf`，改文件名后仍能识别，主题相似的不同论文不能被直接合并。",
+      "baseline_status": "部分实现",
+      "priority": "P0",
+      "remaining": "仅开篇1600字符语义特征，不等于任意改写全文去重；始终人工确认",
+      "code": [
+        "research_workspace/library.py"
+      ],
+      "current_status": "已补本地开篇向量+正文重合版本候选；实际改名v1/v7及消融通过",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M1-03",
+      "requirement": "冲突时提供覆盖或保留选择，提示已有版本可能较新。建议以切换当前版本实现逻辑替换并保留历史文件；不得静默覆盖，旧答案仍能访问原先引用的版本。",
+      "baseline_status": "已实现，合成验收",
+      "priority": "P0",
+      "remaining": "官方版本样本和覆盖确认UI仍需专项人工验收",
+      "code": [
+        "research_workspace/library.py"
+      ],
+      "current_status": "版本保留/切换及不可变旧来源回归通过",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M1-04",
+      "requirement": "结构化呈现标题、作者、机构、摘要、一至三级标题树、表格、图表、LaTeX公式、参考文献和附录；未识别的内容明确标注，不伪装成完整提取。",
+      "baseline_status": "部分实现",
+      "priority": "P1",
+      "remaining": "复杂公式LaTeX、扫描表格、矢量图语义未完整实现；作者机构仍须核对",
+      "code": [
+        "research_workspace/structure.py",
+        "research_workspace/layout.py"
+      ],
+      "current_status": "部分实现；标题候选已排除旋转标识和较小作者字号",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M1-05",
+      "requirement": "标准单双栏PDF按正确阅读顺序解析。抽样核对跨栏文字、跨页段落、公式编号、表格单元格及图注，保留原始图像或原页供复核。",
+      "baseline_status": "发现实现缺口",
+      "priority": "P0",
+      "remaining": "混合复杂版面仍需官方逐页质量验收；不改写旧解析记录",
+      "code": [
+        "research_workspace/library.py",
+        "research_workspace/layout.py"
+      ],
+      "current_status": "已修正式入库双栏顺序；4种旋转回归及真实PDF检查",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M1-06",
+      "requirement": "扫描版 `1706.03762v1_img.pdf` 可进行OCR与结构化还原，抽取的内容可以回到对应原页。",
+      "baseline_status": "已实现，公开替代样本验收",
+      "priority": "P0",
+      "remaining": "无官方扫描件；未测字词准确率",
+      "code": [
+        "research_workspace/library.py"
+      ],
+      "current_status": "公开栅格替代样本15/15页OCR成功；文字/原图/锚点已核对",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M1-07",
+      "requirement": "处理官网标注541页的 `UnderstandingDeepLearning_02_09_26_C.pdf`，支持分块、索引和分级加载。不能只处理前若干页却显示全书完成。",
+      "baseline_status": "已实现，公开样本工程验收",
+      "priority": "P0",
+      "remaining": "状态partial保留；不是541页都有文字，也不是官方书籍验收",
+      "code": [
+        "research_workspace/library.py"
+      ],
+      "current_status": "541页全部已处理：537页有文字，4页原始空白，0失败",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M1-08",
+      "requirement": "解析和索引使用后台任务，支持进度、部分失败、单页重试和取消；重复请求不应无条件重新处理已成功的页。",
+      "baseline_status": "已实现，合成验收",
+      "priority": "P0",
+      "remaining": "官方异常PDF及多任务压力下仍需验收",
+      "code": [
+        "research_workspace/library.py"
+      ],
+      "current_status": "已实现；取消/恢复/固定版本纳入本轮完整回归",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M1-09",
+      "requirement": "对同论文版本生成主要修订差异，差异分别指向两个版本的原文，区分内容变化与排版变化。",
+      "baseline_status": "已实现，有限逐块差异",
+      "priority": "P2",
+      "remaining": "真实版本差异粒度和对齐质量待人工验收",
+      "code": [
+        "research_workspace/library.py"
+      ],
+      "current_status": "已实现，有限逐块差异",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M2-01",
+      "requirement": "回答单篇细节问题，验收覆盖作者机构、β₁与β₂、GPU型号和数量、BLEU等实验指标、指定文献完整引用信息。",
+      "baseline_status": "部分真实模型验收",
+      "priority": "P0",
+      "remaining": "未知问题不能保证；官方细节题仍需系统化题集",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "真实Pro综合细节题和base/big表格对照通过；105项独立检查、27处引用及返回已核对",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M2-02",
+      "requirement": "核心事实附可点击的原文位置。点击后打开正确论文、正确版本和对应页或内容块；只有论文首页链接不算完成定位能力。",
+      "baseline_status": "已实现，真实Pro及浏览器验收",
+      "priority": "P0",
+      "remaining": "045已核对59处自身引用和返回；保持固定版本不破坏",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "已实现，真实Pro及浏览器验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M2-03",
+      "requirement": "支持用户选定多篇论文共同分析，按一致维度比较参数、架构、LayerNorm位置和上下文长度等。缺失信息明确写未找到，不补造对比表。",
+      "baseline_status": "部分真实模型验收",
+      "priority": "P0",
+      "remaining": "两篇架构/训练任务已通过；其他官方比较维度尚未逐项验收",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "部分真实模型验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M2-04",
+      "requirement": "验证检索和重排效果，考虑关键词与语义混合检索；保存检索片段、采用证据和答案的对应关系，证明检索策略的实际作用。",
+      "baseline_status": "部分实现",
+      "priority": "P1",
+      "remaining": "小样本结果不可称总体准确率；英文模型中文问题依赖扩展，冷启动成本已记录",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "已补真实本地向量通道及RRF；四题固定标记命中1/4至3/4",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M2-05",
+      "requirement": "证据不足时说明范围与缺口；不同版本或实验设置有冲突时分别列出，不把不同数据集或条件下的指标直接当作同一实验比较。",
+      "baseline_status": "已实现，真实Pro验收",
+      "priority": "P0",
+      "remaining": "拒答、条件限制、独立引用已验证；继续回归防止退化",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "已实现，真实Pro验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M2-06",
+      "requirement": "支持流式显示；生成中断、模型限流、检索无结果均有明确反馈。证据和回答来自真实执行，不用固定答案替代在线能力。",
+      "baseline_status": "部分实现",
+      "priority": "P2",
+      "remaining": "已有任务SSE，尚非模型逐token答案；不得用伪打字动画冒充",
+      "code": [
+        "research_workspace/intelligence.py",
+        "research_workspace/jobs.py"
+      ],
+      "current_status": "部分实现",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M3-01",
+      "requirement": "阅读器稳定显示单双栏、公式及表格，标题树可定位；长PDF按需加载，缩放和翻页不破坏位置映射。",
+      "baseline_status": "已实现，阅读器样本验收",
+      "priority": "P0",
+      "remaining": "官方长文档阅读体验待验收",
+      "code": [
+        "research_workspace/api.py"
+      ],
+      "current_status": "阅读器已有样本交互；正式解析阅读顺序已修复",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M3-02",
+      "requirement": "正文引用标记到References条目可跳转，References也能返回正文引用位置。同一文献被多处引用时允许选择位置或返回刚才的阅读处。",
+      "baseline_status": "已实现，样本及浏览器验收",
+      "priority": "P1",
+      "remaining": "歧义姓名、缺少唯一年份关系不强行连线；官方格式待验收",
+      "code": [
+        "research_workspace/structure.py"
+      ],
+      "current_status": "补作者年份书目与明确唯一正文引用，真实BERT书目和锚点已验收",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M3-03",
+      "requirement": "局部翻译先实现一种可靠的划词或悬停交互，并标明所译原文；是否必须两种形式兼有列入确认项。",
+      "baseline_status": "已实现，有真实模型记录",
+      "priority": "P1",
+      "remaining": "局部选文、预览与返回有阶段证据；官方样本再检查",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "已实现，有真实模型记录",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M3-04",
+      "requirement": "完成整篇翻译，首版选择官方允许的HTML或Markdown输出路径；原位排版PDF作为后续可选强化，不作为首版前置条件。",
+      "baseline_status": "已实现，正式整篇验收不足",
+      "priority": "P1",
+      "remaining": "可分块翻译和导出；完整真实论文的缺段/术语一致性待验收",
+      "code": [
+        "research_workspace/jobs.py"
+      ],
+      "current_status": "已实现，正式整篇验收不足",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M3-05",
+      "requirement": "中英对照阅读，两侧任一侧滚动均带动另一侧。以对应段落或内容块对齐，不能仅按滚动百分比对齐导致长短译文错位。",
+      "baseline_status": "已实现，样本交互验收",
+      "priority": "P1",
+      "remaining": "块级双向联动存在，长译文混合公式场景待验收",
+      "code": [
+        "research_workspace/jobs.py"
+      ],
+      "current_status": "已实现，样本交互验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M3-06",
+      "requirement": "代码和公式保持原样，术语、数字、单位及引用标记可复核；翻译分段失败时保留已完成部分并显示缺失范围。",
+      "baseline_status": "部分真实模型验收",
+      "priority": "P0",
+      "remaining": "有公式/代码保护回归和真实翻译记录，复杂公式与跨块情况需扩展",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "部分真实模型验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M4-01",
+      "requirement": "输入论文名或参考文献列表，真实调用检索来源，核对论文身份，再下载可访问全文并走统一解析入库流程。",
+      "baseline_status": "已实现，真实联网验收不足",
+      "priority": "P1",
+      "remaining": "不是官方资料包；其他来源和失败恢复仍待验证",
+      "code": [
+        "research_workspace/discovery.py",
+        "research_workspace/reference_discovery.py"
+      ],
+      "current_status": "实际调用应用DiscoveryService联网检索、身份核验、下载并解析DPR",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M4-02",
+      "requirement": "区分无搜索结果、只有元数据、访问受限、下载失败和解析失败；记录来源URL、检索时间及论文版本。没有全文的记录不得显示为已可全文问答。",
+      "baseline_status": "已实现，接口验收",
+      "priority": "P1",
+      "remaining": "真实元数据无全文、失败重试/恢复路径未全部实测",
+      "code": [
+        "research_workspace/discovery.py"
+      ],
+      "current_status": "状态及保护已有接口回归；DPR实际成功路径通过",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M4-03",
+      "requirement": "实现引用含金量筛选。暂按与当前研究问题的相关性及引用上下文等可解释信号过滤候选，显示理由与可恢复的过滤列表；不能删除原论文真实参考文献或声称已客观判断学术价值。确认“应付式引用”的评审口径。",
+      "baseline_status": "部分实现",
+      "priority": "P2",
+      "remaining": "规则相关性筛选可恢复，不等于客观学术含金量判定",
+      "code": [
+        "research_workspace/reference_discovery.py"
+      ],
+      "current_status": "部分实现",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M4-04",
+      "requirement": "定期追踪arXiv更新，保留上次检查位置或时间，重复运行不重复推送；提供立即检查入口验证更新路径，定时任务仍需真实存在。",
+      "baseline_status": "已实现，模拟调度验收",
+      "priority": "P1",
+      "remaining": "真实arXiv定时增量检查与重启后调度待验收",
+      "code": [
+        "research_workspace/discovery.py"
+      ],
+      "current_status": "已实现，模拟调度验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M4-05",
+      "requirement": "结合用户文献库推荐论文，给出关联文献和推荐理由；优先考虑有对应GitHub开源代码的论文，并核对仓库关联依据。",
+      "baseline_status": "部分实现",
+      "priority": "P1",
+      "remaining": "标题/反馈推荐已接入；缺核验关联GitHub代码后的优先排序",
+      "code": [
+        "research_workspace/discovery.py"
+      ],
+      "current_status": "部分实现",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M4-06",
+      "requirement": "点赞和踩被保存，并能影响后续排序或偏好。仓库可访问只代表有代码线索，不能直接写成已复现成功。",
+      "baseline_status": "已实现，接口验收",
+      "priority": "P1",
+      "remaining": "喜欢/踩持久化和排序测试已有；真实推荐效果未评估",
+      "code": [
+        "research_workspace/discovery.py"
+      ],
+      "current_status": "已实现，接口验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M4-07",
+      "requirement": "保留多用户推荐扩展任务。首版至少支持独立文献库、偏好与反馈，展示不同用户得到不同推荐；官网是否要求跨用户协同过滤尚未明确，确认前不能仅凭独立账号宣告此条完全达标。",
+      "baseline_status": "部分实现",
+      "priority": "P2",
+      "remaining": "独立账号文献偏好已有，未实现跨用户协同过滤；官方口径需确认",
+      "code": [
+        "research_workspace/accounts.py",
+        "research_workspace/discovery.py"
+      ],
+      "current_status": "部分实现",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M4-08",
+      "requirement": "查询、下载、解析和推荐均设置重试、超时和额度限制；来源失效时说明失败，历史结果显示更新时间。",
+      "baseline_status": "已实现，模拟故障验收",
+      "priority": "P1",
+      "remaining": "网络限额/超时有测试，真实源失效与恢复待验收",
+      "code": [
+        "research_workspace/discovery.py"
+      ],
+      "current_status": "已实现，模拟故障验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M5-01",
+      "requirement": "支持批量论文局域引用图谱，本项目按20篇以上相关论文验收。边来自真实参考文献关系，固定“A→B表示A引用B”；语义相似关系若展示须使用另一种边类型。官网功能描述的20篇是示例，评分另考察20篇以上图谱的渲染表现。",
+      "baseline_status": "已实现，真实大图验收缺失",
+      "priority": "P1",
+      "remaining": "413项未确认保留；不宣称全部引文召回或官方验收",
+      "code": [
+        "research_workspace/graph.py"
+      ],
+      "current_status": "真实22篇公开PDF、22节点、35确认边，浏览器可交互",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M5-02",
+      "requirement": "节点可点击查看论文和引用依据；区分已入库全文节点与仅有书目信息的外部节点，不能把缺全文节点当作可问答文献。",
+      "baseline_status": "已实现，合成来源验收",
+      "priority": "P1",
+      "remaining": "自动核对证明来源一致性；非全部边关系的人工学术核验",
+      "code": [
+        "research_workspace/graph.py"
+      ],
+      "current_status": "534个实际引用边原文锚点逐一核对通过；浏览器原页定位和返回通过",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M5-03",
+      "requirement": "以一种可解释图论算法识别局域基石和边缘论文，展示分数、计算范围及依据；局部样本中心性不应表述为整个学界公认地位。",
+      "baseline_status": "已实现，算法测试通过",
+      "priority": "P1",
+      "remaining": "排名仅对当前局域图成立，不是学界整体重要性",
+      "code": [
+        "research_workspace/graph.py"
+      ],
+      "current_status": "PageRank算法回归及实际节点/缩放/复位/引用方向交互通过",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M5-04",
+      "requirement": "生成短篇领域综述，综合研究脉络与差异，每个主要论点有支持来源；避免只顺序拼接论文摘要。",
+      "baseline_status": "已实现，真实Pro验收",
+      "priority": "P0",
+      "remaining": "044补齐三篇九个维度，各结论自身引用和审核已验收",
+      "code": [
+        "research_workspace/review_completion.py"
+      ],
+      "current_status": "已实现，真实Pro验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M5-05",
+      "requirement": "从多篇论文提取Future Work，检索后续研究并比较证据，过滤已有充分解决证据的旧方向，输出仍值得探索的方向。",
+      "baseline_status": "部分真实模型验收",
+      "priority": "P1",
+      "remaining": "后续文献查询及逐证据判定存在，实时全文搜索完整性不足",
+      "code": [
+        "research_workspace/future_verification.py"
+      ],
+      "current_status": "部分真实模型验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M5-06",
+      "requirement": "未来方向标明已处理、部分处理或证据不足等状态，并给检索范围和时间；没搜到解决证据不能写成确定尚未解决。",
+      "baseline_status": "已实现，有范围与状态约束",
+      "priority": "P1",
+      "remaining": "不能把没找到说成确定未解决；真实新论文场景待验收",
+      "code": [
+        "research_workspace/future_verification.py"
+      ],
+      "current_status": "已实现，有范围与状态约束",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M6-01",
+      "requirement": "输入idea后生成包含Abstract、Introduction、Related Work和References的框架；参考文献必须有可核验记录，正文引用与书目对应。",
+      "baseline_status": "已实现，真实Pro验收",
+      "priority": "P0",
+      "remaining": "045三节事实/未来计划/来源清单已验收",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "已实现，真实Pro验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M6-02",
+      "requirement": "把待验证假设、预期实验与真实实验结果区分开，不能为尚未实施的研究生成虚假实测指标。",
+      "baseline_status": "已实现，真实Pro验收",
+      "priority": "P0",
+      "remaining": "拟开展计划与已知结果分开，继续回归",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "已实现，真实Pro验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M6-03",
+      "requirement": "生成架构拓扑图脚本并实际渲染，首版确定一种可靠格式；不要求同时集成TikZ、Graphviz、Mermaid、Matplotlib全部工具。",
+      "baseline_status": "部分实现",
+      "priority": "P1",
+      "remaining": "结构图是方案表达，不等于方案已经实验实现",
+      "code": [
+        "research_workspace/visualization.py"
+      ],
+      "current_status": "补结构图独立Python脚本，研究结果及数据页下载入口",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M6-04",
+      "requirement": "用户上传CSV后生成表格、折线图和柱状图，保存对应脚本与输出；允许用户确认字段映射，数据变化后图表应随之变化。",
+      "baseline_status": "已实现，样例数据验收",
+      "priority": "P1",
+      "remaining": "官方数据集及复杂标签排版仍待验收",
+      "code": [
+        "research_workspace/visualization.py"
+      ],
+      "current_status": "折线/柱状/雷达脚本均独立运行，SVG与原渲染完全一致",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M6-05",
+      "requirement": "保留“三维雷达图”交付项，确认维度与图形定义后实现对应形式；不能自行用普通二维雷达图宣称已满足。另确认评分提到的TikZ/Mermaid输出是否为指定格式要求。",
+      "baseline_status": "部分实现，定义待确认",
+      "priority": "P2",
+      "remaining": "已有三维分层雷达图，类别高度说明明确；比赛具体定义待确认",
+      "code": [
+        "research_workspace/radar.py"
+      ],
+      "current_status": "部分实现，定义待确认",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M6-06",
+      "requirement": "根据真实数据生成Figure Caption，说明变量、单位、趋势和适用条件；没有统计分析支持时不声称显著性或因果关系。",
+      "baseline_status": "部分实现",
+      "priority": "P1",
+      "remaining": "不生成统计显著性、因果或自动时间趋势结论",
+      "code": [
+        "research_workspace/visualization.py"
+      ],
+      "current_status": "补实际CSV顺序升降和类别极值图注，回归及公开BLEU数据页面通过",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "M6-07",
+      "requirement": "中文摘要及全文可翻译为学术英文，术语一致，数字、公式和引用保持准确，结果可导出。",
+      "baseline_status": "已实现，部分真实模型验收",
+      "priority": "P1",
+      "remaining": "已有学术翻译与保护测试，整篇术语一致性仍待验收",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "已实现，部分真实模型验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M6-08",
+      "requirement": "CSV先预览字段、类型、缺失值与单位；聚合、删除和归一化等转换留下记录。图表、脚本、数据版本和图注能对应起来。",
+      "baseline_status": "已实现，数据回归验收",
+      "priority": "P1",
+      "remaining": "字段/缺失/归一化/原数据SHA均有记录",
+      "code": [
+        "research_workspace/visualization.py"
+      ],
+      "current_status": "已实现，数据回归验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "M6-09",
+      "requirement": "生成代码在受限执行环境运行，限制时间、内存和文件访问；默认禁网，仅提供当前任务的数据目录，不注入主服务密钥。异常脚本显示失败原因，不影响主服务。优先采用受控绘图模板降低执行复杂度。",
+      "baseline_status": "已实现，受控模板",
+      "priority": "P1",
+      "remaining": "只导出固定模板，不运行任意用户或模型代码",
+      "code": [
+        "research_workspace/visualization.py"
+      ],
+      "current_status": "独立目录实跑4类脚本；重复运行不覆盖输出",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "X01",
+      "requirement": "一个真实复合任务可串起多个工具，例如从论文名检索下载、解析、比较到带引用的回答，工具调用与产物可观察。",
+      "baseline_status": "部分实现",
+      "priority": "P1",
+      "remaining": "跨模块一键自动规划到下载再问答的完整端到端验收未完成",
+      "code": [
+        "research_workspace/jobs.py",
+        "research_workspace/discovery.py"
+      ],
+      "current_status": "部分实现；实际联网下载解析及固定版本检索证据链分别已测",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "X02",
+      "requirement": "界面显示任务步骤、进度、所用证据、工具结果摘要和失败原因；不依赖展示模型隐藏推理文本。",
+      "baseline_status": "部分实现",
+      "priority": "P1",
+      "remaining": "有状态/事件/来源；长时间事实审核阶段细化进度不足",
+      "code": [
+        "research_workspace/jobs.py"
+      ],
+      "current_status": "部分实现",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "X03",
+      "requirement": "任务状态至少区分排队、处理中、部分完成、完成、失败和取消；明确当前问答可用的论文及页范围。",
+      "baseline_status": "已实现，故障回归验收",
+      "priority": "P0",
+      "remaining": "中断未知结果不自动重放，已验证取消和恢复",
+      "code": [
+        "research_workspace/jobs.py"
+      ],
+      "current_status": "已实现，故障回归验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "X04",
+      "requirement": "为模型调用和任务设置步数、费用、时间及重试上限，记录模型与Prompt版本、耗时和用量，避免循环搜索。",
+      "baseline_status": "部分实现",
+      "priority": "P1",
+      "remaining": "步数/条数/超时边界存在；缺每任务完整模型token与费用用量台账",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "部分实现",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "X05",
+      "requirement": "密钥仅在服务端，通过环境变量配置；日志与仓库不记录真实密钥。上传论文内容只作为资料，不能改变工具权限或系统规则。",
+      "baseline_status": "本地边界已实现",
+      "priority": "P0",
+      "remaining": "公网部署需单独完成认证/限流/密钥环境配置验证",
+      "code": [
+        "research_workspace/api.py"
+      ],
+      "current_status": "本地边界已实现",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "X06",
+      "requirement": "至少用两个测试账号检查文献、向量检索、任务列表、缓存和下载链接的隔离，后端逐次校验归属。",
+      "baseline_status": "已实现，隔离回归",
+      "priority": "P0",
+      "remaining": "实际多账号并发浏览器验收仍未完成",
+      "code": [
+        "research_workspace/accounts.py"
+      ],
+      "current_status": "空间隔离回归通过；向量缓存也按空间/模型/来源版本隔离",
+      "changed_in_this_round": true
+    },
+    {
+      "id": "X07",
+      "requirement": "部署环境可重复运行长PDF、多文档、图谱和流式问答；明确本版支持的并发范围，用实测记录而非口头承诺说明能力。",
+      "baseline_status": "尚未完成部署验收",
+      "priority": "P1",
+      "remaining": "无公网演示、独立安装复现及部署版并发实测",
+      "code": [
+        "research_workspace/api.py"
+      ],
+      "current_status": "尚未完成部署验收",
+      "changed_in_this_round": false
+    },
+    {
+      "id": "X08",
+      "requirement": "落实Prompt与Guardrails：记录Prompt版本，为结构化输出设置格式与字段校验，核查引用是否来自可访问证据；格式错误执行有限修正或明确失败，无依据事实不能包装成确定结论。用格式异常、缺证据和虚构书目样例验证防护，并保留失败记录。",
+      "baseline_status": "已实现，多轮真实Pro验收",
+      "priority": "P0",
+      "remaining": "结构、来源、事实和完整性分别审核，记录不包含私有推理",
+      "code": [
+        "research_workspace/intelligence.py"
+      ],
+      "current_status": "已实现，多轮真实Pro验收",
+      "changed_in_this_round": false
+    }
+  ]
+}
