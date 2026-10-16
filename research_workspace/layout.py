@@ -16,7 +16,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'native-layout-v1'
+LAYOUT_VERSION = 'native-layout-v2-title-direction'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -136,6 +136,7 @@ class LayoutService:
                     identifier = f'layout-{run["id"]}-{page}-line-{len(regions)+1}'
                     box = _union([span['bbox'] for span in spans])
                     regions.append({'id':identifier,'text':text,'bbox':box,'spans':spans,
+                                    'direction':list(line.get('dir',(1,0))),
                                     'font_size':max(span['size'] for span in spans),
                                     'bold':any(span['flags'] & 16 for span in spans),
                                     'evidence':anchor(text,box)})
@@ -193,11 +194,18 @@ class LayoutService:
             ordered = sorted(regions,key=lambda region:(raw_boxes[region['id']][1],raw_boxes[region['id']][0]))
             raw_height = source.cropbox.height
             if page==1 and body_size:
+                title_pool=[]
                 for region in ordered:
                     raw = raw_boxes[region['id']]
                     if raw[1]<raw_height*.35 and region['font_size']>=body_size*1.3 and 4<=len(region['text'])<=300:
-                        if not _SECTION.match(region['text']):
-                            candidates['title'].append(self._candidate(region,'font_size_and_top_position'))
+                        dx,dy=region['direction']
+                        if (not _SECTION.match(region['text']) and dx>.8 and abs(dy)<.2
+                                and not re.search(r'^\s*arxiv\s*:|@',region['text'],re.I)):
+                            title_pool.append(region)
+                largest=max((r['font_size'] for r in title_pool),default=0)
+                for region in title_pool:
+                    if region['font_size']>=largest*.9:
+                        candidates['title'].append(self._candidate(region,'largest_horizontal_font_at_top'))
                 if candidates['title']:
                     title_ids = {item['region_id'] for item in candidates['title']}
                     title_bottom = max(raw_boxes[identifier][3] for identifier in title_ids)

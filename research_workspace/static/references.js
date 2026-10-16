@@ -92,7 +92,7 @@
       list.replaceChildren();
       summary.textContent = `原书目 ${ranked.total_references} 条 · 保留 ${ranked.included?.length || 0} 条 · 暂筛出 ${ranked.filtered?.length || 0} 条；所有原始条目均保留。`;
       const rows = Array.isArray(ranked.items) ? ranked.items : ranked.include_filtered ? [...(ranked.included || []), ...(ranked.filtered || [])] : ranked.included || [];
-      if (!rows.length) list.append(node("p", "rm-empty", ranked.total_references ? "当前关键词未命中书目。可修改查询或勾选显示暂筛出的书目。" : "尚未识别到数字型参考书目；请核对该版本的解析结果。"));
+      if (!rows.length) list.append(node("p", "rm-empty", ranked.total_references ? "当前关键词未命中书目。可修改查询或勾选显示暂筛出的书目。" : "尚未识别到可用参考书目；请核对该版本的解析结果。"));
       for (const row of rows) {
         const article = node("article", "rr-reference rm-card rm-form");
         article.dataset.referenceId = row.reference_id;

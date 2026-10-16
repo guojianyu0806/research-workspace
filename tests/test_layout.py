@@ -208,3 +208,18 @@ def test_malformed_or_implicit_formula_is_retained_without_conversion(library):
     formulas = LayoutService(library).analyze_page(document['id'],1)['formulas']
     assert [formula['original_text'] for formula in formulas] == ['x = = y','y = 2x','x = (y + 1)']
     assert all(formula['latex'] is None and formula['needs_review'] for formula in formulas)
+
+
+def test_title_candidates_exclude_rotated_identifier_and_smaller_author_lines(library):
+    with pymupdf.open() as pdf:
+        p=pdf.new_page(width=600,height=800)
+        p.insert_text((40,60),'Actual Main Research Title',fontsize=22)
+        p.insert_text((40,90),'Alice Smith and Bob Jones',fontsize=16)
+        p.insert_text((40,120),'contact@example.org',fontsize=16)
+        p.insert_text((20,300),'arXiv:2401.12345v1',fontsize=22,rotate=90)
+        for y in range(200,500,30):p.insert_text((40,y),'A paragraph with regular body font size.',fontsize=11)
+        doc=library.import_document(pdf.tobytes(),'realistic-title.pdf')['document']
+    library.process_next_job()
+    result=LayoutService(library).analyze_page(doc['id'],1)
+    assert [r['text'] for r in result['metadata_candidates']['title']]==['Actual Main Research Title']
+    assert any('Alice Smith' in r['text'] for r in result['metadata_candidates']['authors'])
