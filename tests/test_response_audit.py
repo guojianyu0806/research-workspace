@@ -186,3 +186,20 @@ def test_isolated_repair_cannot_replace_requested_positive_fact_with_gap_text(tm
     with pytest.raises(ModelOutputError,match="不能用缺口说明删除事实"):
         asyncio.run(service._generate_grounded("fixture",{"task":"qa","question":"Prediction?",
             "allow_isolated_claim_repair":True},AnswerPayload,[source()]))
+
+
+def test_numeric_result_cannot_evade_own_identity_by_saying_the_paper_reports_it():
+    c=answer("论文报告英语到德语的BLEU分数为28.4。").claims[0]
+    c.citations[0].quote="Our model achieves 28.4 BLEU on English-to-German."
+    assert IntelligenceService._missing_quantitative_result_scope(c,{"orion"})
+    c.text="ORION (big)在英语到德语任务的BLEU分数为28.4。"
+    c.citations[0].quote="The ORION (big) model achieves 28.4 BLEU on English-to-German."
+    assert IntelligenceService._missing_quantitative_result_scope(c,{"orion"})==[]
+    c.text="ORION在英语到德语任务的BLEU分数为28.4。"
+    assert "the evaluated big variant" in IntelligenceService._missing_quantitative_result_scope(c,{"orion"})
+
+
+def test_corpus_counts_are_not_mistaken_for_measured_performance_results():
+    c=answer("ORION训练使用36M句。").claims[0]
+    c.citations[0].quote="Our model trains on 36M sentences."
+    assert IntelligenceService._missing_quantitative_result_scope(c,{"orion"})==[]

@@ -1188,6 +1188,24 @@ class IntelligenceService:
                         missing.append("parallel/aligned property independently quoted for dataset " + label)
         return missing
 
+    @classmethod
+    def _missing_quantitative_result_scope(cls, claim: Claim, names: set[str]) -> list[str]:
+        if not (re.search(r"\d",claim.text) and re.search(
+                r"\bBLEU\b|\bF1\b|accurac|\bscore\b|\bscores\b|得分|分数|准确率|正确率",claim.text,re.I)):
+            return []
+        quotes=" ".join(c.quote for c in claim.citations)
+        missing=[]
+        if (names and re.search(r"\bour\s+(?:\w+\s+){0,2}models?\b|我们的模型",quotes,re.I)
+                and not cls._identifier_tokens(quotes).intersection(names)):
+            missing.append("the measured result's actual named model, not an unresolved 'our model' or paper-level shorthand")
+        variants=set(re.findall(r"\b[A-Za-z][A-Za-z0-9_]*\s*[-(]\s*(big|base|large|small)\b",quotes,re.I))
+        variants.update(re.findall(r"\b(big|base|large|small)\s+[A-Za-z][A-Za-z0-9_-]*\s+model\b",quotes,re.I))
+        aliases={"big":r"\bbig\b|大型|大模型","large":r"\blarge\b|大型|大模型",
+                 "base":r"\bbase\b|基础|基座","small":r"\bsmall\b|小型|小模型"}
+        missing.extend("the evaluated "+v.lower()+" variant" for v in sorted(variants)
+            if not re.search(aliases[v.lower()],claim.text,re.I))
+        return missing
+
     @staticmethod
     def _review_claim_identity(claim: Claim, evidence: list[Evidence]) -> dict:
         sources = {item.evidence_id: item for item in evidence}
@@ -1569,6 +1587,7 @@ class IntelligenceService:
                     cache_key = json.dumps(claim_data, sort_keys=True, ensure_ascii=False)
                     missing_names = self._missing_named_attribution(claim, named_identifiers)
                     missing_scope = self._missing_review_qualifiers(claim) if structured_review else []
+                    missing_scope += self._missing_quantitative_result_scope(claim,named_identifiers)
                     if missing_scope:
                         verdict = ClaimSupportPayload(verdict="unsupported", reason=(
                             "This claim adds scope not explicitly present in its own quotations: " + ", ".join(missing_scope)
