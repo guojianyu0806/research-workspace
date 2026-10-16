@@ -163,7 +163,13 @@ def training_eligibility(service, claim, names, requirement=None):
         missing.append("an actual training target in the claim, rather than output computation alone")
     if requirement:
         own = {(cite.evidence_id, cite.quote_id) for cite in claim.citations}
-        if (requirement["scope_evidence_id"], requirement["scope_quote_id"]) not in own:
+        exact_scope=(requirement["scope_evidence_id"], requirement["scope_quote_id"]) in own
+        # A resolved longer original passage may contain the same frozen scope
+        # sentence. Its alternate catalog ID must not turn valid context into a gap.
+        contained_scope=any(cite.evidence_id==requirement['scope_evidence_id'] and
+            ' '.join(requirement['scope_text'].split()) in ' '.join(cite.quote.split())
+            for cite in claim.citations)
+        if not (exact_scope or contained_scope):
             missing.append("named multiple-task scope declaration")
         ids = {cite.evidence_id for cite in claim.citations}
         missing.extend(task["label"] for task in requirement["tasks"] if not ids.intersection(task["evidence_ids"]))
