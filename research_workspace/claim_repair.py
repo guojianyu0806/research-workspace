@@ -35,7 +35,7 @@ async def repair_rejected_claims(service, result, reviews, evidence, catalog, pa
         if projected is not None:
             repaired=ClaimRepairPayload(claim=projected)
         else:
-            audit["claim_repair_prompt_version"]="claim-repair-v1.1"
+            audit["claim_repair_prompt_version"]="claim-repair-v1.2"
             repaired=await service.provider.generate(_prompt("claim_repair_v1"),{
                 "task":"repair_grounded_claim","response_kind":payload["task"],
                 "request":payload.get("question") or payload.get("instruction",""),
