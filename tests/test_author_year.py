@@ -35,3 +35,9 @@ def test_lowercase_title_before_year_does_not_create_new_author_entry():
     result=extract_structure([block('References','h',2),block('Alice Smith. 2020. First paper.','r1',2),
         block('In Proceedings of the research conference, 2021.','cont',2)],'doc','run')
     assert len(result['references'])==1
+
+
+def test_continued_author_list_cannot_create_an_empty_surname_or_crash():
+    result=extract_structure([block('References','h',2),block('Alice Smith, Bob Roe,','r1',2),
+        block('and Jane Doe. 2020. A research article.','cont',2)],'doc','run')
+    assert len(result['references'])==1 and result['references'][0]['first_author_surname']=='Smith'

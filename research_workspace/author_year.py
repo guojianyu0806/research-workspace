@@ -30,10 +30,10 @@ def bibliography(lines,anchor):
                 authors=re.sub(r"(\w)-\s+(\w)",r"\1\2",preview[:year.start()])
                 words=re.findall(r"[^\W\d_]+(?:[’'\-][^\W\d_]+)*",authors,re.UNICODE)
                 allowed={'and','van','von','de','del','der','di','da','et','al','la'}
-                if 2<=len(words)<=80 and all(w[0].isupper() or w in allowed for w in words):
+                if 2<=len(words)<=80 and words[0][0].isupper() and all(w[0].isupper() or w in allowed for w in words):
                     first=re.split(r",|\band\b",authors)[0].strip(' .(')
-                    surname=re.findall(r"[^\W\d_]+(?:[’'\-][^\W\d_]+)*",first,re.UNICODE)[-1]
-                    start=(surname,year[1])
+                    first_words=re.findall(r"[^\W\d_]+(?:[’'\-][^\W\d_]+)*",first,re.UNICODE)
+                    if first_words:start=(first_words[-1],year[1])
         if start:
             current={'id':f'reference-{len(refs)+1}','label':f'{start[0]}, {start[1]}',
                 'text':line['text'],'evidence':anchor(block,line['start'],line['end']),
