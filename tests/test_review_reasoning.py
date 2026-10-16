@@ -24,6 +24,8 @@ from research_workspace.intelligence import ChatCompletionProvider, ClaimSupport
     ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_single_claim", "response_kind":"compare"}, "enabled", 9216),
     ("deepseek-v4-pro", "api.deepseek.com", {"task": "verify_single_claim", "response_kind":"draft"}, "enabled", 9216),
     ("deepseek-v4-pro", "api.deepseek.com", {"task": "future_work"}, "disabled", 1024),
+    ("deepseek-v4-pro", "api.deepseek.com", {"task":"verify_response_coverage", "actual_answers_only":True}, "enabled", 9216),
+    ("deepseek-v4-pro", "api.deepseek.com", {"task":"verify_response_coverage", "coverage_contract":{"requested_dimensions":["architecture","training goal"]}}, "enabled", 9216),
     ("deepseek-flash", "api.deepseek.com", {"task": "review"}, "disabled", 1024),
     ("deepseek-v4-pro", "models.example", {"task": "review"}, None, 1024),
 ])

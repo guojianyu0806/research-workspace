@@ -15,7 +15,7 @@ def attach_task_scope(service,claim,evidence,catalog,requirements,audit,context)
         eid,qid=req["scope_evidence_id"],req["scope_quote_id"]
         quote=catalog.get(eid,{}).get(qid)
         if (not quote or eid not in sources or sources[eid].document_id!=doc
-                or not names.intersection(service._identifier_tokens(quote))):continue
+                or not names.intersection(service._identifier_tokens(quote)).intersection(service._identifier_tokens(claim.text))):continue
         if any(q.evidence_id==eid and q.quote_id==qid for q in claim.citations) or len(claim.citations)>=12:continue
         original=service._review_claim_identity(claim,evidence)
         claim.citations.append(Citation(evidence_id=eid,quote_id=qid,quote=quote))

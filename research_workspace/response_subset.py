@@ -21,6 +21,7 @@ async def complete_supported_subset(service,result,reviews,evidence,payload,audi
     verdict=await service.provider.generate(_prompt("coverage_v1"),{
         "task":"verify_response_coverage","response_kind":payload["task"],"actual_answers_only":True,
         "request":payload.get("question") or payload.get("instruction",""),
+        "coverage_contract":payload.get("coverage_contract",{}),
         "selected_document_ids":payload.get("selected_document_ids",required_documents or []),
         "response_message":rebuilt.message,
         "proposed_sections":[s.model_dump(include={"heading","proposed_work"}) for s in getattr(rebuilt,"sections",[])],
@@ -33,6 +34,7 @@ async def complete_supported_subset(service,result,reviews,evidence,payload,audi
     audit["model_checked"]=True
     identities=[{"claim_index":i,**service._review_claim_identity(c,evidence)} for i,c in enumerate(final)]
     check={"source_attempt":source_attempt,"candidate_claim_ids":[c["claim_id"] for c in identities],
+        "coverage_contract":payload.get("coverage_contract",{}),
         "actual_answers_only":True,**verdict.model_dump()}
     audit.setdefault("optional_prune_checks",[]).append(check)
     if verdict.missing_aspects or verdict.unverified_statements:return None
@@ -42,9 +44,11 @@ async def complete_supported_subset(service,result,reviews,evidence,payload,audi
     attempt=source_attempt+1
     audit["attempts"].append({"attempt":attempt,"problems":[],"claims":identities,"reviews":final_reviews,
         "proposed_architecture":rebuilt.architecture.model_dump() if getattr(rebuilt,"architecture",None) else None,
+        "coverage_contract":payload.get("coverage_contract",{}),
         "method":"supported_subset_checkpoint_not_new_generation"})
     audit.setdefault("response_coverage",[]).append({"attempt":attempt,"index_space":"this attempt's claims.claim_index (zero-based)",
         "claim_ids":[c["claim_id"] for c in identities],"actual_answers_only":True,
+        "coverage_contract":payload.get("coverage_contract",{}),
         "response_message":rebuilt.message,"proposed_sections":[s.model_dump(include={"heading","proposed_work"}) for s in getattr(rebuilt,"sections",[])],
         "proposed_architecture":rebuilt.architecture.model_dump() if getattr(rebuilt,"architecture",None) else None,
         **verdict.model_dump()})

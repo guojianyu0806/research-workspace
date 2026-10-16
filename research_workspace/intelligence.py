@@ -289,7 +289,9 @@ class ChatCompletionProvider:
                        and payload.get('response_kind') in {'qa','compare','draft','review'})
         multi_quote_coverage = (payload.get('task') == 'verify_review_claim_coverage'
                                 and len(payload.get('claim', {}).get('citations', [])) > 1)
-        return official_pro and (writing or fact_review or multi_quote_coverage)
+        contracted_coverage = (payload.get('task') == 'verify_response_coverage' and
+            (payload.get('actual_answers_only') or payload.get('coverage_contract',{}).get('requested_dimensions')))
+        return official_pro and (writing or fact_review or multi_quote_coverage or contracted_coverage)
 
     async def generate(self, prompt: str, payload: dict, output_model: type[T]) -> T:
         endpoint = self.config.endpoint()
@@ -1494,7 +1496,7 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if not structured_review:
             audit["claim_support_prompt_version"] = "claim-support-v1.5"
-            audit["coverage_prompt_version"] = "coverage-v1.7"
+            audit["coverage_prompt_version"] = "coverage-v2.0"
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.2"
@@ -1657,6 +1659,7 @@ class IntelligenceService:
                         "response_kind": payload["task"], "response_message": result.message,
                         "proposed_sections": proposed,
                         "proposed_architecture": (result.architecture.model_dump() if getattr(result,"architecture",None) else None),
+                        "coverage_contract":payload.get("coverage_contract",{}),
                         "selected_document_ids": coverage_documents,
                         "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(coverage_claims)],
                         "evidence": [block.model_dump() for block in evidence],
@@ -1694,6 +1697,7 @@ class IntelligenceService:
                             "claim_ids": [self._review_claim_identity(claim, evidence)["claim_id"] for claim in claims],
                             "response_message": result.message, "proposed_sections": proposed,
                             "proposed_architecture": coverage_input["proposed_architecture"],
+                            "coverage_contract":coverage_input["coverage_contract"],
                             **coverage.model_dump(),
                         })
                         problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
@@ -1821,6 +1825,15 @@ class IntelligenceService:
         snapshot = retrieval.get("_snapshot_blocks", evidence)
         names = subject_hints(self, snapshot) if snapshot else {}
         explicit_aspects = request_aspects(question, [])
+        positive_request=[part for part in re.split(r"[。；;，,]",question) if not re.search(
+            r"不要|不用|无需|不必|不需要|不要求|勿|do not|no need|without|avoid",part,re.I)]
+        optimization_requested=any(re.search(r"优化目标|损失|交叉熵|loss|cross.?entropy|negative.?log|likelihood",part,re.I)
+            for part in positive_request)
+        formula_requested=any(re.search(r"公式|推导|equation|formula|derive",part,re.I) for part in positive_request)
+        coverage_contract={"requested_dimensions":explicit_aspects,
+            "optimization_loss_requested":optimization_requested,"loss_formula_requested":formula_requested,
+            "training_goal_standard":"as_explicitly_requested" if optimization_requested else "actual_training_task_and_prediction_content",
+            "architecture_standard":"state_published_components_or_model_type; do_not_require_both_encoder_and_decoder_for_every_model"}
         reading_sets, requirements = [], {}
         if explicit_aspects:
             evidence, dimensions = supplement_review_evidence(self, snapshot, evidence,
@@ -1857,6 +1870,7 @@ class IntelligenceService:
             "task": mode, "question": question, "selected_document_ids": document_ids,
             "require_request_coverage": True, "allow_isolated_claim_repair":True, "dimension_reading_sets": reading_sets,
             "required_training_tasks": requirements,
+            "coverage_contract":coverage_contract,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,
             required_documents=document_ids if mode == "compare" else None)

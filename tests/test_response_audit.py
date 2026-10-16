@@ -123,6 +123,8 @@ def test_public_comparison_adds_actual_main_task_definitions_from_one_frozen_sna
         async def generate(self,prompt,payload,model):
             if model is AnswerPayload:
                 assert payload["require_request_coverage"]
+                assert payload['coverage_contract']['training_goal_standard']=='actual_training_task_and_prediction_content'
+                assert payload['coverage_contract']['optimization_loss_requested'] is False
                 ids={b["evidence_id"] for b in payload["evidence"]}
                 assert {"E_scope","E_word","E_order"}<=ids
                 assert all(b["run_id"]=="frozen" for b in payload["evidence"])
@@ -313,14 +315,15 @@ def test_actual_task_scope_is_attached_before_isolated_review_with_original_sele
     assert result.claims[0].citations[-1].quote==e[0].text
 
 
-@pytest.mark.parametrize("change",["wrong_subject","foreign_task"])
+@pytest.mark.parametrize("change",["wrong_subject","foreign_task","mixed_subject_hints"])
 def test_scope_attachment_never_supplies_another_subject_or_documents_training_context(tmp_path,change):
     from research_workspace.task_scope import attach_task_scope
     e,req,result=task_scope_fixture();c=result.claims[0]
     service=IntelligenceService(Library(tmp_path),Sequence([]))
     service._resolve_citation_spans([c],service._citation_spans(e))
-    if change=="wrong_subject":c.text="NOVA的训练任务预测被移除的词。"
+    if change in {"wrong_subject","mixed_subject_hints"}:c.text="NOVA的训练任务预测被移除的词。"
     else:e[1]=e[1].model_copy(update={"document_id":"other"})
+    if change=="mixed_subject_hints":req['doc']['subject_identifiers']=['orion','nova']
     audit={};attach_task_scope(service,c,e,service._citation_spans(e),req,audit,{"stage":"fixture"})
     assert len(c.citations)==1 and audit=={}
 
