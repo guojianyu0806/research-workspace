@@ -1494,7 +1494,7 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if not structured_review:
             audit["claim_support_prompt_version"] = "claim-support-v1.5"
-            audit["coverage_prompt_version"] = "coverage-v1.5"
+            audit["coverage_prompt_version"] = "coverage-v1.6"
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.2"
@@ -1650,6 +1650,7 @@ class IntelligenceService:
                         "task": "verify_response_coverage", "request": payload.get("question") or payload.get("instruction", ""),
                         "response_kind": payload["task"], "response_message": result.message,
                         "proposed_sections": proposed,
+                        "proposed_architecture": (result.architecture.model_dump() if getattr(result,"architecture",None) else None),
                         "selected_document_ids": coverage_documents,
                         "claims": [{"claim_index": index, **claim.model_dump()} for index, claim in enumerate(coverage_claims)],
                         "evidence": [block.model_dump() for block in evidence],
@@ -1686,12 +1687,14 @@ class IntelligenceService:
                             "attempt": attempt_number, "index_space": "this attempt's claims.claim_index (zero-based)",
                             "claim_ids": [self._review_claim_identity(claim, evidence)["claim_id"] for claim in claims],
                             "response_message": result.message, "proposed_sections": proposed,
+                            "proposed_architecture": coverage_input["proposed_architecture"],
                             **coverage.model_dump(),
                         })
                         problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
                         problems.extend("Unanswered request aspect: " + item for item in coverage.missing_aspects)
             attempt_record = {"attempt": attempt_number, "problems": problems, "reviews": reviews}
             if not structured_review:
+                attempt_record["proposed_architecture"] = (result.architecture.model_dump() if getattr(result,"architecture",None) else None)
                 attempt_record["citation_validation"] = "passed" if citation_validation_passed else "failed"
                 attempt_record["claims"] = ([{"claim_index": index, **self._review_claim_identity(claim, evidence)}
                     for index, claim in enumerate(claims)] if citation_validation_passed else [])
@@ -1714,6 +1717,12 @@ class IntelligenceService:
                         else "not_run_no_asserted_claims" if not claims else "exact_quote_only_no_outside_text")
                 return result, used, audit
             if attempt == 1:
+                if payload.get("allow_isolated_claim_repair") and len(reviews)==len(claims):
+                    from .response_subset import complete_supported_subset
+                    complete = await complete_supported_subset(self,result,reviews,evidence,payload,audit,
+                        required_documents=required_documents,check_cancel=check_cancel)
+                    if complete is not None:
+                        return complete
                 error = ModelOutputError("回答或引文复核未通过，纠正后仍缺乏可靠支持；结果已拒绝。" + problems[0][:200])
                 if not structured_review:
                     error.grounding_diagnostics = {"status": "validation_failed", "diagnostic_only": True,

@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from research_workspace.intelligence import (AnswerPayload, ClaimSupportPayload, ClaimRepairPayload, CoveragePayload,
+from research_workspace.intelligence import (AnswerPayload, ClaimSupportPayload, ClaimRepairPayload, CoveragePayload, SynthesisPayload,
     Evidence, IntelligenceService, ModelOutputError)
 from research_workspace.library import Library
 
@@ -221,3 +221,58 @@ def test_public_response_catalog_does_not_offer_unfinished_page_tail_as_a_citabl
         "allow_isolated_claim_repair":True,"require_request_coverage":True},AnswerPayload,[prose]))
     assert result.claims[0].citations[0].quote=="ORION predicts removed words."
     assert g["citation_catalog_policy"].startswith("omit_unfinished_trailing_prose")
+
+
+@pytest.mark.parametrize("complete",[True,False])
+def test_rejected_extra_can_only_be_removed_after_actual_positive_coverage_not_gap_acknowledgement(tmp_path,complete):
+    valid=answer().claims[0];bad=answer("ORION预测99个词。","Q2").claims[0]
+    initial=AnswerPayload(status="answered",claims=[valid,bad],message="所给摘录未支持预测任务。" if not complete else "")
+    class Inspect(Sequence):
+        async def generate(self,prompt,payload,model):
+            if model is CoveragePayload:
+                assert payload["actual_answers_only"] is True
+                assert len(payload["claims"])==1
+            return await super().generate(prompt,payload,model)
+    provider=Inspect([initial,ClaimSupportPayload(verdict="supported",reason="Own attention relation."),
+        ClaimSupportPayload(verdict="unsupported",reason="Wrong quantity."),ClaimRepairPayload(claim=bad),
+        CoveragePayload(unverified_statements=[],missing_aspects=[] if complete else ["Actual prediction task is not answered."])])
+    service=IntelligenceService(Library(tmp_path),provider)
+    scenario=service._generate_grounded("fixture",{"task":"qa","question":"Architecture?" if complete else "Architecture and prediction?",
+        "allow_isolated_claim_repair":True,"require_request_coverage":True},AnswerPayload,[source()])
+    if not complete:
+        with pytest.raises(ModelOutputError) as caught:asyncio.run(scenario)
+        g=caught.value.grounding_diagnostics["grounding"]
+        assert g["optional_prune_checks"][-1]["missing_aspects"]
+        assert "optional_prune" not in g
+        return
+    result,_,g=asyncio.run(scenario)
+    assert [c.text for c in result.claims]==[valid.text]
+    assert g["optional_prune"]["source_attempt"]==2
+    assert g["optional_prune"]["removed_original_indices"]==[1]
+    assert g["attempts"][-1]["method"]=="supported_subset_checkpoint_not_new_generation"
+    assert g["claim_reviews"][0]["claim_id"]==g["claim_catalog"][0]["claim_id"]
+    repair=g["claim_repairs"][0]
+    assert repair["result_claim_index"] is None and repair["retained_in_final"] is False
+    assert repair["repaired_claim_id"] in g["optional_prune"]["removed_claim_ids"]
+
+
+def test_draft_coverage_receives_and_records_actual_proposed_diagram(tmp_path):
+    graph={"nodes":[{"id":"question","label":"问题"},{"id":"retriever","label":"检索器"},
+        {"id":"evidence","label":"证据文段"},{"id":"generator","label":"生成器"}],
+        "edges":[{"source":"question","target":"retriever"},{"source":"retriever","target":"evidence"},
+                 {"source":"evidence","target":"generator"}]}
+    class Inspect:
+        configured=True
+        async def generate(self,prompt,payload,model):
+            if model is SynthesisPayload:
+                c={"text":"ORION models use attention.","citations":[{"evidence_id":"E_scope","quote_id":"Q1"}]}
+                return SynthesisPayload(status="generated",sections=[{"heading":h,"claims":[c],"proposed_work":"拟开展实验，尚未执行。"}
+                    for h in ['Abstract','Introduction','Related Work']],architecture=graph)
+            assert model is CoveragePayload
+            assert payload["proposed_architecture"]==graph
+            return CoveragePayload(unverified_statements=[],missing_aspects=[])
+    service=IntelligenceService(Library(tmp_path),Inspect())
+    result,_,g=asyncio.run(service._generate_grounded("fixture",{"task":"draft","instruction":"提供四节点概念图。",
+        "allow_isolated_claim_repair":True,"require_request_coverage":True},SynthesisPayload,[source()]))
+    assert result.architecture.model_dump()==graph
+    assert g["attempts"][-1]["proposed_architecture"]==g["response_coverage"][-1]["proposed_architecture"]==graph
