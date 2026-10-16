@@ -1099,6 +1099,7 @@ class IntelligenceService:
             "each", "every", "all", "other", "another", "one", "two", "new", "old", "first", "second",
             "most", "many", "some", "several", "different", "such", "specific", "single", "multiple",
             "large", "small", "neural", "language", "masked", "pretrained", "pre-trained", "trained",
+            "recurrent", "convolutional",
             "general", "generative", "probabilistic", "baseline", "original", "proposed", "existing",
             "model", "models", "architecture", "method", "approach", "framework", "system", "network",
             "nlp", "nlu", "nlg", "qa", "mlm", "nsp", "lm", "llm", "rnn", "cnn", "dnn", "seq2seq",
@@ -1451,10 +1452,23 @@ class IntelligenceService:
                  "limitation": "model_semantic_review_is_not_a_proof"}
         state = shared_state if shared_state is not None else {}
         audit = state.setdefault("audit", audit)
+        audit.setdefault("index_space", "attempts[n].claims.claim_index (zero-based within that attempt); final claim_catalog.claim_index")
+        audit.setdefault("response_kind", payload.get("task"))
+        audit.setdefault("generation_prompt_header", prompt.splitlines()[0] if prompt else "")
+        if isinstance(self.provider, ChatCompletionProvider):
+            audit.setdefault("model_policy", {
+                "requested_model": self.provider.config.model,
+                "provider_host": urlsplit(self.provider.config.base_url).hostname,
+                "generation_thinking": "enabled" if self.provider._uses_review_reasoning(payload) else "disabled",
+                "private_reasoning_retained": False,
+            })
         support_cache: dict[str, ClaimSupportPayload] = state.setdefault("support_cache", {})
         coverage_link_cache: dict[str, ReviewClaimCoveragePayload] = state.setdefault("coverage_link_cache", {})
         frozen_coverage_aspects: list[str] | None = state.get("coverage_aspects")
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
+        if not structured_review:
+            audit["claim_support_prompt_version"] = "claim-support-v1.4"
+            audit["coverage_prompt_version"] = "coverage-v1.5"
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.2"
@@ -1510,9 +1524,11 @@ class IntelligenceService:
             claims = result.claims if isinstance(result, AnswerPayload) else [
                 claim for section in result.sections for claim in section.claims]
             problems = []
+            citation_validation_passed = False
             try:
                 self._resolve_citation_spans(claims, catalog)
                 used = self._validate_claims(claims, evidence)
+                citation_validation_passed = True
                 if supported_review_claims is not None and result.status == "generated":
                     repaired = Counter(json.dumps(claim.model_dump(), sort_keys=True, ensure_ascii=False) for claim in claims)
                     if repaired != supported_review_claims:
@@ -1634,10 +1650,22 @@ class IntelligenceService:
                         problems.extend(self._review_coverage_problems(coverage, coverage_claims, evidence,
                             coverage_input["selected_document_ids"], result.message))
                     else:
+                        audit.setdefault("response_coverage", []).append({
+                            "attempt": attempt_number, "index_space": "this attempt's claims.claim_index (zero-based)",
+                            "claim_ids": [self._review_claim_identity(claim, evidence)["claim_id"] for claim in claims],
+                            "response_message": result.message, "proposed_sections": proposed,
+                            **coverage.model_dump(),
+                        })
                         problems.extend("Uncited statement outside claims: " + item for item in coverage.unverified_statements)
                         problems.extend("Unanswered request aspect: " + item for item in coverage.missing_aspects)
             attempt_record = {"attempt": attempt_number, "problems": problems, "reviews": reviews}
-            if structured_review and shared_state is not None:
+            if not structured_review:
+                attempt_record["citation_validation"] = "passed" if citation_validation_passed else "failed"
+                attempt_record["claims"] = ([{"claim_index": index, **self._review_claim_identity(claim, evidence)}
+                    for index, claim in enumerate(claims)] if citation_validation_passed else [])
+                for review in reviews:
+                    review["claim_id"] = attempt_record["claims"][review["claim_index"]]["claim_id"]
+            elif shared_state is not None:
                 source_ids = {item.evidence_id for item in evidence}
                 attempt_record["claims"] = [{"claim_index": index, **self._review_claim_identity(claim, evidence)}
                     for index, claim in enumerate(claims)
@@ -1646,9 +1674,21 @@ class IntelligenceService:
             await self._check_cancel(check_cancel)
             if not problems:
                 audit["status"] = "passed" if claims else "no_asserted_claims"
+                if not structured_review:
+                    audit["claim_catalog"] = attempt_record["claims"]
+                    audit["claim_reviews"] = reviews
+                    audit["coverage_method"] = ("model_response_coverage" if any(
+                        item["attempt"] == attempt_number for item in audit.get("response_coverage", []))
+                        else "not_run_no_asserted_claims" if not claims else "exact_quote_only_no_outside_text")
                 return result, used, audit
             if attempt == 1:
-                raise ModelOutputError("回答或引文复核未通过，纠正后仍缺乏可靠支持；结果已拒绝。" + problems[0][:200])
+                error = ModelOutputError("回答或引文复核未通过，纠正后仍缺乏可靠支持；结果已拒绝。" + problems[0][:200])
+                if not structured_review:
+                    error.grounding_diagnostics = {"status": "validation_failed", "diagnostic_only": True,
+                        "response_kind": payload.get("task"), "grounding": audit,
+                        "source_snapshot": [{key:block.model_dump()[key] for key in
+                            ("document_id", "run_id", "block_id", "page", "bbox")} for block in evidence]}
+                raise error
             previous = result.model_dump()
             subset_repair = None
             # A short review can keep a useful, fully cited subset. Freeze it

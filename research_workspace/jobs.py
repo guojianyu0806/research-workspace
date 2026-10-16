@@ -282,5 +282,11 @@ class JobStore:
                     db.execute('INSERT OR REPLACE INTO research_job_items(job_id,item_key,payload) VALUES(?,?,?)',
                         (job_id, 'review_validation', json.dumps({'stage':'review_validation',
                             'result':diagnostics}, ensure_ascii=False)))
+            diagnostics = getattr(exc, 'grounding_diagnostics', None)
+            if isinstance(exc, ModelOutputError) and isinstance(diagnostics, dict):
+                with self.library._connection() as db:
+                    db.execute('INSERT OR REPLACE INTO research_job_items(job_id,item_key,payload) VALUES(?,?,?)',
+                        (job_id, 'grounding_validation', json.dumps({'stage':'grounding_validation',
+                            'result':diagnostics}, ensure_ascii=False)))
             self.finish(job_id,'failed',error=error[:600])
         return True
