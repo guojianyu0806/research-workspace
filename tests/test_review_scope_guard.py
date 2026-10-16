@@ -60,6 +60,13 @@ def test_each_dataset_can_supply_its_own_parallel_attribute_on_the_same_card():
     assert IntelligenceService._missing_review_qualifiers(current)==[]
 
 
+def test_explicitly_different_dataset_units_are_not_rewritten_as_shared_pairs():
+    current=card("ORION使用ArchiveAlpha数据集的450万句对和ArchiveBeta数据集的3600万句训练。",
+        "ORION is trained on the ArchiveAlpha dataset containing 4.5 million sentence pairs.",
+        "We use the ArchiveBeta dataset containing 36 million sentences.")
+    assert IntelligenceService._missing_review_qualifiers(current)==[]
+
+
 def test_prediction_conditioning_alone_does_not_establish_marginalization():
     current=card("ORION在文档上进行边缘化。","ORION predicts target tokens conditioned on a document.")
     assert "marginalization operation" in IntelligenceService._missing_review_qualifiers(current)

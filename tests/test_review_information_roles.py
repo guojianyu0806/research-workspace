@@ -4,7 +4,8 @@ import pytest
 from research_workspace.intelligence import (Claim, Evidence, IntelligenceService, ModelOutputError,
     SynthesisPayload, ClaimSupportPayload, ReviewCoveragePayload, ReviewClaimCoveragePayload)
 from research_workspace.library import Library
-from research_workspace.review_retrieval import verified_training_corpus_role, is_information_role_comparison
+from research_workspace.review_retrieval import (verified_training_corpus_role, is_information_role_comparison,
+    verified_single_training_task_role, is_prediction_task_comparison, explicit_training_task_span)
 
 
 REQUEST="撰写ORION综述，分清外部知识的作用。"
@@ -83,3 +84,46 @@ def test_source_role_policy_never_overrides_an_unsupported_factual_claim(tmp_pat
     with pytest.raises(ModelOutputError):
         asyncio.run(service._generate_grounded("fixture",{"task":"review","instruction":REQUEST},
             SynthesisPayload,e,required_documents=["doc"]))
+
+
+def test_explicit_training_task_uses_actual_native_purpose_not_corpus_or_decoder(tmp_path):
+    service=IntelligenceService(Library(tmp_path));e,c=inputs()
+    c.text="ORION large以翻译为训练任务，使用PublicArchive数据集作为训练数据。"
+    identity=service._review_claim_identity(c,e)
+    role=verified_single_training_task_role(service,identity,"doc",["orion"])
+    assert role["role"]=="explicit_training_task" and role["subject_citation_id"]=="R1"
+    assert verified_single_training_task_role(service,identity,"doc",["orion"],{"tasks":[1,2]}) is None
+    for quote in ["ORION trains on PublicArchive.", "ORION converts decoder outputs with softmax.",
+                  "ORION trained for 3 days."]:
+        assert not explicit_training_task_span(service,quote,["orion"])
+        changed={**identity,"citations":[{**identity["citations"][0],"quote":quote}]}
+        assert verified_single_training_task_role(service,changed,"doc",["orion"]) is None
+    foreign={**identity,"citations":[{**q,"document_id":"other"} for q in identity["citations"]]}
+    assert verified_single_training_task_role(service,foreign,"doc",["orion"]) is None
+
+
+def test_training_task_organization_does_not_pretend_to_answer_requested_loss_formula():
+    request="训练目标维度须说明实际预测内容。仅在原文明示时描述优化目标，不臆测未写出的损失函数。"
+    assert is_prediction_task_comparison(request,"训练目标")
+    assert not is_prediction_task_comparison(request,"损失函数")
+    assert not is_prediction_task_comparison("说明训练任务，并给出损失函数和数学公式。","训练目标")
+
+
+def test_verified_training_purpose_fills_its_task_row_with_raw_model_omission_preserved(tmp_path):
+    class TaskProvider(Provider):
+        async def generate(self,prompt,payload,model):
+            if model is SynthesisPayload:
+                e,c=inputs();c.text="ORION large以翻译为训练任务。"
+                c.citations=c.citations[:1]
+                return SynthesisPayload(status="generated",sections=[{"heading":"训练目标","claims":[c.model_dump()]}])
+            if model is ReviewCoveragePayload:
+                return ReviewCoveragePayload(requested_aspects=["训练目标"],assessments=[{
+                    "document_id":"doc","aspect":"训练目标","answer_claim_indices":[],"gap_quote":"",
+                    "gap_is_appropriate":False,"reason":"Model omitted this explicit task relation."}],unverified_statements=[])
+            return await super().generate(prompt,payload,model)
+    service=IntelligenceService(Library(tmp_path),TaskProvider());e,_=inputs()
+    _,_,audit=asyncio.run(service._generate_grounded("fixture",{"task":"review","instruction":"综述训练任务的实际预测内容。"},
+        SynthesisPayload,e,required_documents=["doc"]))
+    record=audit["review_coverage"][-1];link=record["claim_link_reviews"][0]
+    assert record["assessments"][0]["answer_claim_indices"]==[0]
+    assert link["model_answers"]==[] and link["derived_training_task_links"][0]["role"]=="explicit_training_task"

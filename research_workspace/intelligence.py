@@ -27,7 +27,8 @@ from .library import Library, LibraryError
 from .review_retrieval import (supplement_review_evidence, subject_hints, request_aspects,
                                focus_review_evidence, directly_named_training,
                                training_task_requirements, training_eligibility, is_training_aspect,
-                               verified_training_corpus_role, is_information_role_comparison)
+                               verified_training_corpus_role, is_information_role_comparison,
+                               verified_single_training_task_role, is_prediction_task_comparison)
 from .review_completion import complete_review
 
 
@@ -1157,7 +1158,13 @@ class IntelligenceService:
         ]
         missing = [label for trigger, required, label in rules
                    if re.search(trigger, claim.text, re.I) and not re.search(required, quotes, re.I)]
-        if re.search(r"平行|句对|parallel|aligned|sentence[- ]pairs?", claim.text, re.I):
+        parallel_marks = list(re.finditer(r"平行|句对|parallel|aligned|sentence[- ]pairs?", claim.text, re.I))
+        coordinators = list(re.finditer(r"与|和|及|、|/|\band\b", claim.text, re.I))
+        collective = re.search(r"(?:这些|上述|两种|两者|均|both|all|two).{0,25}(?:平行|句对|parallel|aligned|sentence[- ]pairs?)", claim.text, re.I)
+        # Preserve explicitly heterogeneous units: "A has sentence pairs and B
+        # has sentences" does not distribute A's qualifier to B.
+        shared_parallel = collective or (parallel_marks and coordinators and parallel_marks[-1].start() > coordinators[-1].start())
+        if parallel_marks and shared_parallel:
             original = [" ".join(unicodedata.normalize("NFKC", cite.quote).split()) for cite in claim.citations]
             entities = {}
             for text in original:
@@ -1224,6 +1231,10 @@ class IntelligenceService:
                 own_ids = {source.evidence_id for source in own_sources}
                 own_claim = claim.model_copy(update={"citations": [cite for cite in claim.citations if cite.evidence_id in own_ids]})
                 names = self._named_attribution_identifiers(self._citation_spans(own_sources))
+                if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{1,30}", titles[doc]):
+                    # A lexical hint only; eligibility still needs the real
+                    # training relation in this card's own quoted text.
+                    names |= self._identifier_tokens(titles[doc])
                 absent = training_eligibility(self, own_claim, names, audit.get("training_requirements", {}).get(doc))
                 if absent:
                     omissions[doc] = absent
@@ -1288,6 +1299,7 @@ class IntelligenceService:
             # comparison policy; never turn it into an external-retrieval claim.
             resolved_links = list(links.answers)
             derived = []
+            derived_tasks = []
             for doc in own_documents:
                 own_sources = [source for source in evidence if source.document_id == doc]
                 names = subject_hints(self, own_sources).get(doc, [])
@@ -1307,8 +1319,19 @@ class IntelligenceService:
                                 reason="Verified own-card training corpus role, organized by the information-source/stage policy; no inference-time retrieval assertion.")
                             resolved_links.append(link)
                             derived.append({**role, "aspect": aspect})
+                task_role = verified_single_training_task_role(self, identity, doc, names,
+                    audit.get("training_requirements", {}).get(doc))
+                if task_role:
+                    for aspect in coverage.requested_aspects:
+                        if (is_prediction_task_comparison(request, aspect) and (doc, aspect) in allowed
+                                and not any(link.document_id == doc and link.aspect == aspect for link in resolved_links)):
+                            resolved_links.append(ReviewClaimCoverageLink(document_id=doc,aspect=aspect,
+                                subject_citation_id=task_role["subject_citation_id"],answer_citation_id=task_role["answer_citation_id"],
+                                reason="Verified own-card explicit named training purpose answers the prediction-task scope; no loss formula or other task is inferred."))
+                            derived_tasks.append({**task_role,"aspect":aspect})
             checked[-1]["model_answers"] = [link.model_dump() for link in links.answers]
             checked[-1]["derived_source_role_links"] = derived
+            checked[-1]["derived_training_task_links"] = derived_tasks
             checked[-1]["answers"] = [link.model_dump() for link in resolved_links]
             for link in resolved_links:
                 by_pair.setdefault((link.document_id, link.aspect), []).append((index, link))
@@ -1444,6 +1467,10 @@ class IntelligenceService:
                 "requires": "isolated_supported_claim; explicit named training/data relation in own text and own quotes",
                 "does_not_imply": "inference-time retrieval or its absence",
                 "raw_model_associations_preserved": True}
+            audit["training_task_role_policy"] = {"version":"explicit-single-training-task-v1.0",
+                "requires":"supported own-card explicit named training purpose and an explicit prediction-task request",
+                "excludes":"multi-task requirements and requests for loss formulae",
+                "raw_model_associations_preserved":True}
             payload = {**payload, "information_role_policy": audit["source_role_policy"]}
             if isinstance(self.provider, ChatCompletionProvider):
                 config = self.provider.config

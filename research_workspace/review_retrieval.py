@@ -76,6 +76,40 @@ def _task_training_relation(text):
                           " ".join(text.split()), re.I))
 
 
+def explicit_training_task_span(service, text, names):
+    plain = " ".join(text.split())
+    return (directly_named_training(text, names, service)
+            and bool(re.search(r"\btrain(?:ed|s)?\s+for\s+(?!as\b|only\b|at least\b|\d)", plain, re.I))
+            and bool(re.search(r"-to-|\b(?:task|translat\w*|predict\w*|classif\w*|generat\w*|parsing|tagging|recognition|comprehension)\b", plain, re.I)))
+
+
+def is_prediction_task_comparison(request, aspect):
+    if not is_training_aspect(aspect) or re.search(r"损失|loss|公式|equation", aspect, re.I):
+        return False
+    if not re.search(r"预测内容|预测目标|训练任务|prediction\s+task|training\s+task", request, re.I):
+        return False
+    positive = [part for part in re.split(r"[。；;，,]", request) if not re.search(
+        r"不要|勿|不臆测|不需要|未写出|do not|without invent|avoid", part, re.I)]
+    return not any(re.search(r"损失函数|loss\s+function|数学公式|equation", part, re.I) for part in positive)
+
+
+def verified_single_training_task_role(service, identity, document, names, requirement=None):
+    if requirement or not service._identifier_tokens(identity["text"]).intersection(names):
+        return None
+    if not re.search(r"(?:在|为|针对|以)[^。；;，,]{0,50}(?:任务|预测|翻译|分类|生成)[^。；;，,]{0,20}训练|训练(?:目标|任务)|\btrain(?:ed|s)?\b[^.;,]{0,60}\b(?:for|to)\b", identity["text"], re.I):
+        return None
+    if re.search(r"未在|不在|没有|not\s+trained|never\s+trained", identity["text"], re.I):
+        return None
+    own = [cite for cite in identity["citations"] if cite["document_id"] == document
+           and explicit_training_task_span(service, cite["quote"], names)]
+    if not own:
+        return None
+    return {"document_id":document,"role":"explicit_training_task",
+            "subject_citation_id":own[0]["citation_id"],"answer_citation_id":own[0]["citation_id"],
+            "policy_version":"explicit-single-training-task-v1.0",
+            "interpretation":"An already verified named training-purpose statement answers an explicit prediction-task request; no loss formula is inferred."}
+
+
 def training_task_requirements(service, source, names):
     """Recognize only an explicit named multi-task declaration plus numbered tasks."""
     ordered = service._reading_order(source)

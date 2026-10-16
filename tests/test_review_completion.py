@@ -117,8 +117,8 @@ def test_unsupported_addition_is_filtered_then_actual_new_fact_is_required(tmp_p
 
 
 def test_gap_only_result_cannot_be_reported_as_complete(tmp_path):
-    provider = Provider([[]])
-    with pytest.raises(ModelOutputError, match="未将局部结果标作完整综述"):
+    provider = Provider([[], []])
+    with pytest.raises(ModelOutputError, match="未将缺口说明计作完整综述"):
         run(tmp_path, provider)
 
 
@@ -133,12 +133,12 @@ def test_two_failed_additions_do_not_turn_gap_notice_into_completion(tmp_path):
 
 
 def test_public_review_also_requires_completing_partial_result(tmp_path, monkeypatch):
-    service = IntelligenceService(Library(tmp_path), Provider([[]]))
+    service = IntelligenceService(Library(tmp_path), Provider([[], []]))
     async def retrieve(*args, **kwargs):
         return {"evidence": SOURCES[:1], "trace": [], "queries": [],
                 "_snapshot_blocks": SOURCES, "_opening_candidates": SOURCES[:1]}
     monkeypatch.setattr(service, "retrieve_for_question", retrieve)
-    with pytest.raises(ModelOutputError, match="未将局部结果标作完整综述") as caught:
+    with pytest.raises(ModelOutputError, match="未将缺口说明计作完整综述") as caught:
         asyncio.run(service.synthesize("review", ["doc"], instruction="architecture and training objectives"))
     diagnostic = caught.value.review_diagnostics
     assert diagnostic["status"] == "validation_failed" and diagnostic["diagnostic_only"]
@@ -337,3 +337,44 @@ def test_local_semantic_precheck_shares_the_global_fact_call_budget(tmp_path):
                 ["doc"],"architecture and training objectives",state)
         assert not any(model is ClaimSupportPayload for model, _ in provider.calls)
     asyncio.run(scenario())
+
+
+def test_twice_rejected_local_fact_is_recorded_but_not_appended_and_next_round_can_complete(tmp_path):
+    bad=addition(text="ORION predicts 99 masked words.")
+    provider=Provider([[bad],[bad],[addition()]])
+    result,_,audit,_=run(tmp_path,provider)
+    rounds=audit["review_completion"]["rounds"]
+    assert len(rounds)==2 and rounds[0]["no_accepted_additions"]
+    pair=rounds[0]["pair_generations"][0]
+    assert pair["rejected_after_local_correction"] and len(pair["local_rejections"])==2
+    assert all(item["citations"] and item["claim_id"].startswith("C_") for item in pair["local_rejections"])
+    assert not any("99" in c.text for section in result.sections for c in section.claims)
+    requests=[payload for model,payload in provider.calls if model is ReviewCompletionPayload]
+    assert requests[-1]["previous_rejected_fact_feedback"]
+    assert len(audit["attempts"])==2  # Rejected candidates never entered the result audit.
+
+
+def test_single_native_training_task_input_excludes_unrelated_dataset_and_decoder_context(tmp_path,monkeypatch):
+    import sys
+    task=source("objective","The ORION large model trained for English-to-French used dropout rate 0.1.")
+    distractor=source("data","We use the ArchiveAlpha dataset. ORION uses decoder softmax.")
+    monkeypatch.setattr(sys.modules[__name__],"SOURCES",[SOURCES[0],task,distractor])
+    class CapturingProvider(Provider):
+        async def generate(self,prompt,payload,model):
+            if model is ReviewCompletionPayload:
+                assert len(payload["evidence"])==1
+                assert len(payload["evidence"][0]["citation_spans"])==1
+                assert payload["focused_training_predicate"]["text"]==task.text
+                assert "ArchiveAlpha" not in str(payload) and "softmax" not in str(payload)
+                assert payload["retained_claims"]==[]
+            return await super().generate(prompt,payload,model)
+    async def scenario():
+        provider=CapturingProvider([[addition(text="ORION large以英语到法语翻译为训练任务。")]])
+        service=IntelligenceService(Library(tmp_path),provider);state={}
+        result,_,_=await service._generate_grounded("fixture",{"task":"review","instruction":"architecture and training objectives"},
+            SynthesisPayload,SOURCES[:1],required_documents=["doc"],shared_state=state)
+        return await complete_review(service,result,SOURCES[:1],{"_snapshot_blocks":SOURCES,"queries":[]},
+            ["doc"],"比较模型结构与训练任务，说明实际预测内容。",state)
+    result,_,audit=asyncio.run(scenario())
+    assert result.sections[-1].claims[0].citations[0].quote==task.text
+    assert audit["review_completion"]["status"]=="complete"

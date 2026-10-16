@@ -4,7 +4,9 @@ from __future__ import annotations
 import re
 import json
 
-from .review_retrieval import supplement_review_evidence, directly_named_training, focus_review_evidence, training_eligibility, is_training_aspect
+from .review_retrieval import (supplement_review_evidence, directly_named_training, focus_review_evidence,
+                               training_eligibility, is_training_aspect, explicit_training_task_span,
+                               is_prediction_task_comparison)
 
 
 async def complete_review(service, result, evidence, retrieval, documents, instruction,
@@ -14,7 +16,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
 
     audit = shared_state["audit"]
     completion = audit.setdefault("review_completion", {
-        "prompt_version": "review-completion-v1.9", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
+        "prompt_version": "review-completion-v2.0", "max_rounds": 2, "max_model_calls": 24, "model_calls": 0,
         "policy": "preserve_verified_claims_add_missing_facts_then_reaudit", "rounds": [],
     })
     for round_number in range(3):
@@ -72,6 +74,9 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
             for known in attempt.get("claims", []) for cite in known["citations"]
             if any(review["claim_index"] == known["claim_index"] and review["verdict"] == "unsupported"
                    for review in attempt["reviews"])}
+        feedback_source_ids.update(cite["evidence_id"] for previous in completion["rounds"][-2:]
+            for pair in previous.get("pair_generations", []) for rejected in pair.get("local_rejections", [])
+            for cite in rejected["citations"])
         retained_sources = [block for block in evidence if block.evidence_id in cited_ids | feedback_source_ids]
         retired = [block.block_id for block in evidence if block.evidence_id not in cited_ids | feedback_source_ids]
         evidence, search = supplement_review_evidence(service, retrieval["_snapshot_blocks"], retained_sources,
@@ -95,6 +100,11 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                                        and review["verdict"] == "unsupported"
                                        for review in attempt["reviews"])]}
                            for attempt in audit["attempts"] if attempt["problems"]][-3:]
+        failed_feedback.extend({"attempt": f"completion-local-{previous['round']}-{index}",
+            "problems": rejected["problems"], "aspect": pair["aspect"], "rejected_claims": [rejected]}
+            for previous in completion["rounds"][:-1][-2:]
+            for index, pair in enumerate(previous.get("pair_generations", []))
+            for rejected in pair.get("local_rejections", [])[-2:])
         entry["received_feedback_attempts"] = [item["attempt"] for item in failed_feedback]
         await service._check_cancel(check_cancel)
         additions = ReviewCompletionPayload()
@@ -122,16 +132,24 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 limit = max(12 if round_number == 0 else 20, len(anchors))
                 own_evidence = anchors + [block for block in own_evidence if block.evidence_id not in reserved][:limit-len(anchors)]
             pair_catalog = {block.evidence_id: catalog[block.evidence_id] for block in own_evidence}
+            minimal_task = None
+            if is_prediction_task_comparison(instruction, aspect) and not requirement:
+                minimal_task = next(({"evidence_id": block.evidence_id,"quote_id":identifier,"text":text}
+                    for block in own_evidence for identifier,text in pair_catalog[block.evidence_id].items()
+                    if explicit_training_task_span(service,text,target_names)),None)
+                if minimal_task:
+                    own_evidence = [block for block in own_evidence if block.evidence_id == minimal_task["evidence_id"]]
+                    pair_catalog = {minimal_task["evidence_id"]:{minimal_task["quote_id"]:minimal_task["text"]}}
             own_feedback = [{**item, "rejected_claims": [claim for claim in item["rejected_claims"]
                 if any(cite["document_id"] == document for cite in claim["citations"])]}
-                for item in failed_feedback]
+                for item in failed_feedback if not item.get("aspect") or item["aspect"]==aspect]
             own_feedback = [item for item in own_feedback if item["rejected_claims"]]
             name_spans = [{"evidence_id": block.evidence_id, "quote_id": identifier, "text": text,
                            "page": block.page, "block_id": block.block_id}
-                          for block in own_evidence for identifier, text in catalog[block.evidence_id].items()
+                          for block in own_evidence for identifier, text in pair_catalog[block.evidence_id].items()
                           if service._identifier_tokens(text).intersection(target_names)]
-            direct = [{**block.model_dump(), "citation_spans": [
-                {"quote_id": identifier, "text": text} for identifier, text in catalog[block.evidence_id].items()]}
+            direct = [{**block.model_dump(), **({"text":minimal_task["text"]} if minimal_task else {}), "citation_spans": [
+                {"quote_id": identifier, "text": text} for identifier, text in pair_catalog[block.evidence_id].items()]}
                 for block in own_evidence if directly_named_training(block.text, target_names, service)]
             pair_payload = {
                 "task": "complete_review_missing_dimensions", "instruction": instruction,
@@ -141,15 +159,20 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                                     if any(c["document_id"] == document for c in known["citations"])],
                 "target_subject_search_hints": target_names,
                 "required_training_tasks": requirement,
+                "focused_training_predicate": minimal_task,
                 "own_named_passages": name_spans,
                 "direct_named_training_passages": direct[:8],
                 "preferred_direct_relation_spans": [span for span in name_spans
                     if directly_named_training(span["text"], target_names, service)],
-                "evidence": [{**block.model_dump(), "citation_spans": [
+                "evidence": [{**block.model_dump(), **({"text":minimal_task["text"]} if minimal_task else {}), "citation_spans": [
                     {"quote_id": identifier, "text": text}
-                    for identifier, text in catalog[block.evidence_id].items()]} for block in own_evidence],
+                    for identifier, text in pair_catalog[block.evidence_id].items()]} for block in own_evidence],
                 "previous_rejected_fact_feedback": own_feedback,
             }
+            if minimal_task:
+                pair_payload["retained_claims"] = []
+                pair_payload["previous_rejected_fact_feedback"] = []
+                pair_payload["scope_rule"] = "Translate only this exact named trained-for task statement into a concise claim, preserving its variant and purpose. In Chinese use '以...为训练任务'. Do not add other tasks, datasets, scores, losses or decoding mechanics from memory."
             pair_record = {"document_id": document, "aspect": aspect,
                            "focused_block_ids": [block.block_id for block in own_evidence], "attempts": []}
             entry["pair_generations"].append(pair_record)
@@ -164,7 +187,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                 pair_record["attempts"].append(proposed.model_dump())
                 if any((item.document_id, item.aspect) != (document, aspect) for item in proposed.additions):
                     raise ModelOutputError("单项补全返回了其他文献或维度，结果已拒绝。")
-                missing_names, preflight_problems = [], []
+                missing_names, preflight_problems, resolved_candidates = [], [], []
                 for item in proposed.additions:
                     try:
                         service._resolve_citation_spans([item.claim], pair_catalog)
@@ -173,6 +196,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                             raise
                         preflight_problems.append(str(problem) + " Select only evidence_id and quote_id pairs currently present in this call's evidence citation_spans; rejected feedback is not a citation catalog.")
                         continue
+                    resolved_candidates.append(item.claim)
                     missing_names.extend(service._missing_named_attribution(item.claim, own_names))
                     if is_training_aspect(aspect):
                         incomplete = training_eligibility(service, item.claim, own_names, requirement)
@@ -215,11 +239,15 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                             audit["model_checked"] = True
                             method = "isolated_review"
                         pair_record.setdefault("semantic_prechecks", []).append({"local_attempt": protocol_attempt + 1,
-                            "claim_id": service._review_claim_identity(item.claim, evidence)["claim_id"],
+                            **service._review_claim_identity(item.claim, evidence),
                             "method": method, **verdict.model_dump()})
                         if verdict.verdict == "unsupported":
                             preflight_problems.append("Independent own-quote semantic review rejected this entire candidate: " + verdict.reason
                                 + " Repair the actual relation/citations, retaining the requested factual content; do not merely paraphrase the rejected predicate.")
+                if missing_names or preflight_problems:
+                    pair_record.setdefault("local_rejections", []).extend({**service._review_claim_identity(claim,evidence),
+                        "problems": preflight_problems + (["Missing named subject: "+", ".join(missing_names)] if missing_names else [])}
+                        for claim in resolved_candidates)
                 if (missing_names or preflight_problems) and protocol_attempt == 0:
                     pair_payload["citation_correction"] = {
                         "previous_result": proposed.model_dump(), "missing_subject_identifiers": sorted(set(missing_names)),
@@ -227,10 +255,15 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
                         "rule": "Repair the listed subject, current quotation-ID and/or scope problems as applicable. Select relevant own passages that ACTUALLY link this model to this property, plus its task/corpus details on this SAME card. A present model name does not repair missing language/stage scope or an unsupported interpretation. Keep the positively quoted relation and do not borrow retained cards. The program will independently judge the whole relation. If no supported link exists, use a narrower source-supported task/variant scope or additions [].",
                     }
                     continue
+                if missing_names or preflight_problems:
+                    pair_record["rejected_after_local_correction"] = True
+                    break
                 additions.additions.extend(proposed.additions)
                 break
         if not additions.additions:
-            raise ModelOutputError(f"补充检索后未获得{len(missing)}项缺口的可靠新结论，未将局部结果标作完整综述。")
+            entry.update(no_accepted_additions=True, retained_claims_unchanged=True, result_claim_ids=original_ids)
+            completion["remaining_pairs"] = [{"document_id":doc,"aspect":aspect} for doc,aspect in missing]
+            continue
         if len(frozen) + len(additions.additions) > MAX_ISOLATED_CLAIMS:
             raise ModelOutputError("补充后综述超过24条独立结论上限，请减少文献或维度。")
         entry["proposed_added_claims"] = [item.model_dump() for item in additions.additions]
