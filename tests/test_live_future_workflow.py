@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime,timedelta,timezone
 import hashlib
+import json
 
 import httpx
 import pytest
@@ -137,6 +138,9 @@ def test_future_candidate_repair_preserves_good_claims_and_both_proposals(tmp_pa
             if schema is ClaimSupportPayload:return ClaimSupportPayload(
                 verdict='unsupported' if '99' in payload['claim']['text'] else 'supported',reason='Fixture own quote check.')
             if schema is ClaimRepairPayload:
+                assert payload['repair_scope']=='background_fact_only' and payload['proposals_held_out']
+                assert 'Two directions.' not in payload['request'] and all(p not in payload['request'] for p in plans)
+                assert prompt.startswith('Prompt version: future-background-repair-v1')
                 return ClaimRepairPayload(claim={'text':'ORION predicts removed words.',
                     'citations':[{'evidence_id':payload['evidence'][0]['evidence_id'],'quote_id':'Q2'}]})
             if schema is CoveragePayload:return CoveragePayload(unverified_statements=[],missing_aspects=[])
@@ -151,3 +155,18 @@ def test_future_candidate_repair_preserves_good_claims_and_both_proposals(tmp_pa
     assert result['sections'][1]['claims'][0]['text']=='ORION predicts removed words.'
     assert calls.count('SynthesisPayload')==1 and calls.count('ClaimRepairPayload')==1
     assert 'optional_prune' not in result['grounding']
+
+
+def test_retries_preserve_failed_review_history_without_advancing_progress(tmp_path):
+    from research_workspace.jobs import JobStore
+    store=JobStore(Library(tmp_path));job=store.create('future_work',{})
+    for attempt in (1,2):
+        with store.library._connection() as db:
+            db.execute('INSERT OR REPLACE INTO research_job_items VALUES(?,?,?)',(job['id'],'grounding_validation',
+                json.dumps({'stage':'grounding_validation','result':{'attempt':attempt}})))
+        store.finish(job['id'],'failed',error='fixture')
+        store.retry(job['id'])
+    store.save_item(job['id'],'future_synthesis',{'stage':'future_synthesis','result':{}},4)
+    saved=store.get(job['id']);archives=[i for i in saved['completed_items'] if i['stage'].startswith('diagnostic:')]
+    assert [i['result']['attempt'] for i in archives]==[1,2]
+    assert saved['progress']==1 and saved['total']==4

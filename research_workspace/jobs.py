@@ -107,12 +107,20 @@ class JobStore:
         with self.library._connection() as db:
             self._exists(db,job_id)
             db.execute('INSERT OR REPLACE INTO research_job_items VALUES(?,?,?)',(job_id,key,json.dumps(payload,ensure_ascii=False)))
-            count = db.execute("SELECT COUNT(*) FROM research_job_items WHERE job_id=? AND item_key NOT IN ('review_validation','grounding_validation')",(job_id,)).fetchone()[0]
+            count = db.execute("SELECT COUNT(*) FROM research_job_items WHERE job_id=? AND item_key NOT IN ('review_validation','grounding_validation') AND item_key NOT LIKE 'diagnostic:%'",(job_id,)).fetchone()[0]
             db.execute('UPDATE research_jobs SET progress=?,total=?,updated_at=? WHERE id=?',(count,total,_now(),job_id))
 
     def retry(self,job_id):
         with self.library._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
             self._exists(db,job_id)
+            status=db.execute('SELECT status FROM research_jobs WHERE id=?',(job_id,)).fetchone()[0]
+            if status in {'failed','cancelled','interrupted'}:
+                for row in db.execute("SELECT item_key,payload FROM research_job_items WHERE job_id=? AND item_key IN ('grounding_validation','review_validation')",(job_id,)).fetchall():
+                    key='diagnostic:'+row['item_key']+':'+uuid4().hex
+                    record={'stage':key,'origin_stage':row['item_key'],'recorded_at':_now(),
+                        'model_call_count':self.usage_store.summary(db,job_id)['calls'],'result':json.loads(row['payload'])['result']}
+                    db.execute('INSERT INTO research_job_items VALUES(?,?,?)',(job_id,key,json.dumps(record,ensure_ascii=False)))
             changed = db.execute("UPDATE research_jobs SET status='queued',cancel_requested=0,error=NULL,updated_at=? WHERE id=? AND status IN ('failed','cancelled','interrupted')",(_now(),job_id)).rowcount
         if changed:
             self.event(job_id,'retry','已按用户操作重新排队；保留成功检查点。中断时未保存的调用可能已计费，重试可能产生重复费用。')

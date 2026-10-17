@@ -35,10 +35,13 @@ async def repair_rejected_claims(service, result, reviews, evidence, catalog, pa
         if projected is not None:
             repaired=ClaimRepairPayload(claim=projected)
         else:
-            audit["claim_repair_prompt_version"]="claim-repair-v1.3"
-            repaired=await service.provider.generate(_prompt("claim_repair_v1"),{
+            background_only=payload['task']=='future_work'
+            audit["claim_repair_prompt_version"]="future-background-repair-v1" if background_only else "claim-repair-v1.3"
+            repaired=await service.provider.generate(_prompt("future_background_repair_v1" if background_only else "claim_repair_v1"),{
                 "task":"repair_grounded_claim","response_kind":payload["task"],
-                "request":payload.get("question") or payload.get("instruction",""),
+                "request":('Repair ONLY this existing factual background card; research proposals are preserved outside this call.'
+                    if background_only else payload.get("question") or payload.get("instruction","")),
+                **({'repair_scope':'background_fact_only','proposals_held_out':True} if background_only else {}),
                 "claim":claim.model_dump(),"rejection_reason":review["reason"],
                 "allow_methodology_relocation":conditional_methodology,
                 "required_training_tasks":{d:payload["required_training_tasks"][d] for d in documents
