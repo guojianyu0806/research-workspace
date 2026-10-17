@@ -10,7 +10,7 @@ def words(image, configuration, *, mode=11, offset=(0, 0)):
     Exactly one Tesseract option is passed. In the pinned MuPDF build, passing
     multiple consumable options can raise Invalid option index during startup.
     """
-    if mode not in {3, 6, 7, 11}:
+    if mode not in {3, 6, 7, 10, 11, 13}:
         raise ValueError('Unsupported local segmentation mode')
     buffer = io.BytesIO()
     output = pymupdf.JM_new_output_fileptr(buffer)

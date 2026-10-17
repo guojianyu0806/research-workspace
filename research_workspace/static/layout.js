@@ -116,6 +116,11 @@
               td.append(element("span", "rm-original-text", cell?.text ?? "合并或缺失单元格"));
               if (cell?.status === 'empty_or_ocr_missed') td.append(element('small','rm-muted','空白或OCR未识别'));
               if (cell?.status === 'not_processed_budget') td.append(element('small','rm-muted','未处理：达到OCR上限'));
+              for (const token of cell?.math_tokens || []) {
+                if (!token.latex) continue;
+                const math = element('div'); math.append(element('code','',token.latex), evidenceControl(token.evidence,'核对数学表头 →'));
+                td.append(math);
+              }
               if (cell?.evidence) {
                 const actions = element('div');
                 actions.append(evidenceControl(cell.evidence, "定位"));
@@ -125,7 +130,7 @@
                 const audit = element('details'); audit.append(element('summary','','查看OCR复核记录'));
                 audit.append(element('p','rm-muted',`本次初始识别：${cell.raw_ocr_text || '空白'}`));
                 const labels = {sparse_mode_candidate:'稀疏文字模式候选',two_view_candidate:'两种分辨率的原图识别一致',
-                  empty_crop_artifact:'单元格内部对应裁图为空白',unresolved:'复核未取得一致结果',not_processed_budget:'达到复核上限，未处理'};
+                  empty_crop_artifact:'单元格内部对应裁图为空白',math_header_candidate:'主字符与上下标分区识别候选',unresolved:'复核未取得一致结果',not_processed_budget:'达到复核上限，未处理'};
                 for (const entry of cell.ocr_audit) {
                   audit.append(element('p','rm-muted',`${entry.original_text} → ${entry.text || (entry.text === '' ? '已排除' : entry.original_text)} · ${labels[entry.status] || '待复核'}`));
                   if (entry.evidence) audit.append(evidenceControl(entry.evidence,'核对该处原图 →'));

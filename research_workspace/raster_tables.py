@@ -115,11 +115,12 @@ def extract_scan_tables(page,ocr,*,dpi=144):
         from .local_ocr import words as recognize_words, numeric_rechecks, refine_numeric_cell, empty_artifact_checks
         sx,sy=page.rect.width/pix.width,page.rect.height/pix.height;tables=[];used=0
         recheck_budget={'remaining':24}
+        header_budget={'remaining':48}
         for grid in grids[:12]:
             cells=[]
             for r in range(grid['rows']):
                 for c in range(grid['columns']):
-                    geometry=grid['boxes'].get((r,c));words=[];text='';raw_text='';rechecks=[];status='merged_or_missing_cell'
+                    geometry=grid['boxes'].get((r,c));words=[];text='';raw_text='';rechecks=[];math_tokens=[];status='merged_or_missing_cell'
                     if geometry:
                         box,rs,cs=geometry;status='not_processed_budget'
                         if used<MAX_OCR_CELLS:
@@ -142,13 +143,26 @@ def extract_scan_tables(page,ocr,*,dpi=144):
                                 words,mode_audit=refine_numeric_cell(image,words,ocr,(ox,oy))
                                 words,rechecks=numeric_rechecks(page,words,ocr,recheck_budget)
                                 rechecks=empty_audit+mode_audit+rechecks
+                                if r==0 and len(raw_text.strip())>3:
+                                    from .scan_math import header_scripts,header_scales
+                                    interior=pymupdf.Rect(left*sx,top*sy,right*sx,bottom*sy)
+                                    math_tokens=header_scripts(page,interior,ocr,header_budget)+header_scales(page,interior,ocr,header_budget)
+                                    for token in math_tokens:
+                                        if not token['latex']:continue
+                                        rect=pymupdf.Rect(token['raw_bbox'])+(-.5,-1.5,.5,1.5)
+                                        covered=[w for w in words if rect.x0<=(w['bbox'][0]+w['bbox'][2])/2<=rect.x1
+                                            and rect.y0<=(w['bbox'][1]+w['bbox'][3])/2<=rect.y1]
+                                        words=[w for w in words if w not in covered]+[{'text':token['text'],'bbox':token['raw_bbox']}]
+                                        rechecks.append({'status':'math_header_candidate','original_text':' '.join(w['text'] for w in covered),
+                                            'text':token['text'],'bbox':token['raw_bbox'],'crop_bbox':token['raw_bbox'],'needs_review':True,
+                                            'method':token['method']})
                                 text=_word_lines(words)
                             status='ocr_extracted_needs_review' if text else 'empty_or_ocr_missed'
                         raw=[box[0]*sx,box[1]*sy,box[2]*sx,box[3]*sy]
                     else:raw=None;rs=cs=1
                     cells.append({'row':r,'column':c,'row_span':rs,'column_span':cs,'text':text,
                         'raw_bbox':raw,'word_boxes':words,'status':status,'raw_ocr_text':raw_text,
-                        'ocr_audit':rechecks,'segmentation_mode':6,'numeric_segmentation_mode':11})
+                        'ocr_audit':rechecks,'math_tokens':math_tokens,'segmentation_mode':6,'numeric_segmentation_mode':11})
             if sum(bool(c['text']) for c in cells)<2:continue
             tables.append({'raw_bbox':[grid['xs'][0]*sx,grid['ys'][0]*sy,grid['xs'][-1]*sx,grid['ys'][-1]*sy],
                 'row_count':grid['rows'],'column_count':grid['columns'],'cells':cells,
@@ -157,7 +171,8 @@ def extract_scan_tables(page,ocr,*,dpi=144):
                 'truncated_cells':any(c['status']=='not_processed_budget' for c in cells)})
         audit.update(status='extracted_needs_review' if tables else 'no_readable_grid',table_count=len(tables),
             ocr_cells=used,cell_budget=MAX_OCR_CELLS,language=ocr['languages'],
-            recheck_views=24-recheck_budget['remaining'],recheck_budget=24)
+            recheck_views=24-recheck_budget['remaining'],recheck_budget=24,
+            math_header_views=48-header_budget['remaining'],math_header_budget=48)
         return tables,audit
 
 
