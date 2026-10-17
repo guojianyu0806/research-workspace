@@ -116,7 +116,11 @@
               td.append(element("span", "rm-original-text", cell?.text ?? "合并或缺失单元格"));
               if (cell?.status === 'empty_or_ocr_missed') td.append(element('small','rm-muted','空白或OCR未识别'));
               if (cell?.status === 'not_processed_budget') td.append(element('small','rm-muted','未处理：达到OCR上限'));
-              if (cell?.evidence) td.append(evidenceControl(cell.evidence, "定位"));
+              if (cell?.evidence) {
+                const actions = element('div');
+                actions.append(evidenceControl(cell.evidence, "定位"));
+                td.append(actions);
+              }
               row.append(td);
             }
             body.append(row);
