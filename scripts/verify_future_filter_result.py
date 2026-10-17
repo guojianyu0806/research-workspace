@@ -30,7 +30,7 @@ def digest(value):
     return hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
 
 
-def seed():
+def seed(reuse_evidence_from=None):
     library=Library(ROOT/'data');store=JobStore(library)
     doc=library.get_document('99cdc2449b9844bb9873ca3658d90fd9')
     run=doc['available_run'];assert run['status']=='completed' and run['pages_done']==run['total_pages']==6
@@ -48,9 +48,35 @@ def seed():
         'limitations':['受控判定用例，不代表实时检索或完整未来方向生成验收。']}
     source=store.create('future_work',{'controlled_classifier_input':True,'document_ids':[doc['id']]})
     store.finish(source['id'],'completed',result=result)
-    with httpx.Client(base_url='http://127.0.0.1:8765',trust_env=False,timeout=30) as client:
-        response=client.post('/api/research/tasks',json={'kind':'future_filter','source_task_id':source['id']})
-        response.raise_for_status();job=response.json()['job']
+    # Explicit acceptance-only reuse of actual immutable planning/retrieval
+    # checkpoints. No findings or support/joint reviews are reused or simulated.
+    if reuse_evidence_from:
+        prior=store.get(reuse_evidence_from)
+        assert prior['status']=='completed'
+        old=next(i['result'] for i in prior['completed_items'] if i['stage']=='future_filter_start')
+        assert [d['proposed_work'] for d in old['directions']]==[p for _,p in PROPOSALS]
+        assert all(d['documents']==documents for d in old['directions'])
+        selected=[i for i in prior['completed_items'] if i['stage'].endswith(':plan') or i['stage'].endswith(':evidence')]
+        assert len(selected)==6
+        total=2+sum(6+3*len(i['result']['conditions']) for i in selected if i['stage'].endswith(':plan'))
+        # A short transaction prevents the worker seeing half-seeded checkpoints.
+        with library._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            from uuid import uuid4
+            jid=uuid4().hex;now=datetime.now(timezone.utc).isoformat()
+            payload={'source_task_id':source['id'],'acceptance_reuses_actual_evidence_from':reuse_evidence_from}
+            db.execute('INSERT INTO research_jobs VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                (jid,'future_filter','queued',json.dumps(payload),None,None,7,total,0,now,now))
+            start={'stage':'future_filter_start','result':{'directions':old['directions'],'base_count':0,'started_at':now,
+                'acceptance_reuses_actual_evidence_from':reuse_evidence_from}}
+            for item in [start,*selected]:
+                db.execute('INSERT INTO research_job_items VALUES(?,?,?)',(jid,item['stage'],json.dumps(item,ensure_ascii=False)))
+        store.event(jid,'queued','受控复测复用既有真实固定条件与检索；全部结论、支持度审核和联合审核重新调用 Pro。')
+        job=store.get(jid)
+    else:
+        with httpx.Client(base_url='http://127.0.0.1:8765',trust_env=False,timeout=30) as client:
+            response=client.post('/api/research/tasks',json={'kind':'future_filter','source_task_id':source['id']})
+            response.raise_for_status();job=response.json()['job']
     print('SOURCE',source['id'],'REAL_PRO_FILTER_JOB',job['id'])
 
 
@@ -93,6 +119,7 @@ def verify(job_id,source_commit=None):
                 **{k:sources[q['evidence_id']][k] for k in ('document_id','run_id','block_id','page','bbox')}} for i,q in enumerate(claim['citations'])]}
             check(label+'_content_identity',identity['text']==claim['text'] and identity['citations']==expected['citations'] and identity['claim_id']=='C_'+digest(expected))
             check(label+'_own_review',review['claim_id']==identity['claim_id'] and review['claim_index']==identity['claim_index']==0 and review['verdict']=='supported')
+            if 'condition_id' in review:check(label+'_entire_finding_supported',review.get('finding_supported_as_written') is True)
             check(label+'_export',identity['claim_id'] in export and claim['text'] in export)
             check(label+'_nonempty_quotes',bool(claim['citations']))
             for i,q in enumerate(claim['citations']):
@@ -130,7 +157,7 @@ def verify(job_id,source_commit=None):
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('job_id',nargs='?');parser.add_argument('--seed-controlled',action='store_true');parser.add_argument('--source-commit');args=parser.parse_args()
-    if args.seed_controlled:seed()
+    parser=argparse.ArgumentParser();parser.add_argument('job_id',nargs='?');parser.add_argument('--seed-controlled',action='store_true');parser.add_argument('--reuse-evidence-from');parser.add_argument('--source-commit');args=parser.parse_args()
+    if args.seed_controlled:seed(args.reuse_evidence_from)
     elif args.job_id:verify(args.job_id,args.source_commit)
     else:parser.error('Specify job ID or --seed-controlled.')

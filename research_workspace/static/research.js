@@ -118,7 +118,7 @@
     panel.append(queries);
     const groups = output.future_fulltext ? {retained: (audit.directions || []).filter(d => !d.excluded),
       excluded: (audit.directions || []).filter(d => d.excluded)} : futureDirections(output);
-    if (output.future_fulltext) panel.append(node("p", "rs-muted", "以下保留摘要初筛历史；正文核验阶段保留全部原始设想，未自动排除方向。"));
+    if (output.future_fulltext) panel.append(node("p", "rs-muted", output.future_direction_filter ? "以下为摘要初筛历史；当前保留与筛选结果以全文条件覆盖审核为准。" : "以下保留摘要初筛历史；正文核验阶段保留全部原始设想，未自动排除方向。"));
     for (const [key, title] of [["retained", "保留为待验证方向"], ["excluded", "暂移出重点候选（需全文确认）"]]) {
       const group = node("section", "rs-future-directions"); group.append(node("h5", "", `${title} · ${groups[key].length}`));
       if (!groups[key].length) group.append(node("p", "rs-muted", key === "retained" ? "本次没有列入此组的方向；这不代表其余方向已被证明解决。" : "本次没有暂移出的方向。"));
@@ -230,7 +230,7 @@
     formHeading.append(node("h3", "rs-card-title", "新建任务"), returnToResult);
     form.append(formHeading);
     kindLabels.discover_qa = "下载与原文问答";
-    const kind = select(Object.entries(kindLabels).filter(([value]) => value !== "discover_qa"));
+    const kind = select(Object.entries(kindLabels).filter(([value]) => !["discover_qa","future_filter"].includes(value)));
     form.append(field("任务类型", kind));
     const documentsGroup = node("fieldset", "rs-fieldset");
     documentsGroup.append(node("legend", "rs-label", "选择参考文献 · 最多20篇"));
@@ -453,16 +453,19 @@
             node('p','rs-proposal',direction.proposed_work),node('p','rs-muted',direction.reason));
           for(const condition of direction.conditions || []) {
             const item=node('article','rs-future-direction rs-filter-condition');
-            item.append(node('h6','',`${condition.condition_id} · ${condition.source_text}`),
+            item.append(node('h5','',`${condition.condition_id} · ${condition.source_text}`),
               node('p','rs-muted',condition.status==='fully_addressed'?'本条件已充分覆盖':condition.status==='partially_addressed'?'本条件仅部分覆盖':'本条件证据不足'));
             showFinding(item,condition.finding,condition.review);
-            if(!condition.finding)item.append(node('p','rs-muted',condition.reason));card.append(item);
+            if(!condition.finding)item.append(node('p','rs-muted',condition.reason));
+            if(!condition.review)item.append(node('p','rs-small rs-muted','未形成可审核引句，未执行支持度审核；按保守规则保留。检索与补证过程见本方向完整记录。'));
+            card.append(item);
           }
           if(direction.excluded) {
-            const proof=node('article','rs-future-direction rs-filter-joint');proof.append(node('h6','','全部条件的联合覆盖依据'));
+            const proof=node('article','rs-future-direction rs-filter-joint');proof.append(node('h5','','全部条件的联合覆盖依据'));
             showFinding(proof,direction.joint_finding,direction.joint_review);card.append(proof);
           } else if(direction.joint_review)card.append(node('p','rs-muted','联合审核未确认全部条件共同满足：'+direction.joint_review.reason));
-          const details=node('details','rs-events');details.append(node('summary','','查看本方向完整判定与审核记录'),node('pre','rs-prose',JSON.stringify(direction,null,2)));
+          const ownStages=(job.completed_items || []).filter(item=>item.stage?.startsWith(`future_filter:${direction.direction_id}:`));
+          const details=node('details','rs-events');details.append(node('summary','','查看本方向完整判定与审核记录'),node('pre','rs-prose',JSON.stringify({final_decision:direction,checkpoint_scope:'this direction only; includes actual retrieval and unreviewable evidence gates',checkpoints:ownStages},null,2)));
           card.append(details);panel.append(card);
         }
         resultArea.append(panel);

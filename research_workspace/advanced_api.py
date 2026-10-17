@@ -189,7 +189,7 @@ def task_markdown(job):
                 source = sources.get(source_id)
                 lines.append('- '+(official_source(source) if source else plain(source_id)+' · 来源记录缺失'))
         if result.get('future_fulltext'):
-            lines.append('以下保留摘要初筛历史；正文阶段保留全部原始设想，未自动排除方向。')
+            lines.append('以下为摘要初筛历史；当前保留与筛选结果以全文条件覆盖审核为准。' if result.get('future_direction_filter') else '以下保留摘要初筛历史；正文阶段保留全部原始设想，未自动排除方向。')
         preliminary_retained=[d for d in all_directions if not d.get('excluded')] if result.get('future_fulltext') else retained
         preliminary_excluded=[d for d in all_directions if d.get('excluded')] if result.get('future_fulltext') else excluded
         for title,directions in [('保留为待验证方向',preliminary_retained),('暂移出重点候选（需全文确认）',preliminary_excluded)]:
@@ -236,11 +236,14 @@ def task_markdown(job):
                     '条件状态：'+plain(condition['status'])])
                 add_filter_finding(condition.get('finding'),condition.get('review'))
                 if not condition.get('finding'):lines.append(plain(condition['reason']))
+                if not condition.get('review'):lines.append('未形成可审核引句，未执行支持度审核；按保守规则保留。实际检索与补证记录见本方向逐步记录。')
             if direction['excluded']:
                 lines.append('#### 全部条件的联合覆盖依据')
                 add_filter_finding(direction.get('joint_finding'),direction.get('joint_review'))
             elif direction.get('joint_review'):
                 lines.append('联合审核未确认全部条件共同满足：'+plain(direction['joint_review']['reason']))
+            stages=[item for item in job.get('completed_items',[]) if str(item.get('stage','')).startswith('future_filter:'+direction['direction_id']+':')]
+            lines.extend(['#### 本方向实际检索与逐步审核记录','```json\n'+json.dumps(stages,ensure_ascii=False,indent=2)+'\n```'])
     if isinstance(result.get('future_fulltext'),dict):
         full = result['future_fulltext']
         lines.extend(['## 公开论文正文核验',plain(full.get('notice',''))])

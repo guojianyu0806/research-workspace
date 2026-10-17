@@ -9,7 +9,7 @@ from pydantic import Field
 
 from .intelligence import StrictModel, Claim, Evidence
 
-VERSION = 'future-filter-v2'
+VERSION = 'future-filter-v3'
 MAX_DIRECTIONS = 12
 MAX_CONDITIONS = 6
 COVERAGE = Literal['fully_addressed','partially_addressed','evidence_insufficient']
@@ -36,6 +36,7 @@ class ConditionRepair(StrictModel):
 
 class ConditionReview(StrictModel):
     verdict: Literal['supported','unsupported','insufficient']
+    finding_supported_as_written: bool
     coverage: COVERAGE
     scope_matched: bool
     qualifiers_preserved: bool
@@ -75,13 +76,25 @@ and select its OWN complete original quotations using supplied quote_id values;
 leave quote empty. Include antecedents, table headers, metric, variant and scope.
 Do not borrow quotations from a neighbouring condition. Missing evidence means
 evidence_insufficient and finding null; do not assert absence in all literature.
-Use the proposal language. A negative explicit limitation may be a cited finding,
-but cannot be labelled fully_addressed. Never invent results or references."""
+Use the proposal language. Record explicit negative limitations as their OWN
+cited findings, but never label them fully_addressed. State ONLY the reported
+limitation: 'not useful for an experiment' does not establish 'the experiment
+was not performed/validated'. Do not infer the absence of studies or results.
+Separate the unconfirmed coverage assessment from reported scientific facts.
+Never invent results or references."""
 
 CONDITION_REVIEW_PROMPT = """Independently audit ONE coverage finding using ONLY its own quotations.
 The original proposal and condition define requirements, not factual evidence.
 Do not use neighbouring findings, titles or outside knowledge as support.
 Check the entire finding, every original qualifier, scope and numerical setting.
+finding_supported_as_written must be false if ANY factual statement exceeds its
+own quotations. A statement that an experiment was not performed/validated is
+NOT established by a quote merely saying the dataset is unsuitable. Unlabelled
+inferences about the existence or absence of experiments fail. verdict supported
+also requires the ENTIRE finding to be supported as written, not just its topic.
+These checks are distinct from whether the requested condition is addressed.
+A literal quoted limitation can be a supported finding with insufficient
+condition coverage; explicitly_reported refers to the requested positive result.
 fully_addressed requires an explicitly REPORTED implementation/result satisfying
 the whole condition. A suggestion, future work, topic similarity or missing
 evidence cannot establish it. If part is supported use partially_addressed; when
@@ -165,7 +178,7 @@ def _checked_finding(service, proposed, evidence):
 
 
 def condition_decision(proposed, review, finding):
-    accepted=bool(finding and review and review['verdict']=='supported')
+    accepted=bool(finding and review and review['verdict']=='supported' and review['finding_supported_as_written'])
     full=bool(accepted and proposed=='fully_addressed' and review['coverage']=='fully_addressed'
         and all(review[k] for k in ('scope_matched','qualifiers_preserved','explicitly_reported')))
     partial=bool(accepted and proposed in {'fully_addressed','partially_addressed'}
@@ -175,6 +188,8 @@ def condition_decision(proposed, review, finding):
 
 def exclusion_allowed(conditions, joint, review, documents):
     if not conditions or not all(c['status']=='fully_addressed' for c in conditions):return False
+    if not all(c.get('finding') and (c.get('review') or {}).get('verdict')=='supported'
+               and (c.get('review') or {}).get('finding_supported_as_written') is True for c in conditions):return False
     if not joint or not review or review['verdict']!='supported':return False
     if not all(review[k] for k in ('fully_covers_proposal','jointly_satisfied','explicitly_reported')):return False
     cited={q['document_id'] for q in joint['identity']['citations']}
@@ -288,9 +303,10 @@ async def filter_step(store,service,job,result):
                 review.update(condition_id=condition['condition_id'],claim_id=finding['identity']['claim_id'],claim_index=0,
                               index_space='this condition finding only')
                 status=condition_decision(proposed['coverage'],review,finding)
+                accepted=review['verdict']=='supported' and review['finding_supported_as_written']
                 record.update(status=status,review=review,reason=review['reason'],
-                    finding=finding if review['verdict']=='supported' else None,
-                    **({'rejected_finding':finding} if review['verdict']!='supported' else {}))
+                    finding=finding if accepted else None,
+                    **({'rejected_finding':finding} if not accepted else {}))
             elif proposed.get('finding'):
                 record['reason']='初判引文未通过本方向原文归属及逐字校验，未作为有效判定。'
             save(key(stage),record,total,'已保存本条件的独立原文与审核；不从相邻条件借用证据。')
@@ -321,8 +337,10 @@ async def filter_step(store,service,job,result):
                         review=ConditionReview.model_validate(raw).model_dump()
                         review.update(condition_id=condition['condition_id'],claim_id=finding['identity']['claim_id'],
                             claim_index=0,index_space='this condition finding only')
+                        accepted=review['verdict']=='supported' and review['finding_supported_as_written']
                         repaired={**condition,'status':condition_decision(proposed['coverage'],review,finding),
-                            'review':review,'reason':review['reason'],'finding':finding if review['verdict']=='supported' else None}
+                            'review':review,'reason':review['reason'],'finding':finding if accepted else None}
+                        if not accepted:repaired['rejected_finding']=finding
                         # Preserve a supported initial partial finding if the
                         # correction fails; never promote an unsupported one.
                         if repaired['finding'] or not initial['finding']:

@@ -5,7 +5,7 @@ import pymupdf
 import pytest
 
 from research_workspace.advanced_api import ResearchTask,task_markdown
-from research_workspace.future_filter import checked_plan,restored_plan,exclusion_allowed
+from research_workspace.future_filter import checked_plan,restored_plan,exclusion_allowed,condition_decision
 from research_workspace.intelligence import IntelligenceService
 from research_workspace.jobs import JobStore
 from research_workspace.library import Library
@@ -48,7 +48,7 @@ def setup(tmp_path,*,proposals=None,joint_pass=True,bad_quote=False,bad_plan=Fal
                     'finding':finding if '46.8' in c['source_text'] else None} for c in payload['conditions']]}
             if schema.__name__=='ConditionReview':
                 if cancel_review:store.cancel(job['id'])
-                return {'verdict':'supported','coverage':'fully_addressed','scope_matched':True,
+                return {'verdict':'supported','finding_supported_as_written':True,'coverage':'fully_addressed','scope_matched':True,
                     'qualifiers_preserved':True,'explicitly_reported':True,'reason':'Fixture own quotation supports the complete condition.'}
             if schema.__name__=='ConditionRepair':return {'coverage':'evidence_insufficient','finding':None}
             if schema.__name__=='JointReview':return {'verdict':'supported','fully_covers_proposal':True,
@@ -85,6 +85,9 @@ def test_full_positive_partial_and_insufficient_are_separated_with_own_audits(tm
     assert positive['joint_review']['claim_id']==positive['joint_finding']['identity']['claim_id']
     export=task_markdown(done)
     assert positive['decision_id'] in export and positive['joint_review']['claim_id'] in export
+    assert 'future_filter:direction-3:evidence' in export
+    assert 'future_filter:direction-2:repair_finding:condition-2' in export
+    assert '未形成可审核引句，未执行支持度审核' in export
     count=len(calls)
     with store.library._connection() as db:db.execute("UPDATE research_jobs SET status='queued',result=NULL WHERE id=?",(job['id'],))
     assert complete(store,service,job)['status']=='completed' and len(calls)==count
@@ -127,7 +130,8 @@ def test_partition_preserves_qualifiers_numbers_order_and_scope():
 
 
 def test_joint_proof_cannot_mix_papers_or_partial_parses():
-    conditions=[{'status':'fully_addressed'}]
+    conditions=[{'status':'fully_addressed','finding':{'claim':'fixture'},
+                 'review':{'verdict':'supported','finding_supported_as_written':True}}]
     finding={'identity':{'citations':[{'document_id':'a'},{'document_id':'b'}]}}
     review={'verdict':'supported','fully_covers_proposal':True,'jointly_satisfied':True,'explicitly_reported':True}
     docs=[{'document_id':d,'parse_status':'completed','pages_done':2,'total_pages':2} for d in ('a','b')]
@@ -135,6 +139,9 @@ def test_joint_proof_cannot_mix_papers_or_partial_parses():
     finding['identity']['citations'].pop()
     assert exclusion_allowed(conditions,finding,review,docs)
     docs[0]['parse_status']='partial'
+    assert not exclusion_allowed(conditions,finding,review,docs)
+    docs[0]['parse_status']='completed'
+    conditions[0]['review'].pop('finding_supported_as_written')
     assert not exclusion_allowed(conditions,finding,review,docs)
 
 
@@ -218,3 +225,9 @@ def test_correction_is_independently_reviewed_and_preserves_rejected_attempt(tmp
     assert condition['review']['verdict']=='supported'
     assert condition['prior_attempt']['review']['verdict']=='unsupported'
     assert row['joint_review']['claim_id']==row['joint_finding']['identity']['claim_id']
+
+
+def test_inconsistent_supported_verdict_cannot_promote_unproven_finding():
+    review={'verdict':'supported','finding_supported_as_written':False,'coverage':'fully_addressed',
+            'scope_matched':True,'qualifiers_preserved':True,'explicitly_reported':True}
+    assert condition_decision('fully_addressed',review,{'claim':'fixture'})=='evidence_insufficient'
