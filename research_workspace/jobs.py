@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from datetime import datetime,timedelta,timezone
 import re
 from uuid import uuid4
 
@@ -14,7 +15,7 @@ class TaskCancelled(Exception):
 
 
 class JobStore:
-    KINDS = {'qa','compare','translate','translate_text','review','future_work','draft'}
+    KINDS = {'qa','compare','translate','translate_text','review','future_work','draft','discover_qa'}
     SUMMARY_COLUMNS = 'id,kind,status,error,progress,total,cancel_requested,created_at,updated_at,result IS NOT NULL AS has_result'
 
     def __init__(self, library: Library):
@@ -131,7 +132,8 @@ class JobStore:
     def claim(self):
         with self.library._connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute("SELECT id FROM research_jobs WHERE status='queued' ORDER BY updated_at,created_at LIMIT 1").fetchone()
+            threshold=(datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat()
+            row = db.execute("SELECT id FROM research_jobs WHERE status='queued' AND NOT(kind='discover_qa' AND progress=1 AND updated_at>?) ORDER BY updated_at,created_at LIMIT 1",(threshold,)).fetchone()
             if not row:
                 return None
             db.execute("UPDATE research_jobs SET status='running',updated_at=? WHERE id=?",(_now(),row[0]))
@@ -151,14 +153,14 @@ class JobStore:
         with self.library._connection() as db:
             db.execute('UPDATE research_jobs SET total=?,updated_at=? WHERE id=?',(total,_now(),job_id))
 
-    def _yield_step(self,job_id):
+    def _yield_step(self,job_id,*,message=None):
         """Release the queue after one step, including a racing cancellation."""
         with self.library._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             cancelled = db.execute('SELECT cancel_requested FROM research_jobs WHERE id=?',(job_id,)).fetchone()[0]
             status = 'cancelled' if cancelled else 'queued'
             db.execute('UPDATE research_jobs SET status=?,updated_at=? WHERE id=?',(status,_now(),job_id))
-        self.event(job_id,status,'已保存当前片段并停止后续调用。' if cancelled else '已保存当前片段，等待下一轮继续。')
+        self.event(job_id,status,'已保存当前片段并停止后续调用。' if cancelled else message or '已保存当前片段，等待下一轮继续。')
 
     async def _text_step(self,service,job):
         """Save one segment per step; share the service's bounded language repair."""
@@ -220,7 +222,11 @@ class JobStore:
                 self.finish(job_id,'completed',result=job['result'])
                 return True
             self.event(job_id,'execute','读取选定资料并执行'+kind+'任务。')
-            if kind in {'qa','compare'}:
+            if kind=='discover_qa':
+                from .reading_workflow import reading_step
+                result=await reading_step(self,service,job)
+                if result is None:return True
+            elif kind in {'qa','compare'}:
                 result = await service.answer(payload['question'],payload['document_ids'],mode=kind,
                                               check_cancel=lambda:self.check_cancel(job_id))
             elif kind=='translate':

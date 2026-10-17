@@ -227,7 +227,8 @@
     const returnToResult = button("返回任务结果"); returnToResult.classList.add("rs-task-return");
     formHeading.append(node("h3", "rs-card-title", "新建任务"), returnToResult);
     form.append(formHeading);
-    const kind = select(Object.entries(kindLabels));
+    kindLabels.discover_qa = "下载与原文问答";
+    const kind = select(Object.entries(kindLabels).filter(([value]) => value !== "discover_qa"));
     form.append(field("任务类型", kind));
     const documentsGroup = node("fieldset", "rs-fieldset");
     documentsGroup.append(node("legend", "rs-label", "选择参考文献 · 最多20篇"));
@@ -472,7 +473,7 @@
       state.jobs = [job, ...state.jobs.filter((item) => item.id !== job.id)].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       detailHeading.textContent = kindLabels[job.kind] || "研究任务";
       meta.textContent = `${dateLabel(job.created_at)} · 任务 ${job.id.slice(0, 8)}`;
-      const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} 段` : "";
+      const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${job.kind === 'discover_qa' ? '步' : '段'}` : "";
       status.textContent = (job.cancel_requested && pending(job) ? "已请求取消，等待当前操作结束" : statusLabels[job.status] || job.status) + counter + (job.error ? `：${job.error}` : "")
         + (job.status === "interrupted" ? "。上一次调用的结果与扣费状态未知，继续重试可能重复消耗模型额度。" : "");
       status.classList.toggle("rs-error-text", ["failed", "interrupted"].includes(job.status));

@@ -108,7 +108,11 @@
     if (name === 'reader') return true;
     if (restoring) { restoreModule(request); return true; }
     let mountedController = null;
-    const options = {...bridge, initialJobId:intent?.jobId, async onTranslate(selection) {
+    const options = {...bridge, initialJobId:intent?.jobId,
+    async onResearchJob(jobId) {
+      if (activeModule !== 'discovery' || controller !== mountedController) return;
+      await activate('research',{retainCurrent:true,jobId});
+    }, async onTranslate(selection) {
       if (activeModule !== 'manage' || controller !== mountedController) return;
       const originRevision = revision;
       try {

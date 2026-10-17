@@ -54,7 +54,8 @@ class Relation(StrictInput):
 
 
 class ResearchTask(StrictInput):
-    kind: Literal['qa','compare','translate','translate_text','review','future_work','draft']
+    kind: Literal['qa','compare','translate','translate_text','review','future_work','draft','discover_qa']
+    paper_id: str | None = Field(default=None,max_length=150)
     document_ids: list[str] = Field(default_factory=list,max_length=20)
     document_id: str | None = None
     run_id: str | None = None
@@ -302,7 +303,12 @@ def build_router():
         if not service.capabilities()['configured']:
             raise HTTPException(503,'尚未配置大模型服务。请先完成本机模型配置；此处不会生成模拟结果。')
         payload = body.model_dump(exclude_none=True)
-        if body.kind=='translate':
+        if body.kind=='discover_qa':
+            from .discovery import DiscoveryService
+            if not body.paper_id or not body.question.strip():raise HTTPException(400,'请选择公开论文并填写研究问题。')
+            paper=DiscoveryService(library).get_paper(body.paper_id)
+            if not paper.get('pdf_url'):raise HTTPException(400,'该论文暂时没有可核验的公开PDF。')
+        elif body.kind=='translate':
             if not body.document_id:
                 raise HTTPException(400,'请选择待翻译文献。')
             doc = library.get_document(body.document_id)

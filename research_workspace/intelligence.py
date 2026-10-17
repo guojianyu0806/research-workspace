@@ -460,13 +460,16 @@ class IntelligenceService:
             raise LibraryError(f"单次最多选择{MAX_DOCUMENTS}篇文献。")
         return unique
 
-    def _blocks(self, document_ids: list[str]) -> list[Evidence]:
+    def _blocks(self, document_ids: list[str], *, run_ids=None) -> list[Evidence]:
         document_ids = self._validate_documents(document_ids)
         results = []
         with self.library._connection() as db:
             for document_id in document_ids:
                 document = self.library._document(db, document_id)
-                run = document["available_run"]
+                run = self.library._run(db,run_ids[document_id]) if run_ids and document_id in run_ids else document["available_run"]
+                if run and run['document_id']!=document_id:raise LibraryError('解析版本不属于所选文献。')
+                if run_ids and document_id not in run_ids:raise LibraryError('缺少工作流固定解析版本。')
+                if run_ids and run and run['status'] not in {'completed','partial'}:raise LibraryError('固定解析版本尚未完成，不能读取变化中的证据。')
                 if not run:
                     continue
                 rows = db.execute(
@@ -872,7 +875,7 @@ class IntelligenceService:
 
     async def retrieve_for_question(self, question: str, document_ids: list[str], *, limit: int = 12,
                                    expansion: Literal["auto", "off", "always"] = "auto",
-                                   check_cancel=None, include_attribution_context: bool = False) -> dict:
+                                   check_cancel=None, include_attribution_context: bool = False, run_ids=None) -> dict:
         """Bilingual query expansion + BM25/RRF, not embeddings or factual evidence.
 
         Auto expands Chinese questions over predominantly English source samples,
@@ -885,7 +888,7 @@ class IntelligenceService:
         document_ids = self._retrieval_inputs(question, document_ids, limit)
         if expansion not in {"auto", "off", "always"}:
             raise LibraryError("查询扩展策略须为auto、off或always。")
-        blocks = self._blocks(document_ids)
+        blocks = self._blocks(document_ids,run_ids=run_ids) if run_ids is not None else self._blocks(document_ids)
         opening_by_document = {}
         for block in blocks:
             opening_by_document.setdefault(block.document_id, block)
@@ -1861,7 +1864,7 @@ class IntelligenceService:
         raise ModelOutputError("未获得可核验结果。")
 
     async def answer(self, question: str, document_ids: list[str], *,
-                     mode: Literal["qa", "compare"] = "qa", check_cancel=None) -> dict:
+                     mode: Literal["qa", "compare"] = "qa", check_cancel=None, run_ids=None) -> dict:
         self._require_model()
         if mode not in {"qa", "compare"}:
             raise LibraryError("问答模式无效。")
@@ -1869,7 +1872,8 @@ class IntelligenceService:
         if mode == "compare" and len(document_ids) < 2:
             raise LibraryError("跨文献比较需要至少两篇文献。")
         retrieval = await self.retrieve_for_question(question, document_ids, limit=max(12, len(document_ids)),
-                                                     check_cancel=check_cancel, include_attribution_context=True)
+                                                     check_cancel=check_cancel, include_attribution_context=True,
+                                                     **({'run_ids':run_ids} if run_ids is not None else {}))
         evidence = retrieval["evidence"]
         snapshot = retrieval.get("_snapshot_blocks", evidence)
         names = subject_hints(self, snapshot) if snapshot else {}

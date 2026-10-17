@@ -75,7 +75,7 @@
     });
   }
 
-  function mountDiscovery(container, { api, onEvidence, refreshLibrary } = {}) {
+  function mountDiscovery(container, { api, onEvidence, refreshLibrary, onResearchJob } = {}) {
     mounted.get(container)?.destroy();
     let alive = true;
     let searchSequence = 0;
@@ -275,6 +275,24 @@
       });
       bottom.append(links, choices);
       card.append(bottom);
+      if (paper.pdf_url && onResearchJob) {
+        const work = node("details", "ex-paper-summary");
+        work.append(node("summary", "", "下载、解析并回答问题"));
+        const form=node("form","ex-search-form"), question=node("textarea","ex-input");
+        question.required=true; question.maxLength=4000; question.rows=2; question.setAttribute("aria-label",`关于 ${paper.title} 的研究问题`);
+        question.placeholder="填写问题，后台会保存原文、完成解析并用原文引用回答。";
+        const start=node("button","ex-button ex-primary","开始下载与问答"); start.type="submit";
+        form.append(question,node("p","ex-muted","仅处理这篇已选论文；问答会发送原文片段至已配置模型并消耗额度。"),start);
+        form.addEventListener("submit",async event => {
+          event.preventDefault(); start.disabled=true;
+          try {
+            const created=await api('/api/research/tasks',json('POST',{kind:'discover_qa',paper_id:paper.id,question:question.value.trim()}));
+            if(alive) await onResearchJob(created.job.id);
+          } catch(error) {if(alive) notice.show(error.message,true);}
+          finally {if(alive) start.disabled=false;}
+        });
+        work.append(form); card.append(work);
+      }
       return card;
     }
 
