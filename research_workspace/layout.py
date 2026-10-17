@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v5-math-operators'
+LAYOUT_VERSION = 'local-layout-v6-raster-matrices'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -209,6 +209,7 @@ class LayoutService:
                                 'word_evidence':[{'text':w['text'],'bbox':bbox(w['bbox'])} for w in cell['word_boxes']]})
                         text='\n'.join(' | '.join(c['text'] for c in cells if c['row']==r) for r in range(extracted['row_count']))
                         evidence=anchor(text,box,'ocr_table_region');evidence['source']='immutable_pdf_raster_local_ocr'
+                        table_raw_boxes.append(extracted['raw_bbox'])
                         tables.append({k:v for k,v in extracted.items() if k not in {'raw_bbox','cells'}} | {
                             'id':f'table-{len(tables)+1}','bbox':box,'cells':cells,'text':text,
                             'text_method':'ocr_cells_joined_by_row','evidence':evidence})
@@ -314,7 +315,6 @@ class LayoutService:
                             'bbox':bbox(row['raw_bbox']),'evidence':anchor(row['original_text'],bbox(row['raw_bbox']),'aligned_formula_row')} for row in formula.get('source_rows',[])],
                         'rule_evidence':[{'bbox':bbox([r[0],r[1]-.15,r[2],r[1]+.15]),'kind':'observed_horizontal_rule'} for r in formula['rules']]})
             finally:source.set_rotation(rotation)
-            formulas.sort(key=lambda f:(f['bbox'][1],f['bbox'][0]))
 
             from .matrix_geometry import extract_native_matrices
             try:
@@ -331,18 +331,46 @@ class LayoutService:
                     item['bbox']=bbox(item.pop('raw_bbox'))
             finally:source.set_rotation(rotation)
 
+            raster_math_audit={'status':'not_needed','model_calls':0}
+            if scan_like and not regions:
+                try:
+                    from .raster_formulas import extract_raster_math
+                    source.set_rotation(0)
+                    scan_formulas,scan_matrices,raster_math_audit=extract_raster_math(source,self.library._ocr_configuration(),table_raw_boxes)
+                    def raster_record(item,precision):
+                        item['bbox']=bbox(item.pop('raw_bbox'))
+                        item['evidence']=anchor(item.get('original_text') or item.get('text') or '',item['bbox'],precision) | {
+                            'source':'immutable_pdf_raster_local_ocr','block_id':None}
+                    for index,formula in enumerate(scan_formulas):
+                        raster_record(formula,'ocr_formula_region');formula['id']=f'scan-formula-{index+1}'
+                        for operand in formula.get('operands',[]):raster_record(operand,'ocr_fraction_operand')
+                        if formula.get('observed_rule'):
+                            x0,y,x1=formula.pop('observed_rule');formula['rule_evidence']=[{'bbox':bbox([x0,y-.25,x1,y+.25]),'kind':'observed_raster_horizontal_rule'}]
+                        formulas.append(formula)
+                    for index,entry_matrix in enumerate(scan_matrices):
+                        raster_record(entry_matrix,'ocr_matrix_region');entry_matrix['id']=f'scan-matrix-{index+1}'
+                        for cell in entry_matrix['cells']:raster_record(cell,'ocr_matrix_entry')
+                        for item in entry_matrix['bracket_audit']:raster_record(item,'ocr_matrix_bracket')
+                        matrices.append(entry_matrix)
+                except (ImportError,RuntimeError,ValueError) as error:
+                    raster_math_audit={'status':'unsupported_or_failed','reason':type(error).__name__,'model_calls':0}
+                    notes.append('扫描公式或矩阵未完成；不将未知符号补写为确定结果。')
+                finally:source.set_rotation(rotation)
+
+            formulas.sort(key=lambda f:(f['bbox'][1],f['bbox'][0]))
+
             reading = self._reading_order(regions,raw_boxes,source.cropbox.width,table_raw_boxes)
             if truncated:
                 notes.append('本页文字行超过10000行上限，结果已明确截断。')
             return {'document_id':document_id,'run_id':run['id'],'page':page,
                     'width':width,'height':height,'rotation':rotation,
                     'coordinate_system':'normalized_rendered_page','version':LAYOUT_VERSION,
-                    'method':'local_pdf_with_heuristic_candidates','status':'analyzed' if regions else 'ocr_layout_analyzed' if tables else 'no_native_text',
+                    'method':'local_pdf_with_heuristic_candidates','status':'analyzed' if regions else 'ocr_layout_analyzed' if tables or formulas or matrices else 'no_native_text',
                     'processing_status':run['status'],'parsed_page_status':persisted['status'],
                     'source_sha256':document['sha256'],'text_regions':regions,'truncated':truncated,
                     'metadata_candidates':candidates,'heading_candidates':headings,'reading_order':reading,
                     'tables':tables,'table_status':table_status,'scan_table_audit':scan_audit,'figures':figures,'captions':captions,
-                    'formulas':formulas,'formula_audit':math_audit,'matrices':matrices,'matrix_audit':matrix_audit,'appendix_markers':appendices,'limitations':notes,
+                    'formulas':formulas,'formula_audit':math_audit,'matrices':matrices,'matrix_audit':matrix_audit,'raster_math_audit':raster_math_audit,'appendix_markers':appendices,'limitations':notes,
                     'unsupported':['general_OCR_layout','vector_figure_semantics','general_formula_to_latex','verified_author_affiliations']}
 
     @staticmethod

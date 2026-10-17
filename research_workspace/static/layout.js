@@ -155,9 +155,10 @@
         if (matrix.latex) card.append(element('pre','rm-original-text',matrix.latex));
         else card.append(element('p','rm-warning',`未输出完整LaTeX：${matrix.conversion || '识别依据不足'}`));
         const audit = element('details'); audit.append(element('summary','','查看矩阵审核记录'));
-        audit.append(element('p','rm-muted',`方法：${matrix.method}；已核实括号字形 ${matrix.bracket_audit?.length || 0} 个。`));
+        audit.append(element('p','rm-muted',matrix.method === 'raster-math-v1' ? '来自原图像素的括号与行列观察；每个元素保留两次OCR结果。' : `方法：${matrix.method}；已核实括号字形 ${matrix.bracket_audit?.length || 0} 个。`));
         for (const cell of matrix.cells || []) {
           const row=element('p');row.append(element('span','',`第 ${cell.row+1} 行，第 ${cell.column+1} 列：${cell.latex || cell.text || '未确认'} `),evidenceControl(cell.evidence,'核对元素 →'));audit.append(row);
+          for (const view of cell.ocr_audit?.views || []) audit.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}：${view.text || '未识别'}`));
         }
         card.append(audit);matrices.append(card);
       }
@@ -179,15 +180,15 @@
       }
       output.append(figures);
 
-      const formulas = panel("公式候选", "原文始终保留；原生公式按字形、分数线、根号线和上下标位置生成有限LaTeX。已补充有明确依据的求和上下限及对齐多行等式；扫描图片公式与任意矩阵仍不支持。");
+      const formulas = panel("公式候选", "原文始终保留。原生公式按字形与几何位置转写；扫描公式仅支持有限分式子表达式和显式标量赋值，多次识别一致仍需核对。任意扫描公式和嵌套矩阵尚不支持。");
       if (data.formula_audit?.truncated || ['glyph_budget_exceeded','vector_budget_exceeded'].includes(data.formula_audit?.status))
         formulas.append(element('p','rm-warning','本页公式或字形超过本地分析上限；此处不是完整公式清单，请核对原页。'));
-      if (!data.formulas?.length) formulas.append(element("p", "rm-muted", "本页未检测到原生文字中的公式候选；图片公式不会被猜测转写。"));
+      if (!data.formulas?.length) formulas.append(element("p", "rm-muted", "本页未检测到受支持的公式候选；未知图片符号不会被猜测转写。"));
       for (const formula of data.formulas || []) {
         const item = element("article", "rm-text-block");
         item.append(element("span", "rm-badge", "需复核"), element("p", "rm-original-text", formula.original_text || formula.text), evidenceControl(formula.evidence));
         if (formula.latex) {
-          item.append(element("p", "rm-field-title", "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
+          item.append(element("p", "rm-field-title", formula.scope === 'subexpression' ? '分式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
         } else item.append(element("p", "rm-muted", "该公式不在可靠转写子集中，仅保留原文。"));
         if (formula.method?.startsWith('native-math-geometry-')) {
           const audit = element('details'); audit.append(element('summary', '', '查看转写依据'));
@@ -204,6 +205,15 @@
           }
           for (const [rowIndex,row] of (formula.source_rows || []).entries()) {
             audit.append(element('p','rm-muted',`第 ${rowIndex+1} 行 · ${row.original_text}`),evidenceControl(row.evidence,`核对第 ${rowIndex+1} 行 →`));
+          }
+          item.append(audit);
+        }
+        if (formula.method === 'raster-math-v1') {
+          const audit=element('details');audit.append(element('summary','','查看扫描公式审核记录'));
+          audit.append(element('p','rm-muted',formula.latex ? '多次OCR观察一致仍可能出错，请核对原图。' : `未输出完整结果：${formula.conversion}；保留原图与不同识别观察。`));
+          for (const value of [formula,...(formula.operands || [])]) {
+            for (const view of value.ocr_audit?.views || []) audit.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}：${view.text || '未识别'}`));
+            if (value !== formula) audit.append(evidenceControl(value.evidence,'核对分子或分母 →'));
           }
           item.append(audit);
         }
