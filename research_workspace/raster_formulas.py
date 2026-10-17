@@ -88,6 +88,35 @@ def recheck_numeric_entry(page,box,configuration,budget,audit):
     return None
 
 
+def recheck_letter_entry(page,cell,cells,configuration,budget):
+    """Resolve case only with fresh pixel readings and measured x-height.
+
+    Reference cells supply height, never the target's letter. Require both an
+    observed lowercase body and ascender; absent references stay unresolved.
+    """
+    audit=cell['ocr_audit']
+    if budget['remaining']<2:return None
+    refs=[c for c in cells if c['latex'] and c['column']==cell['column'] and c is not cell]
+    body=[c for c in refs if c['latex'] in set('aceimnorsuvwxz')]
+    tall=[c for c in refs if c['latex'] in set('bdfhklt')]
+    if not body or not tall:return None
+    height=lambda c:c['raw_bbox'][3]-c['raw_bbox'][1]
+    xheight=median(height(c) for c in body);ascender=median(height(c) for c in tall)
+    if not .8*xheight<=height(cell)<=1.2*xheight or height(cell)>.8*ascender:return None
+    readings=[];audit['letter_recheck_views']=[]
+    for dpi,threshold in [(144,210),(288,230)]:
+        gray,_=_pixel_crop(page,pymupdf.Rect(cell['raw_bbox'])+(-.75,-.75,.75,.75),dpi)
+        text=_read_mask(gray<threshold,configuration,mode=7);budget['remaining']-=1
+        readings.append(text);audit['letter_recheck_views'].append({'text':text,'dpi':dpi,'threshold':threshold,'mode':7})
+    audit['case_geometry']={'method':'observed_lowercase_body_and_ascender_heights','target_height':height(cell),
+        'body_height':xheight,'ascender_height':ascender,
+        'reference_regions':[{'raw_bbox':c['raw_bbox'],'original_text':c['latex']} for c in [*body,*tall]]}
+    if readings[0]==readings[1] and re.fullmatch('[cosuvwxz]',readings[0]):
+        audit['initial_status']=audit['status'];audit['status']='letter_pixel_rechecked_candidate'
+        return readings[0]
+    return None
+
+
 def scan_matrices(page,pixels,scale,configuration,budget,excluded):
     results=[]
     for left,right in bracket_regions(pixels<170,scale)[:12]:
@@ -131,6 +160,13 @@ def scan_matrices(page,pixels,scale,configuration,budget,excluded):
                     cells.append({'row':r,'column':c,'text':value,'latex':value if valid else None,
                         'raw_bbox':region,
                         'ocr_audit':audit,'needs_review':True})
+            for cell in cells:
+                if cell['latex'] is None:
+                    revised=recheck_letter_entry(page,cell,cells,configuration,budget)
+                    if revised is not None:cell['text']=cell['latex']=revised
+            centres=[median((c['box'][1]+c['box'][3])/2 for c in row) for row in rows]
+            if any(b-a>height*3 for a,b in zip(centres,centres[1:])):
+                raise ValueError('matrix_row_spacing_ambiguous')
             if any(c['latex'] is None for c in cells):raise ValueError('unresolved_matrix_entry')
             latex=r'\begin{bmatrix}'+r' \\ '.join(' & '.join(c['latex'] for c in cells if c['row']==r) for r in range(len(rows)))+r'\end{bmatrix}'
         except ValueError as e:error=str(e);latex=None
@@ -263,6 +299,9 @@ def extract_raster_math(page,configuration,excluded=()):
             owner.setdefault('associated_line_observations',[]).append(line)
         else:formulas.append(line)
     formulas+=extended
+    from .scan_composition import compose_scan_math
+    composed,composition_audit=compose_scan_math(page,pixels,configuration,[*formulas],forbidden)
+    formulas+=composed
     return formulas,matrices,{'status':'analyzed','version':VERSION,'model_calls':0,'ocr_calls':129-budget['remaining'],
-        'ocr_budget':128,'operator_audit':operator_audit,'needs_review':True,'supported':['rectangular_simple_entries','explicit_scalar_assignments','observed_fraction_subexpressions','finite_scripts_radicals_summations'],
+        'ocr_budget':128,'operator_audit':operator_audit,'composition_audit':composition_audit,'needs_review':True,'supported':['rectangular_simple_entries','explicit_scalar_assignments','observed_fraction_subexpressions','finite_scripts_radicals_summations','bounded_nested_equation_composition'],
         'unsupported':['general_scan_formula_latex','nested_matrices','ambiguous_scripts','unknown_glyphs']}

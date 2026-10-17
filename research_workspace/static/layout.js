@@ -158,9 +158,15 @@
         audit.append(element('p','rm-muted',matrix.method === 'raster-math-v1' ? '来自原图像素的括号与行列观察；每个元素保留两次OCR结果。' : `方法：${matrix.method}；已核实括号字形 ${matrix.bracket_audit?.length || 0} 个。`));
         if (matrix.segmentation_audit) audit.append(element('p','rm-muted',`分区阈值 ${matrix.segmentation_audit.threshold}；原始墨迹片段 ${matrix.segmentation_audit.initial_component_count} 个，位置相接的分组 ${matrix.segmentation_audit.joined_component_count} 个。`));
         for (const cell of matrix.cells || []) {
-          const row=element('p');row.append(element('span','',`第 ${cell.row+1} 行，第 ${cell.column+1} 列：${cell.latex || cell.text || '未确认'} `),evidenceControl(cell.evidence,'核对元素 →'));audit.append(row);
+          const row=element('p');row.append(element('span','',`${matrix.conversion === 'matrix_row_spacing_ambiguous' ? '观察行' : '第'} ${cell.row+1} 行，第 ${cell.column+1} 列：${cell.latex || cell.text || '未确认'} `),evidenceControl(cell.evidence,'核对元素 →'));audit.append(row);
           for (const view of cell.ocr_audit?.views || []) audit.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}：${view.text || '未识别'}`));
           for (const view of cell.ocr_audit?.recheck_views || []) audit.append(element('p','rm-muted',`局部复核 ${view.dpi} DPI，阈值 ${view.threshold}：${view.text || '未识别'}`));
+          for (const view of cell.ocr_audit?.letter_recheck_views || []) audit.append(element('p','rm-muted',`字母复核 ${view.dpi} DPI，阈值 ${view.threshold}：${view.text || '未识别'}`));
+          if (cell.ocr_audit?.case_geometry) {
+            const geometry=cell.ocr_audit.case_geometry;
+            audit.append(element('p','rm-muted',`大小写几何核对：本元素字高 ${geometry.target_height}；小写主体字高 ${geometry.body_height}；上伸字母字高 ${geometry.ascender_height}。参照仅用于字高，不提供目标字母。`));
+            for (const reference of geometry.reference_regions || []) audit.append(evidenceControl(reference.evidence,'核对字高参照 →'));
+          }
         }
         card.append(audit);matrices.append(card);
       }
@@ -182,7 +188,7 @@
       }
       output.append(figures);
 
-      const formulas = panel("公式候选", "原文始终保留。扫描公式支持有限分式、分离的单字符上下标、具有可见覆盖线的根号，以及求和符号与上下限片段。片段不代表整条公式已恢复，多次OCR一致仍需核对。任意扫描公式和嵌套矩阵尚不支持。");
+      const formulas = panel("公式候选", "扫描公式可按原图位置组合有限分式、根号和单字符上下标，并尝试恢复具有完整依据的等式。整式、片段和未完成结果分别标记；嵌套子项可逐层核对。多次OCR一致仍需人工复核，任意扫描公式和嵌套矩阵尚不支持。");
       if (data.formula_audit?.truncated || ['glyph_budget_exceeded','vector_budget_exceeded'].includes(data.formula_audit?.status))
         formulas.append(element('p','rm-warning','本页公式或字形超过本地分析上限；此处不是完整公式清单，请核对原页。'));
       if (!data.formulas?.length) formulas.append(element("p", "rm-muted", "本页未检测到受支持的公式候选；未知图片符号不会被猜测转写。"));
@@ -190,7 +196,7 @@
         const item = element("article", "rm-text-block");
         item.append(element("span", "rm-badge", "需复核"), element("p", "rm-original-text", formula.original_text || formula.text), evidenceControl(formula.evidence));
         if (formula.latex) {
-          item.append(element("p", "rm-field-title", formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
+          item.append(element("p", "rm-field-title", formula.scope === 'whole_equation' ? '整条等式转写候选 · 待核对' : formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
         } else item.append(element("p", "rm-muted", "该公式不在可靠转写子集中，仅保留原文。"));
         if (formula.method?.startsWith('native-math-geometry-')) {
           const audit = element('details'); audit.append(element('summary', '', '查看转写依据'));
@@ -217,11 +223,17 @@
             audit.append(evidenceControl(formula.operator_audit.evidence,'核对运算符原图 →'));
             for (const view of formula.operator_audit.views || []) audit.append(element('p','rm-muted',`语言 ${view.language}，${view.dpi} DPI：${view.text || '未识别'}`));
           }
-          const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限'};
-          for (const value of [formula,...(formula.operands || [])]) {
-            for (const view of value.ocr_audit?.views || []) audit.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}：${view.text || '未识别'}`));
-            if (value !== formula) audit.append(evidenceControl(value.evidence,`核对${roles[value.role] || '分子或分母'} →`));
+          const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限',numerator:'分子',denominator:'分母',nested_structure:'嵌套结构',observed_text_run:'文字片段',observed_delimiter:'括号',delimiter_or_relation:'标点或关系符'};
+          function appendObservation(value, depth=0) {
+            const own=element('div','');
+            if (value !== formula) own.append(element('p','rm-field-title',`${roles[value.role] || '操作数'}：${value.latex || '未完成'}`),evidenceControl(value.evidence,`核对${roles[value.role] || '操作数'} →`));
+            for (const view of [...(value.ocr_audit?.views || []),...(value.ocr_audit?.recheck_views || [])]) own.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}${view.dpi ? `，${view.dpi} DPI` : ''}：${view.text || '未识别'}`));
+            if (value.ocr_audit?.method) own.append(element('p','rm-muted',`像素几何依据：${value.ocr_audit.method}`));
+            if (value.coverage_audit) own.append(element('p','rm-muted',`未归属墨迹：${value.coverage_audit.unassigned_ink_pixels} 像素；子项${value.coverage_audit.all_children_resolved ? '已分别转写，仍待复核' : '尚未全部确认'}`));
+            audit.append(own);
+            if (depth<8) for (const child of value.operands || []) appendObservation(child,depth+1);
           }
+          appendObservation(formula);
           for (const line of formula.associated_line_observations || []) {
             audit.append(element('p','rm-muted',`归属本求和片段的行观察：${line.original_text}`),evidenceControl(line.evidence,'核对限值行观察 →'));
           }

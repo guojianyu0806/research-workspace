@@ -58,13 +58,13 @@ def test_existing_fraction_is_explicitly_a_subexpression_with_both_observations(
     assert audit['model_calls']==0
 
 
-def test_lower_resolution_matrix_recovers_actual_digits_and_keeps_uncertain_letters(configuration):
+def test_lower_resolution_matrix_recovers_actual_digits_and_case_checked_letters(configuration):
     with raster_page('UnderstandingDeepLearning_02_09_26_C.pdf',461) as pdf:
         _,matrices,_=extract_raster_math(pdf[0],configuration)
     numeric=next(m for m in matrices if m['column_count']==3)
     assert [c['latex'] for c in numeric['cells']]==['0','1','0','0','0','1','1','0','0']
     assert numeric['latex'] and numeric['segmentation_audit']['threshold']==210
-    assert any(m['latex'] is None and any(c['latex'] is None for c in m['cells']) for m in matrices)
+    assert any([c['latex'] for c in m['cells']]==['b','c','a'] for m in matrices)
 
 
 def test_scalar_assignment_does_not_flatten_a_displaced_subscript(configuration):

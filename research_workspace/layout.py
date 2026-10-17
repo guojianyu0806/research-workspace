@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v7-scan-operators'
+LAYOUT_VERSION = 'local-layout-v8-scan-composition'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -338,14 +338,17 @@ class LayoutService:
                     source.set_rotation(0)
                     scan_formulas,scan_matrices,raster_math_audit=extract_raster_math(source,self.library._ocr_configuration(),table_raw_boxes)
                     def raster_record(item,precision):
-                        item['bbox']=bbox(item.pop('raw_bbox'))
+                        raw_region=item.pop('raw_bbox');item['bbox']=bbox(raw_region)
                         item['evidence']=anchor(item.get('original_text') or item.get('text') or '',item['bbox'],precision) | {
                             'source':'immutable_pdf_raster_local_ocr','block_id':None}
-                        if item.get('ocr_audit',{}).get('raw_bbox'):
+                        if item.get('ocr_audit'):
+                            item['ocr_audit'].setdefault('raw_bbox',raw_region)
                             raster_record(item['ocr_audit'],'ocr_observation_region')
-                    for index,formula in enumerate(scan_formulas):
-                        raster_record(formula,'ocr_formula_region');formula['id']=f'scan-formula-{index+1}'
-                        for operand in formula.get('operands',[]):raster_record(operand,'ocr_fraction_operand')
+                        for reference in item.get('ocr_audit',{}).get('case_geometry',{}).get('reference_regions',[]):
+                            raster_record(reference,'ocr_letter_height_reference')
+                    def raster_formula(formula,precision='ocr_formula_region'):
+                        raster_record(formula,precision)
+                        for operand in formula.get('operands',[]):raster_formula(operand,'ocr_formula_operand')
                         for observation in formula.get('associated_line_observations',[]):raster_record(observation,'ocr_operator_limit_line')
                         if formula.get('operator_audit',{}).get('raw_bbox'):
                             raster_record(formula['operator_audit'],'ocr_operator_region')
@@ -356,6 +359,8 @@ class LayoutService:
                             geometry['coordinate_system']='normalized_rendered_page'
                         if formula.get('observed_rule'):
                             x0,y,x1=formula.pop('observed_rule');formula['rule_evidence']=[{'bbox':bbox([x0,y-.25,x1,y+.25]),'kind':'observed_raster_horizontal_rule'}]
+                    for index,formula in enumerate(scan_formulas):
+                        raster_formula(formula);formula['id']=f'scan-formula-{index+1}'
                         formulas.append(formula)
                     for index,entry_matrix in enumerate(scan_matrices):
                         raster_record(entry_matrix,'ocr_matrix_region');entry_matrix['id']=f'scan-matrix-{index+1}'
