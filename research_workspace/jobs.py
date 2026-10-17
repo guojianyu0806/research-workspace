@@ -107,7 +107,7 @@ class JobStore:
         with self.library._connection() as db:
             self._exists(db,job_id)
             db.execute('INSERT OR REPLACE INTO research_job_items VALUES(?,?,?)',(job_id,key,json.dumps(payload,ensure_ascii=False)))
-            count = db.execute('SELECT COUNT(*) FROM research_job_items WHERE job_id=?',(job_id,)).fetchone()[0]
+            count = db.execute("SELECT COUNT(*) FROM research_job_items WHERE job_id=? AND item_key NOT IN ('review_validation','grounding_validation')",(job_id,)).fetchone()[0]
             db.execute('UPDATE research_jobs SET progress=?,total=?,updated_at=? WHERE id=?',(count,total,_now(),job_id))
 
     def retry(self,job_id):

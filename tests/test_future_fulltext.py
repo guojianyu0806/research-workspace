@@ -153,3 +153,23 @@ def test_each_direction_retrieves_only_its_own_query_documents(tmp_path,monkeypa
     assert documents[0].isdisjoint(documents[1])
     assert 'six' in directions[0]['answer']['claims'][0]['text']
     assert 'nine' in directions[1]['answer']['claims'][0]['text']
+
+
+def test_failed_audit_retained_on_retry_does_not_count_as_completed_work(tmp_path,monkeypatch):
+    from research_workspace.intelligence import ModelOutputError
+    library,store,service,job,calls,downloads=setup(tmp_path,monkeypatch)
+    original=service.answer
+    async def failed(*args,**kwargs):
+        error=ModelOutputError('Fixture unsupported conclusion')
+        error.grounding_diagnostics={'diagnostic_only':True,'status':'failed'}
+        raise error
+    monkeypatch.setattr(service,'answer',failed)
+    failed_job=complete(library,store,service,job)
+    assert failed_job['status']=='failed' and failed_job['progress']==5
+    diagnostic=next(i['result'] for i in failed_job['completed_items'] if i.get('stage')=='grounding_validation')
+    assert diagnostic['future_fulltext_context']['direction_id']=='direction-1'
+    assert diagnostic['future_fulltext_context']['section_index']==0
+    monkeypatch.setattr(service,'answer',original);store.retry(job['id'])
+    done=complete(library,store,service,job)
+    assert done['status']=='completed' and done['progress']==done['total']==7
+    assert any(i.get('stage')=='grounding_validation' for i in done['completed_items'])

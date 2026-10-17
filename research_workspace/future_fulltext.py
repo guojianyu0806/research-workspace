@@ -112,9 +112,21 @@ async def fulltext_step(store, service, job, abstract_result):
             runs = {r['document_id']: r['run_id'] for r in ready}
             # The established answer pipeline verifies every own quotation,
             # isolated entailment, response coverage and stable claim IDs.
-            answer = await service.answer(_question(direction), docs, mode='compare' if len(docs)>1 else 'qa', run_ids=runs,
-                                          fulltext_review=True,
-                                          check_cancel=lambda: store.check_cancel(jid))
+            from .intelligence import ModelOutputError
+            try:
+                answer = await service.answer(_question(direction), docs, mode='compare' if len(docs)>1 else 'qa', run_ids=runs,
+                                              fulltext_review=True,
+                                              check_cancel=lambda: store.check_cancel(jid))
+            except ModelOutputError as error:
+                # A failed review is not a final conclusion. Keep its local
+                # index space explicitly attached to the direction being tested.
+                for attribute in ('grounding_diagnostics','review_diagnostics'):
+                    diagnostic=getattr(error,attribute,None)
+                    if isinstance(diagnostic,dict):
+                        setattr(error,attribute,{**diagnostic,'future_fulltext_context':{
+                            'direction_id':direction['direction_id'],'section_index':direction['section_index'],
+                            'documents':ready,'source_ids':record['source_ids']}})
+                raise
             passed = answer.get('grounding', {}).get('status') == 'passed' and bool(answer.get('claims'))
             record.update(status='passage_reviewed' if passed else 'evidence_insufficient',
                           full_text_reviewed=passed, answer=answer,
