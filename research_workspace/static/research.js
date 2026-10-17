@@ -379,11 +379,13 @@
       if (typeof options.onEvidence !== "function") return Promise.resolve();
       return Promise.resolve().then(() => options.onEvidence(source)).catch((error) => life.show(error.message || "无法打开原文出处。", true));
     }
-    function citationButtons(claim, sources) {
+    function citationButtons(claim, sources, contextLabel = "") {
       const row = node("div", "rs-citations");
-      for (const citation of Array.isArray(claim.citations) ? claim.citations : []) {
+      for (const [index,citation] of (Array.isArray(claim.citations) ? claim.citations : []).entries()) {
         const source = sources.get(citation.evidence_id); if (!source) continue;
-        const cite = button(`第${source.page}页 · ${source.document_title || source.filename || "原文"}`);
+        const caption=`第${source.page}页 · ${source.document_title || source.filename || "原文"}`;
+        const cite = button(`${contextLabel ? `引用${index+1} · ` : ''}${caption}`);
+        if(contextLabel)cite.setAttribute('aria-label',`${contextLabel}，引用${index+1}，${caption}`);
         cite.className = "rs-citation"; cite.title = citation.quote || "查看原文";
         cite.disabled = typeof options.onEvidence !== "function";
         cite.addEventListener("click", () => openEvidence(source)); row.append(cite);
@@ -438,11 +440,12 @@
       if (output.future_direction_filter) {
         const audit=output.future_direction_filter,panel=node('section','rs-result-section rs-direction-filter');
         panel.append(node('h4','','全文条件覆盖与筛选'),node('p','rs-muted',audit.notice));
+        if(output.future_fulltext?.status==='controlled_evidence_selection')panel.append(node('p','rs-small rs-muted',output.future_fulltext.notice));
         const labels={fully_addressed:'充分覆盖 · 移出重点候选',partially_addressed:'部分覆盖 · 保留',evidence_insufficient:'证据不足 · 保留'};
-        const showFinding=(parent,finding,review)=>{
+        const showFinding=(parent,finding,review,contextLabel)=>{
           if(!finding)return;
-          parent.append(node('p','rs-prose',finding.claim.text),citationButtons(finding.claim,new Map(finding.sources.map(s=>[s.evidence_id,s]))));
-          for(const cite of finding.claim.citations)parent.append(node('blockquote','rs-future-quote',cite.quote));
+          parent.append(node('p','rs-prose',finding.claim.text),citationButtons(finding.claim,new Map(finding.sources.map(s=>[s.evidence_id,s])),contextLabel));
+          for(const [index,cite] of finding.claim.citations.entries())parent.append(node('p','rs-small rs-muted',`引用${index+1}原文`),node('blockquote','rs-future-quote',cite.quote));
           const badge=node('p','rs-small rs-muted',`本条审核：${review?.verdict==='supported'?'通过':'未通过'} · ${finding.identity.claim_id.slice(0,14)}…`);
           badge.title=finding.identity.claim_id;parent.append(badge);
           if(review?.reason)parent.append(node('p','rs-small rs-muted',review.reason));
@@ -455,14 +458,14 @@
             const item=node('article','rs-future-direction rs-filter-condition');
             item.append(node('h5','',`${condition.condition_id} · ${condition.source_text}`),
               node('p','rs-muted',condition.status==='fully_addressed'?'本条件已充分覆盖':condition.status==='partially_addressed'?'本条件仅部分覆盖':'本条件证据不足'));
-            showFinding(item,condition.finding,condition.review);
+            showFinding(item,condition.finding,condition.review,`${direction.direction_id}，${condition.condition_id}`);
             if(!condition.finding)item.append(node('p','rs-muted',condition.reason));
             if(!condition.review)item.append(node('p','rs-small rs-muted','未形成可审核引句，未执行支持度审核；按保守规则保留。检索与补证过程见本方向完整记录。'));
             card.append(item);
           }
           if(direction.excluded) {
             const proof=node('article','rs-future-direction rs-filter-joint');proof.append(node('h5','','全部条件的联合覆盖依据'));
-            showFinding(proof,direction.joint_finding,direction.joint_review);card.append(proof);
+            showFinding(proof,direction.joint_finding,direction.joint_review,`${direction.direction_id}，联合覆盖`);card.append(proof);
           } else if(direction.joint_review)card.append(node('p','rs-muted','联合审核未确认全部条件共同满足：'+direction.joint_review.reason));
           const ownStages=(job.completed_items || []).filter(item=>item.stage?.startsWith(`future_filter:${direction.direction_id}:`));
           const details=node('details','rs-events');details.append(node('summary','','查看本方向完整判定与审核记录'),node('pre','rs-prose',JSON.stringify({final_decision:direction,checkpoint_scope:'this direction only; includes actual retrieval and unreviewable evidence gates',checkpoints:ownStages},null,2)));
@@ -470,14 +473,14 @@
         }
         resultArea.append(panel);
       }
-      if (output.future_fulltext) {
+      if (output.future_fulltext && output.future_fulltext.status !== 'controlled_evidence_selection') {
         const full = output.future_fulltext, panel = node("section", "rs-result-section");
         panel.append(node("h4", "", "公开论文正文核验"), node("p", "rs-muted", full.notice));
         for (const direction of full.directions || []) {
           const card = node("section", "rs-result-section");
           card.append(node("h5", "", `${direction.direction_id} · ${direction.heading}`),
             node("p", "rs-proposal", "待验证设想：" + direction.proposed_work),
-            node("p", "rs-muted", `${direction.full_text_reviewed ? "正文引句审核通过" : "正文证据不足"} · ${direction.reason}`));
+            node("p", "rs-muted", `${direction.full_text_reviewed ? "正文引句审核通过" : "正文证据不足"} · ${direction.reason || '本阶段未形成完整正文判定，保留待核验。'}`));
           const answer = direction.answer || {};
           const sources = new Map((answer.sources || []).map(s => [s.evidence_id, s]));
           for (const [index, claim] of (answer.claims || []).entries()) {

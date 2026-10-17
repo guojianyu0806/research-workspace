@@ -147,6 +147,8 @@ def verify(job_id,source_commit=None):
                 if c['finding']:
                     finding_checks(did+c['condition_id'],c['finding'],c['review'])
                     check(did+c['condition_id']+'_condition_binding',c['review']['condition_id']==c['condition_id'] and c['review']['index_space']=='this condition finding only')
+                if c['status'] in {'fully_addressed','partially_addressed'}:
+                    check(did+c['condition_id']+'_positive_requirement_gate',c['review'].get('positive_requirement_satisfied') is True)
                 if c['status']=='fully_addressed':
                     check(did+c['condition_id']+'_full_guards',bool(c['finding']) and all(c['review'][k] for k in ('scope_matched','qualifiers_preserved','explicitly_reported','positive_requirement_satisfied')) and c['review']['coverage']=='fully_addressed')
             check(did+'_all_characters_covered',not proposal[cursor:].strip())
