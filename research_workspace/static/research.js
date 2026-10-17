@@ -579,7 +579,9 @@
       detailHeading.textContent = kindLabels[job.kind] || "研究任务";
       meta.textContent = `${dateLabel(job.created_at)} · 任务 ${job.id.slice(0, 8)}`;
       const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${['discover_qa','future_work','future_filter'].includes(job.kind) ? '步' : '段'}` : "";
-      status.textContent = (job.cancel_requested && pending(job) ? "已请求取消，等待当前操作结束" : statusLabels[job.status] || job.status) + counter + (job.error ? `：${job.error}` : "")
+      const balanceError = /HTTP\s*402/.test(job.error || "") && (job.model_calls || []).some(call => call.http_status === 402 && call.provider_host === "api.deepseek.com");
+      const errorText = balanceError ? "DeepSeek账户余额不足（HTTP 402）。请检查或补充账户余额；已保存阶段会保留，恢复后可重试。" : job.error;
+      status.textContent = (job.cancel_requested && pending(job) ? "已请求取消，等待当前操作结束" : statusLabels[job.status] || job.status) + counter + (errorText ? `：${errorText}` : "")
         + (job.status === "interrupted" ? "。上一次调用的结果与扣费状态未知，继续重试可能重复消耗模型额度。" : "");
       status.classList.toggle("rs-error-text", ["failed", "interrupted"].includes(job.status));
       const meter=job.usage;

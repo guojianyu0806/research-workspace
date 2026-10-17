@@ -74,6 +74,23 @@ def test_missing_or_invalid_usage_is_not_reported_as_zero(tmp_path):
     assert store.get(job['id'])['usage']['total_tokens'] is None
 
 
+def test_deepseek_insufficient_balance_is_explicit_not_retried_or_reported_as_free(tmp_path):
+    store=JobStore(Library(tmp_path));job=store.create('qa',{});requests=[]
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(402,text='private provider account details')
+    provider=ChatCompletionProvider(ModelConfig('https://api.deepseek.com','deepseek-v4-pro','fixture-not-real'),
+        transport=httpx.MockTransport(handler))
+    async def run():
+        with record_model_calls(store.usage_store,job['id']):
+            with pytest.raises(ModelProviderError,match='余额不足（HTTP 402）'):
+                await provider.generate('fixture',{},AnswerPayload)
+    asyncio.run(run());saved=store.get(job['id'])
+    assert len(requests)==1 and saved['model_calls'][0]['http_status']==402
+    assert saved['usage']['usage_reported_calls']==0 and saved['usage']['total_tokens'] is None
+    assert 'private provider account' not in json.dumps(saved)
+
+
 def test_actual_job_pipeline_context_does_not_leak_to_other_concurrent_job(tmp_path):
     stores=[JobStore(Library(tmp_path/str(i))) for i in range(2)]
     jobs=[s.create('translate_text',{'text':'Vector retrieval improves search.','target_language':'zh'}) for s in stores]

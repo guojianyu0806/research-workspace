@@ -87,6 +87,16 @@ def verify(job_id,source_commit):
         answer('original_local_context',synthesis,claims)
         check('recent_live_policy',audit['live_refresh_requested'] and audit['date_filter']['lookback_days']==payload['research_days'])
         window=audit['date_filter'];feeds={};receipts={}
+        planning=audit['query_planning']
+        check('live_query_planning_completed',planning['status']=='completed' and planning['prompt_version']=='future-query-v3'
+              and planning['generation_calls']<=planning['generation_call_limit']==2 and len(audit['queries'])<=audit['query_limit']==6)
+        for d in audit['directions']:
+            own=[q['query'] for q in audit['queries'] if q['query_id'] in d['query_ids']]
+            check(d['direction_id']+'_planned_conditions_executed',d['query_quality']=='direction_specific'
+                and set(d['required_queries']).issubset(own))
+            concepts=d['query_concepts']
+            check(d['direction_id']+'_literal_query_bindings',all(c['source_text'] in d['heading']+' '+d['proposed_work']
+                for c in [concepts['topic'],*concepts['conditions']]))
         check('all_queries_executed',bool(audit['queries']) and all(q['status']=='completed' for q in audit['queries']))
         for query in audit['queries']:
             qid=query['query_id'];receipt=query['receipt'];path=library.data_dir/receipt['path']
@@ -110,6 +120,10 @@ def verify(job_id,source_commit):
             check(source['source_id']+'_recent_publication',datetime.fromisoformat(window['from'])<=published<=datetime.fromisoformat(window['to']))
             check(source['source_id']+'_receipt_binding',bool(source['discovery_receipt_ids']) and set(source['discovery_receipt_ids']).issubset(receipts))
         full=result['future_fulltext'];new_downloads=[]
+        selected={s['source_id'] for s in full['sources']}
+        check('bounded_explicit_source_selection',bool(full.get('source_selection')) and len(selected)<=3
+            and all(s['source_id'] in {p['source_id'] for p in audit['sources']} for s in full['source_selection'])
+            and all(any(s['source_id']==sid and s['eligible'] for s in full['source_selection']) for sid in selected))
         for source in full['sources']:
             downloaded=source['download'];parsed=source['parse']
             check('download_'+source['source_id'],downloaded['status']=='downloaded' and parsed['status']=='ready')
@@ -150,17 +164,20 @@ def verify(job_id,source_commit):
                     and len({q['document_id'] for q in f['identity']['citations']})==1)
             else:check(did+'_uncertain_kept',did in retained)
         calls=job['model_calls'];usage=job['usage'];success=[c for c in calls if c['http_status']==200]
-        check('actual_pro_receipts',bool(calls) and len(calls)==len(success) and all(c['model']=='deepseek-v4-pro' and c['state']=='response_received' for c in calls)
-            and usage['calls']==usage['usage_reported_calls']==len(calls))
-        check('usage_totals',all(usage[k]==sum(c['usage'][k] for c in calls) for k in ('prompt_tokens','completion_tokens','total_tokens')))
+        check('actual_pro_receipts',bool(success) and all(c['model']=='deepseek-v4-pro' and c['state']=='response_received' for c in calls)
+            and usage['calls']==len(calls) and usage['usage_reported_calls']==sum(bool(c['usage']) for c in calls))
+        check('usage_totals',all(usage[k]==sum(c['usage'].get(k,0) for c in calls) for k in ('prompt_tokens','completion_tokens','total_tokens')))
         export=client.get('/api/research/tasks/'+job_id+'/export').text;(output/'export.md').write_text(export,encoding='utf-8')
         check('export_receipts_and_decisions',all(q['receipt']['id'] in export for q in audit['queries']) and all(d['decision_id'] in export for d in rows))
         manifest={'job_id':job_id,'software_commit':commit,'checks':len(checks),'new_downloads':new_downloads,'usage':usage,
+            'historical_http_errors':[{'call_id':c['id'],'http_status':c['http_status']} for c in calls if c['http_status']!=200],
+            'verification_script_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             'scope':'normal API live discovery + actual candidate generation + official PDFs + fulltext review + condition filtering',
             'source_hashes':{p:hashlib.sha256(subprocess.check_output(['git','show',commit+':'+p],cwd=ROOT)).hexdigest() for p in
                 ('research_workspace/discovery.py','research_workspace/future_verification.py','research_workspace/future_fulltext.py',
                  'research_workspace/future_filter.py','research_workspace/jobs.py','research_workspace/intelligence.py',
-                 'research_workspace/claim_repair.py','research_workspace/prompts/future_background_repair_v1.txt')}}
+                 'research_workspace/claim_repair.py','research_workspace/prompts/future_background_repair_v1.txt',
+                 'research_workspace/prompts/future_query_v3.txt','research_workspace/advanced_api.py','research_workspace/static/research.js')}}
         (output/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     print('CHECKS',len(checks),'OUTPUT',output)
 

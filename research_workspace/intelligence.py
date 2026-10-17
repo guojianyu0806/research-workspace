@@ -362,6 +362,8 @@ class ChatCompletionProvider:
                     continue
                 if response.status_code in {401, 403}:
                     raise ModelProviderError("模型认证失败，请检查密钥与服务访问权限。")
+                if response.status_code == 402 and official_deepseek:
+                    raise ModelProviderError("DeepSeek账户余额不足（HTTP 402）；请检查或补充账户余额后重试。")
                 if response.status_code < 200 or response.status_code >= 300:
                     raise ModelProviderError(f"模型服务返回HTTP {response.status_code}；请检查模型和兼容接口配置。")
                 try:
