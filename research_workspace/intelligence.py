@@ -443,7 +443,8 @@ class IntelligenceService:
         return {"configured": self.provider.configured, "prompt_version": PROMPT_VERSION,
                 "retrieval": "bm25_dense_rrf" if self.semantic.status()['status']=='ready' else "bilingual_query_expansion_bm25_rrf",
                 "semantic": self.semantic.status(), "max_documents": MAX_DOCUMENTS,
-                "external_freshness_verification": False}
+                "external_freshness_verification": False,
+                "bounded_future_fulltext_verification": True}
 
     def _require_model(self) -> None:
         if not self.provider.configured:
@@ -1864,18 +1865,23 @@ class IntelligenceService:
         raise ModelOutputError("未获得可核验结果。")
 
     async def answer(self, question: str, document_ids: list[str], *,
-                     mode: Literal["qa", "compare"] = "qa", check_cancel=None, run_ids=None) -> dict:
+                     mode: Literal["qa", "compare"] = "qa", check_cancel=None, run_ids=None,
+                     fulltext_review: bool = False) -> dict:
         self._require_model()
         if mode not in {"qa", "compare"}:
             raise LibraryError("问答模式无效。")
         document_ids = self._validate_documents(document_ids)
         if mode == "compare" and len(document_ids) < 2:
             raise LibraryError("跨文献比较需要至少两篇文献。")
-        retrieval = await self.retrieve_for_question(question, document_ids, limit=max(12, len(document_ids)),
+        retrieval = await self.retrieve_for_question(question, document_ids, limit=MAX_EVIDENCE if fulltext_review else max(12, len(document_ids)),
                                                      check_cancel=check_cancel, include_attribution_context=True,
                                                      **({'run_ids':run_ids} if run_ids is not None else {}))
         evidence = retrieval["evidence"]
         snapshot = retrieval.get("_snapshot_blocks", evidence)
+        if fulltext_review:
+            from .fulltext_context import supplement_fulltext_context
+            evidence,context=supplement_fulltext_context(self,snapshot,evidence,question,document_ids)
+            retrieval['fulltext_context']=context
         names = subject_hints(self, snapshot) if snapshot else {}
         from .question_facets import supplement_question_facets
         evidence,facet_context=supplement_question_facets(self,snapshot,evidence,question,document_ids,names)

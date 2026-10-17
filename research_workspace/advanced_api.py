@@ -235,7 +235,7 @@ def task_markdown(job):
                         '> '+plain(cite.get('quote',''))])
                 own=[r for r in answer.get('grounding',{}).get('claim_reviews',[]) if r.get('claim_id')==identity.get('claim_id')]
                 lines.extend('审核：'+plain(r.get('verdict',''))+'；'+plain(r.get('reason','')) for r in own)
-            if answer.get('message'):lines.append(plain(answer['message']))
+            if answer.get('message'):lines.append('模型保留的范围说明与证据缺口（不作为已核验事实结论）：'+plain(answer['message']))
     for index,section in enumerate(result.get('sections',[])):
         lines.append('## '+section.get('heading',''))
         if index in excluded_sections:

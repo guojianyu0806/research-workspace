@@ -35,8 +35,10 @@ def plan_sources(result):
 
 def _question(direction):
     return (f"核对待验证方向：{direction['proposed_work']}\n"
-        "请仅依据所选论文正文，逐篇说明实际采用的相关方法、报告的结果及明确限制。"
+        "请仅依据所选论文正文，逐篇说明与这个方向直接相关的必要方法或数据条件、结果和明确限制。"
+        "优先组织为3至5条自足结论；完整回答优先，不罗列无关实现细节。"
         "对设想中正文没有支持的条件明确说明证据缺口，不把主题相关当成覆盖全部条件。"
+        "不要将首轮召回中缺少的信息表述为整篇论文未提供；若涉及表格指标，核对实际列头、行和表题。"
         "每条事实结论必须附自己完整的原文引用，不能借用相邻结论。"
         "不要宣称方向已经解决、研究空白或新颖性；本次只核对检索到的正文片段。")
 
@@ -111,6 +113,7 @@ async def fulltext_step(store, service, job, abstract_result):
             # The established answer pipeline verifies every own quotation,
             # isolated entailment, response coverage and stable claim IDs.
             answer = await service.answer(_question(direction), docs, mode='compare' if len(docs)>1 else 'qa', run_ids=runs,
+                                          fulltext_review=True,
                                           check_cancel=lambda: store.check_cancel(jid))
             passed = answer.get('grounding', {}).get('status') == 'passed' and bool(answer.get('claims'))
             record.update(status='passage_reviewed' if passed else 'evidence_insufficient',
@@ -128,7 +131,7 @@ async def fulltext_step(store, service, job, abstract_result):
     directions = [saved['future_direction:' + d['direction_id']]['result'] for d in plan['directions']]
     reviewed = sum(d['full_text_reviewed'] for d in directions)
     result['future_fulltext'] = {'status': 'completed' if directions and reviewed == len(directions) else 'partial' if reviewed else 'evidence_insufficient',
-        'prompt_version': 'future-fulltext-v1', 'scope': 'bounded_arxiv_pdf_retrieved_passages',
+        'prompt_version': 'future-fulltext-v2', 'scope': 'bounded_arxiv_pdf_retrieved_passages',
         'paper_limit': MAX_PAPERS, 'started_at': plan['created_at'], 'completed_at': _now(),
         'sources': [{**s, 'download': saved['future_pdf:' + s['source_id']],
                      'parse': saved['future_parse:' + s['source_id']]} for s in plan['papers']],

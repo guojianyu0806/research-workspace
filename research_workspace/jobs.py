@@ -271,10 +271,11 @@ class JobStore:
             elif kind=='future_work':
                 from .future_verification import verify_future_work
                 saved = {item.get('stage'):item.get('result') for item in job['completed_items']}
+                initial_total = 4 if payload.get('full_text_verify',False) else 2
                 if saved.get('future_synthesis') is None:
                     synthesis = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''),
                                                          check_cancel=lambda:self.check_cancel(job_id))
-                    self.save_item(job_id,'future_synthesis',{'stage':'future_synthesis','result':synthesis},2)
+                    self.save_item(job_id,'future_synthesis',{'stage':'future_synthesis','result':synthesis},initial_total)
                     self.event(job_id,'synthesis_saved','已保存原文支持的候选方向；下一轮核验最新公开研究。')
                     self._yield_step(job_id)
                     return True
@@ -283,7 +284,7 @@ class JobStore:
                 else:
                     result = await verify_future_work(self.library,service.provider,saved['future_synthesis'],
                                                      check_cancel=lambda:self.check_cancel(job_id))
-                    self.save_item(job_id,'future_verification',{'stage':'future_verification','result':result},2)
+                    self.save_item(job_id,'future_verification',{'stage':'future_verification','result':result},initial_total)
                 if payload.get('full_text_verify', False):
                     from .future_fulltext import fulltext_step
                     result = await fulltext_step(self,service,job,result)

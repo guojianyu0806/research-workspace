@@ -126,3 +126,30 @@ def test_directions_keep_original_indices_and_do_not_borrow_other_queries():
         'heading':'Other','proposed_work':'unsearched condition','query_ids':[]})
     plan=plan_sources(result)
     assert plan['directions'][1]['section_index']==4 and plan['directions'][1]['query_ids']==[]
+
+
+def test_each_direction_retrieves_only_its_own_query_documents(tmp_path,monkeypatch):
+    library,store,service,job,calls,downloads=setup(tmp_path,monkeypatch)
+    result=fixture_result(2);audit=result['future_verification']
+    first,second=[s['source_id'] for s in audit['sources']]
+    audit['queries']=[{'query_id':'query-1','source_ids':[first],'status':'completed'},
+                      {'query_id':'query-2','source_ids':[second],'status':'completed'}]
+    audit['directions'].append({'direction_id':'direction-5','section_index':4,
+        'heading':'Other encoder','proposed_work':'other encoder layers','query_ids':['query-2']})
+    def download(discovery,sid):
+        downloads.append(sid)
+        with pymupdf.open() as pdf:
+            pdf.new_page().insert_text((30,70),'The encoder has '+('six' if sid==first else 'nine')+' layers.')
+            imported=library.import_document(pdf.tobytes(),sid[6:]+'.pdf')
+        return {**imported,'source':{'paper_id':sid}}
+    monkeypatch.setattr(DiscoveryService,'import_paper',download)
+    store.save_item(job['id'],'future_verification',{'stage':'future_verification','result':result},4)
+    done=complete(library,store,service,job)
+    assert done['status']=='completed'
+    directions=done['result']['future_fulltext']['directions']
+    assert directions[1]['section_index']==4
+    assert directions[0]['source_ids']==[first] and directions[1]['source_ids']==[second]
+    documents=[{s['document_id'] for s in d['answer']['sources']} for d in directions]
+    assert documents[0].isdisjoint(documents[1])
+    assert 'six' in directions[0]['answer']['claims'][0]['text']
+    assert 'nine' in directions[1]['answer']['claims'][0]['text']

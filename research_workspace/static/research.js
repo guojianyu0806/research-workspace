@@ -444,7 +444,7 @@
             if (review?.reason) item.append(node("p", "rs-small rs-muted", "本条审核：" + review.reason));
             card.append(item);
           }
-          if (answer.message) card.append(node("p", "rs-muted", answer.message));
+          if (answer.message) card.append(node("p", "rs-muted", "模型保留的范围说明与证据缺口（不作为已核验事实结论）：" + answer.message));
           const details = node("details", "rs-events");
           details.append(node("summary", "", "核对本方向的引用与审核记录"),
             node("pre", "rs-prose", JSON.stringify({direction_id: direction.direction_id,
@@ -520,7 +520,7 @@
       state.jobs = [job, ...state.jobs.filter((item) => item.id !== job.id)].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       detailHeading.textContent = kindLabels[job.kind] || "研究任务";
       meta.textContent = `${dateLabel(job.created_at)} · 任务 ${job.id.slice(0, 8)}`;
-      const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${job.kind === 'discover_qa' ? '步' : '段'}` : "";
+      const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${['discover_qa','future_work'].includes(job.kind) ? '步' : '段'}` : "";
       status.textContent = (job.cancel_requested && pending(job) ? "已请求取消，等待当前操作结束" : statusLabels[job.status] || job.status) + counter + (job.error ? `：${job.error}` : "")
         + (job.status === "interrupted" ? "。上一次调用的结果与扣费状态未知，继续重试可能重复消耗模型额度。" : "");
       status.classList.toggle("rs-error-text", ["failed", "interrupted"].includes(job.status));
