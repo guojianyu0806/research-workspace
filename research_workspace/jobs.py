@@ -284,6 +284,10 @@ class JobStore:
                     result = await verify_future_work(self.library,service.provider,saved['future_synthesis'],
                                                      check_cancel=lambda:self.check_cancel(job_id))
                     self.save_item(job_id,'future_verification',{'stage':'future_verification','result':result},2)
+                if payload.get('full_text_verify', False):
+                    from .future_fulltext import fulltext_step
+                    result = await fulltext_step(self,service,job,result)
+                    if result is None:return True
             else:
                 result = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''),
                                                   check_cancel=lambda:self.check_cancel(job_id))

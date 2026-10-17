@@ -116,7 +116,9 @@
       queries.append(item);
     }
     panel.append(queries);
-    const groups = futureDirections(output);
+    const groups = output.future_fulltext ? {retained: (audit.directions || []).filter(d => !d.excluded),
+      excluded: (audit.directions || []).filter(d => d.excluded)} : futureDirections(output);
+    if (output.future_fulltext) panel.append(node("p", "rs-muted", "以下保留摘要初筛历史；正文核验阶段保留全部原始设想，未自动排除方向。"));
     for (const [key, title] of [["retained", "保留为待验证方向"], ["excluded", "暂移出重点候选（需全文确认）"]]) {
       const group = node("section", "rs-future-directions"); group.append(node("h5", "", `${title} · ${groups[key].length}`));
       if (!groups[key].length) group.append(node("p", "rs-muted", key === "retained" ? "本次没有列入此组的方向；这不代表其余方向已被证明解决。" : "本次没有暂移出的方向。"));
@@ -336,7 +338,7 @@
       promptField.firstChild.textContent = label;
       prompt.maxLength = isTextTranslation ? 60000 : ["qa", "compare"].includes(taskKind) ? 4000 : 10000;
       prompt.placeholder = isTextTranslation ? "粘贴需要翻译的摘要或正文。" : taskKind === "draft" ? "描述研究目标、已有工作与准备验证的想法。" : "说明希望核验的问题或关注的研究方向。";
-      inputNote.textContent = taskKind === "future_work" ? "生成候选后，以少量关键词查询arXiv并核验公开摘要，保留检索时间与来源。仅做有限摘要核验，结论仍需阅读全文确认。"
+      inputNote.textContent = taskKind === "future_work" ? "生成候选后检索arXiv摘要，并下载最多3篇关联公开PDF核对正文。逐方向保留原文引用、解析版本和独立审核；有限检索不证明已解决或新颖性。"
         : isDocumentTranslation ? "整篇翻译覆盖全部可用文本块；扫描或失败页面会单独标注，不会假装完成。"
         : taskKind === "draft" ? "生成的是待验证研究框架，不会把计划中的实验当成已完成结果。" : "";
     }
@@ -389,7 +391,7 @@
       if (state.resultStamp === signature) return;
       state.resultStamp = signature;
       const checkpoints = job.kind === "future_work" ? new Map((job.completed_items || []).map((item) => [item.stage, item.result])) : new Map();
-      const output = job.result || checkpoints.get("future_verification") || checkpoints.get("future_synthesis");
+      const output = job.result || checkpoints.get("future_fulltext") || checkpoints.get("future_verification") || checkpoints.get("future_synthesis");
       const addGlossary=() => {
         const entries=Object.entries(output?.glossary || job.payload?.glossary || {});
         if(!entries.length) return;
@@ -423,6 +425,37 @@
       if (output.status === "insufficient_evidence") resultArea.append(node("p", "rs-result-note", "证据不足：本次未生成确定性结论。"));
       const isFutureWork = job.kind === "future_work" || output.kind === "future_work";
       if (isFutureWork && !job.result) resultArea.append(node("p", "rs-muted", "以下展示已保存的阶段结果；任务的完成或中断状态以上方记录为准。"));
+      if (output.future_fulltext) {
+        const full = output.future_fulltext, panel = node("section", "rs-result-section");
+        panel.append(node("h4", "", "公开论文正文核验"), node("p", "rs-muted", full.notice));
+        for (const direction of full.directions || []) {
+          const card = node("section", "rs-result-section");
+          card.append(node("h5", "", `${direction.direction_id} · ${direction.heading}`),
+            node("p", "rs-proposal", "待验证设想：" + direction.proposed_work),
+            node("p", "rs-muted", `${direction.full_text_reviewed ? "正文引句审核通过" : "正文证据不足"} · ${direction.reason}`));
+          const answer = direction.answer || {};
+          const sources = new Map((answer.sources || []).map(s => [s.evidence_id, s]));
+          for (const [index, claim] of (answer.claims || []).entries()) {
+            const item = node("article", "rs-future-direction"), identity = answer.grounding?.claim_catalog?.[index];
+            const review = answer.grounding?.claim_reviews?.find(r => r.claim_id === identity?.claim_id);
+            item.append(node("p", "rs-small rs-muted", `结论 ${index+1} · ${identity?.claim_id || "未记录"} · ${review?.verdict || "未通过审核"}`));
+            renderClaims(item, [claim], sources);
+            for (const cite of claim.citations || []) item.append(node("blockquote", "rs-future-quote", cite.quote));
+            if (review?.reason) item.append(node("p", "rs-small rs-muted", "本条审核：" + review.reason));
+            card.append(item);
+          }
+          if (answer.message) card.append(node("p", "rs-muted", answer.message));
+          const details = node("details", "rs-events");
+          details.append(node("summary", "", "核对本方向的引用与审核记录"),
+            node("pre", "rs-prose", JSON.stringify({direction_id: direction.direction_id,
+              section_index: direction.section_index, documents: direction.documents,
+              grounding: answer.grounding || null}, null, 2)));
+          card.append(details); panel.append(card);
+        }
+        const records = node("details", "rs-events");
+        records.append(node("summary", "", "查看全文下载与解析记录"), node("pre", "rs-prose", JSON.stringify(full.sources || [], null, 2)));
+        panel.append(records); resultArea.append(panel);
+      }
       if (isFutureWork) renderFutureVerification(resultArea, output);
       const excludedSections = new Map((isFutureWork ? futureDirections(output).excluded : []).map((direction) => [futureSectionIndex(direction), direction]));
       const sources = new Map((output.sources || []).map((source) => [source.evidence_id, source]));

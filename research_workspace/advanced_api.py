@@ -67,6 +67,7 @@ class ResearchTask(StrictInput):
     block_ids: list[str] | None = Field(default=None,max_length=10000)
     target_language: Literal['zh','en'] = 'zh'
     glossary: dict[str,str] | None = Field(default=None,max_length=50)
+    full_text_verify: bool = True
 
 
 class SubscriptionInput(StrictInput):
@@ -130,7 +131,7 @@ def task_markdown(job):
         return -1
 
     saved = {item.get('stage'):item.get('result') for item in job.get('completed_items',[]) if isinstance(item,dict)}
-    result = (job['result'] or saved.get('future_verification') or saved.get('future_synthesis') or {}) if job['kind']=='future_work' else (job['result'] or {'blocks':job.get('completed_items',[])})
+    result = (job['result'] or saved.get('future_fulltext') or saved.get('future_verification') or saved.get('future_synthesis') or {}) if job['kind']=='future_work' else (job['result'] or {'blocks':job.get('completed_items',[])})
     lines = [f'# {job["kind"]}',f'任务编号：{job["id"]}',f'状态：{job["status"]}','']
     glossary=result.get('glossary') or job.get('payload',{}).get('glossary')
     if glossary:
@@ -185,7 +186,11 @@ def task_markdown(job):
             for source_id in query.get('source_ids',[]):
                 source = sources.get(source_id)
                 lines.append('- '+(official_source(source) if source else plain(source_id)+' · 来源记录缺失'))
-        for title,directions in [('保留为待验证方向',retained),('暂移出重点候选（需全文确认）',excluded)]:
+        if result.get('future_fulltext'):
+            lines.append('以下保留摘要初筛历史；正文阶段保留全部原始设想，未自动排除方向。')
+        preliminary_retained=[d for d in all_directions if not d.get('excluded')] if result.get('future_fulltext') else retained
+        preliminary_excluded=[d for d in all_directions if d.get('excluded')] if result.get('future_fulltext') else excluded
+        for title,directions in [('保留为待验证方向',preliminary_retained),('暂移出重点候选（需全文确认）',preliminary_excluded)]:
             lines.append(f'### {title} · {len(directions)}')
             if not directions:
                 lines.append('本次没有列入此组的方向；这不构成已解决或研究空白的证明。')
@@ -196,7 +201,7 @@ def task_markdown(job):
                               '说明：'+plain(direction.get('reason') or '未返回判定说明。')])
                 if direction.get('proposed_work'):
                     lines.append('原始设想：'+plain(direction['proposed_work']))
-                if direction in excluded:
+                if direction in preliminary_excluded:
                     lines.append('**暂移出重点候选，需阅读全文确认；不等于已解决。**')
                 if not direction.get('citations'):
                     lines.append('本方向没有可展示的公开摘要引句。')
@@ -211,6 +216,26 @@ def task_markdown(job):
         for error in audit.get('errors',[]):
             lines.append('核验提示：'+plain(error.get('code') or '未知状态')+'；'+plain(error.get('message') or '本次核验存在未完成步骤。'))
         lines.append('## 原始分节内容（保留供核对）')
+    if isinstance(result.get('future_fulltext'),dict):
+        full = result['future_fulltext']
+        lines.extend(['## 公开论文正文核验',plain(full.get('notice',''))])
+        for direction in full.get('directions',[]):
+            lines.extend(['### '+plain(direction['direction_id'])+' · '+plain(direction.get('heading','')),
+                          plain(direction.get('status',''))+'；'+plain(direction.get('reason',''))])
+            answer=direction.get('answer',{})
+            sources={s['evidence_id']:s for s in answer.get('sources',[])}
+            for index,claim in enumerate(answer.get('claims',[])):
+                catalog=answer.get('grounding',{}).get('claim_catalog',[])
+                identity=next((c for c in catalog if c.get('claim_index')==index),{})
+                lines.extend(['#### 结论 '+str(index+1)+' · '+plain(identity.get('claim_id','')),plain(claim.get('text',''))])
+                for cite in claim.get('citations',[]):
+                    source=sources.get(cite.get('evidence_id'),{})
+                    lines.extend(['原文：文献 '+plain(source.get('document_id',''))+'；解析 '+plain(source.get('run_id',''))
+                        +'；第 '+plain(source.get('page',''))+' 页；文本块 '+plain(source.get('block_id','')),
+                        '> '+plain(cite.get('quote',''))])
+                own=[r for r in answer.get('grounding',{}).get('claim_reviews',[]) if r.get('claim_id')==identity.get('claim_id')]
+                lines.extend('审核：'+plain(r.get('verdict',''))+'；'+plain(r.get('reason','')) for r in own)
+            if answer.get('message'):lines.append(plain(answer['message']))
     for index,section in enumerate(result.get('sections',[])):
         lines.append('## '+section.get('heading',''))
         if index in excluded_sections:
