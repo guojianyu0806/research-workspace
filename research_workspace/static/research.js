@@ -494,7 +494,7 @@
           const sources = new Map((answer.sources || []).map(s => [s.evidence_id, s]));
           for (const [index, claim] of (answer.claims || []).entries()) {
             const item = node("article", "rs-future-direction"), identity = answer.grounding?.claim_catalog?.[index];
-            const review = answer.grounding?.claim_reviews?.find(r => r.claim_id === identity?.claim_id);
+            const review = answer.grounding?.claim_reviews?.find(r => r.claim_id === identity?.claim_id && r.claim_index === index);
             item.append(node("p", "rs-small rs-muted", `结论 ${index+1} · ${identity?.claim_id || "未记录"} · ${review?.verdict || "未通过审核"}`));
             renderClaims(item, [claim], sources);
             for (const cite of claim.citations || []) item.append(node("blockquote", "rs-future-quote", cite.quote));
@@ -511,6 +511,7 @@
         }
         const records = node("details", "rs-events");
         records.append(node("summary", "", "查看全文下载与解析记录"), node("pre", "rs-prose", JSON.stringify(full.sources || [], null, 2)));
+        if (full.source_selection?.length) records.append(node("p", "rs-muted", "选源仅按标题与摘要中的明确主题匹配，不构成已解决或新颖性判定。"), node("pre", "rs-prose", JSON.stringify(full.source_selection, null, 2)));
         panel.append(records); resultArea.append(panel);
       }
       if (isFutureWork) renderFutureVerification(resultArea, output);

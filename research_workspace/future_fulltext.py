@@ -20,17 +20,33 @@ def plan_sources(result):
     sources = {s['source_id']: s for s in audit.get('sources', [])}
     queries = {q['query_id']: q for q in audit.get('queries', [])}
     selected = []
+    selection=[];own_candidates={}
+    from .future_verification import _keywords
+    for direction in audit.get('directions',[]):
+        ids=list(dict.fromkeys(s for q in direction.get('query_ids',[])
+            for s in queries.get(q,{}).get('source_ids',[]) if s in sources))
+        topic=set(_keywords(direction.get('query_concepts',{}).get('topic',{}).get('english_terms','')))
+        eligible=[]
+        for sid in ids:
+            source=sources[sid];words=set(_keywords(source.get('title','')+' '+source.get('abstract','')))
+            matched=not audit.get('live_refresh_requested') or not topic or topic.issubset(words)
+            selection.append({'direction_id':direction['direction_id'],'source_id':sid,
+                'topic_terms':sorted(topic),'matched_topic_terms':sorted(topic & words),
+                'eligible':matched,'reason':'explicit_topic_in_title_or_abstract' if matched else 'topic_not_explicit_in_title_or_abstract',
+                'scope':'selection_heuristic_only; unselected_sources_are_not_solution_or_novelty_evidence'})
+            if matched:eligible.append(sid)
+        own_candidates[direction['direction_id']]=eligible
     # Fair first pass: one returned paper per direction before extra papers.
     directions = audit.get('directions', [])
     for offset in range(MAX_PAPERS):
         for direction in directions:
-            ids = list(dict.fromkeys(s for q in direction.get('query_ids', [])
-                for s in queries.get(q, {}).get('source_ids', []) if s in sources))
+            ids = own_candidates[direction['direction_id']]
             if offset < len(ids) and ids[offset] not in selected and len(selected) < MAX_PAPERS:
                 selected.append(ids[offset])
     return {'papers': [deepcopy(sources[s]) for s in selected],
             'directions': deepcopy(directions), 'queries': deepcopy(list(queries.values())),
             'live_search_required':audit.get('live_refresh_requested',False),'date_filter':audit.get('date_filter'),
+            'source_selection':selection,
             'created_at': _now(), 'paper_limit': MAX_PAPERS}
 
 
@@ -159,6 +175,7 @@ async def fulltext_step(store, service, job, abstract_result):
         'paper_limit': MAX_PAPERS, 'started_at': plan['created_at'], 'completed_at': _now(),
         'sources': [{**s, 'download': saved['future_pdf:' + s['source_id']],
                      'parse': saved['future_parse:' + s['source_id']]} for s in plan['papers']],
+        'source_selection':plan.get('source_selection',[]),
         'directions': directions, 'novelty_proven': False, 'automatic_exclusion': False,
         'notice': '有限公开PDF正文检索核验；每条正文结论有独立引用及审核。未穷尽全文或最新研究，不据此认定方向已解决。'}
     # Abstract screening remains intact as historical preliminary evidence, but

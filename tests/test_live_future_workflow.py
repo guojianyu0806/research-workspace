@@ -216,3 +216,27 @@ def test_topic_fallback_live_receipt_cannot_satisfy_fulltext_search_scope(tmp_pa
     asyncio.run(fulltext_step(store,object(),store.get(job['id']),{}))
     row=next(i for i in store.get(job['id'])['completed_items'] if i['stage']=='future_direction:direction-1')
     assert row['result']['search_audit']['verified'] is False and row['result']['search_audit']['conditions_preserved'] is False
+
+
+def test_live_fulltext_selection_keeps_unrelated_metadata_with_explicit_reasons():
+    from research_workspace.future_fulltext import plan_sources
+    result={'future_verification':{'live_refresh_requested':True,'directions':[{'direction_id':'direction-1',
+        'query_ids':['q1'],'query_concepts':{'topic':{'english_terms':'random projection'}}}],
+        'queries':[{'query_id':'q1','source_ids':['a','b']}],'sources':[
+        {'source_id':'a','title':'Random Projection for Retrieval','abstract':'A method.'},
+        {'source_id':'b','title':'Learning Robot Actions','abstract':'A random temporal interval.'}]}}
+    plan=plan_sources(result)
+    assert [s['source_id'] for s in plan['papers']]==['a']
+    rejected=next(s for s in plan['source_selection'] if not s['eligible'])
+    assert rejected['source_id']=='b' and rejected['reason']=='topic_not_explicit_in_title_or_abstract'
+    assert len(result['future_verification']['sources'])==2  # Original receipts are not rewritten.
+
+
+def test_fulltext_export_matches_duplicate_claim_hashes_by_position_too():
+    from research_workspace.advanced_api import task_markdown
+    claim={'text':'Same fact.','citations':[]}
+    result={'future_fulltext':{'directions':[{'direction_id':'direction-1','answer':{'claims':[claim,claim],
+        'grounding':{'claim_catalog':[{'claim_index':i,'claim_id':'C_same'} for i in range(2)],
+            'claim_reviews':[{'claim_index':i,'claim_id':'C_same','verdict':'supported','reason':f'own-position-{i}'} for i in range(2)]}}}]}}
+    text=task_markdown({'id':'fixture','kind':'future_work','status':'completed','result':result}).split('## 来源与任务记录')[0]
+    assert text.count('own-position-0')==text.count('own-position-1')==1
