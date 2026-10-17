@@ -9,7 +9,7 @@ from pydantic import Field
 
 from .intelligence import StrictModel, Claim, Evidence
 
-VERSION = 'future-filter-v1'
+VERSION = 'future-filter-v2'
 MAX_DIRECTIONS = 12
 MAX_CONDITIONS = 6
 COVERAGE = Literal['fully_addressed','partially_addressed','evidence_insufficient']
@@ -27,6 +27,11 @@ class ProposedCondition(StrictModel):
 
 class ConditionFindings(StrictModel):
     conditions: list[ProposedCondition] = Field(min_length=1,max_length=MAX_CONDITIONS)
+
+
+class ConditionRepair(StrictModel):
+    coverage: COVERAGE
+    finding: Claim | None
 
 
 class ConditionReview(StrictModel):
@@ -128,6 +133,26 @@ def checked_plan(proposal, conditions):
     return result
 
 
+def restored_plan(proposal, conditions):
+    """Restore omitted separators from the original, never infer semantic text."""
+    cursor=0;parts=[]
+    for text in conditions:
+        text=text.strip();start=proposal.find(text,cursor)
+        gap=proposal[cursor:start] if start>=0 else None
+        if not text or gap is None or any(c not in '，,；;。 \t\n\r' for c in gap):
+            raise ValueError('Semantic content omitted')
+        if parts:parts[-1]+=gap
+        else:text=gap+text
+        parts.append(text)
+        # The first prefix may contain restored punctuation, not part of the
+        # matched substring. Derive the next position from original boundaries.
+        cursor=start+len(conditions[len(parts)-1].strip())
+    tail=proposal[cursor:]
+    if any(c not in '，,；;。 \t\n\r' for c in tail):raise ValueError('Semantic tail omitted')
+    if parts:parts[-1]+=tail
+    return checked_plan(proposal,parts)
+
+
 def _checked_finding(service, proposed, evidence):
     if proposed is None:return None
     claim=Claim.model_validate(proposed)
@@ -170,7 +195,7 @@ async def filter_step(store,service,job,result):
             directions=deepcopy(result.get('future_verification',{}).get('directions',[]))
         base_count=store.summary(jid)['progress']
         start={'directions':directions,'base_count':base_count,'started_at':_now()}
-        store.save_item(jid,'future_filter_start',{'stage':'future_filter_start','result':start},base_count+2+len(directions)*13)
+        store.save_item(jid,'future_filter_start',{'stage':'future_filter_start','result':start},base_count+2+len(directions)*25)
         store._yield_step(jid,message='开始全文条件覆盖判定；证据不足和部分覆盖方向保留，原始设想不会删除。')
         return None
     directions=start['directions']
@@ -194,13 +219,18 @@ async def filter_step(store,service,job,result):
             raw=await generate(PLAN_PROMPT,{'proposal':d['proposed_work']},ConditionPlan)
             try:
                 model=ConditionPlan.model_validate(raw)
-                plan={'status':'validated','conditions':checked_plan(d['proposed_work'],model.conditions),
-                      'validation':'exact_ordered_partition_of_all_proposal_content','raw':raw}
+                try:
+                    parsed=checked_plan(d['proposed_work'],model.conditions)
+                    validation='exact_ordered_partition_of_all_proposal_content'
+                except ValueError:
+                    parsed=restored_plan(d['proposed_work'],model.conditions)
+                    validation='original_separators_restored_then_exact_partition'
+                plan={'status':'validated','conditions':parsed,'validation':validation,'raw':raw}
             except ValueError:
                 plan.update(reason='条件规划未完整保留原设想，未执行自动筛除。',raw=raw)
-        save(key,plan,start['base_count']+2+len(directions)*13,'已固定完整原文条件；遗漏限定条件的规划不参与筛除。')
+        save(key,plan,start['base_count']+2+len(directions)*25,'已固定完整原文条件；遗漏限定条件的规划不参与筛除。')
         return None
-    total=start['base_count']+2+sum(6+len(saved[prefix(d,'plan')]['result']['conditions']) for d in directions)
+    total=start['base_count']+2+sum(6+3*len(saved[prefix(d,'plan')]['result']['conditions']) for d in directions)
     for d in directions:
         key=lambda stage:prefix(d,stage)
         if key('decision') in saved:continue
@@ -265,7 +295,44 @@ async def filter_step(store,service,job,result):
                 record['reason']='初判引文未通过本方向原文归属及逐字校验，未作为有效判定。'
             save(key(stage),record,total,'已保存本条件的独立原文与审核；不从相邻条件借用证据。')
             return None
-        checked=[saved[key('review:'+c['condition_id'])]['result'] for c in conditions]
+        for condition in conditions:
+            initial=saved[key('review:'+condition['condition_id'])]['result']
+            stage='repair_finding:'+condition['condition_id']
+            if key(stage) not in saved:
+                repair={'status':'not_required','finding':None}
+                if usable and evidence and initial['status']!='fully_addressed':
+                    raw=await generate(FINDINGS_PROMPT+'\nThis is the only correction attempt for ONE condition. Repair missing original quotations, not the original requirement. Keep unsupported qualifiers and report uncertainty. Include every needed method sentence as well as table/caption. Do not shorten the finding to make an unsupported full-coverage classification pass.',
+                        {'proposal':d['proposed_work'],'condition':condition,'evidence':evidence_input,
+                         'previous_attempt':initial},ConditionRepair)
+                    repair={'status':'generated',**ConditionRepair.model_validate(raw).model_dump()}
+                save(key(stage),repair,total,'已保存一次条件补证尝试；原设想与初轮审核保留。')
+                return None
+            stage='repair_review:'+condition['condition_id']
+            if key(stage) not in saved:
+                proposed=saved[key('repair_finding:'+condition['condition_id'])]['result']
+                record=deepcopy(initial)
+                if proposed['status']=='generated':
+                    record['prior_attempt']=initial
+                    try:finding=_checked_finding(service,proposed.get('finding'),evidence)
+                    except (ValueError,RuntimeError):finding=None
+                    if finding:
+                        raw=await generate(CONDITION_REVIEW_PROMPT,{'proposal':d['proposed_work'],'condition':condition,
+                            'finding':finding['identity'],'proposed_coverage':proposed['coverage']},ConditionReview)
+                        review=ConditionReview.model_validate(raw).model_dump()
+                        review.update(condition_id=condition['condition_id'],claim_id=finding['identity']['claim_id'],
+                            claim_index=0,index_space='this condition finding only')
+                        repaired={**condition,'status':condition_decision(proposed['coverage'],review,finding),
+                            'review':review,'reason':review['reason'],'finding':finding if review['verdict']=='supported' else None}
+                        # Preserve a supported initial partial finding if the
+                        # correction fails; never promote an unsupported one.
+                        if repaired['finding'] or not initial['finding']:
+                            record={**repaired,'prior_attempt':initial}
+                            if not repaired['finding']:record['rejected_finding']=finding
+                        else:record['rejected_repair']=repaired
+                    else:record['repair_note']='补证未获得有效原文引句；保留初轮判定。'
+                save(key(stage),record,total,'已保存补证的独立审核与原始审核；失败不提升覆盖状态。')
+                return None
+        checked=[saved[key('repair_review:'+c['condition_id'])]['result'] for c in conditions]
         if key('joint_finding') not in saved:
             record={'finding':None,'reason':'至少一个条件未充分覆盖；不进行联合已解决判定。'}
             if checked and all(c['status']=='fully_addressed' for c in checked):

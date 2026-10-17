@@ -5,7 +5,7 @@ import pymupdf
 import pytest
 
 from research_workspace.advanced_api import ResearchTask,task_markdown
-from research_workspace.future_filter import checked_plan,exclusion_allowed
+from research_workspace.future_filter import checked_plan,restored_plan,exclusion_allowed
 from research_workspace.intelligence import IntelligenceService
 from research_workspace.jobs import JobStore
 from research_workspace.library import Library
@@ -50,6 +50,7 @@ def setup(tmp_path,*,proposals=None,joint_pass=True,bad_quote=False,bad_plan=Fal
                 if cancel_review:store.cancel(job['id'])
                 return {'verdict':'supported','coverage':'fully_addressed','scope_matched':True,
                     'qualifiers_preserved':True,'explicitly_reported':True,'reason':'Fixture own quotation supports the complete condition.'}
+            if schema.__name__=='ConditionRepair':return {'coverage':'evidence_insufficient','finding':None}
             if schema.__name__=='JointReview':return {'verdict':'supported','fully_covers_proposal':True,
                 'jointly_satisfied':joint_pass,'explicitly_reported':True,'reason':'Fixture joint scope.'}
             raise AssertionError(schema.__name__)
@@ -154,7 +155,7 @@ def test_automatic_filter_follows_newly_saved_fulltext_checkpoint_in_same_tick(t
     monkeypatch.setattr('research_workspace.future_fulltext.fulltext_step',fulltext)
     done=complete(store,service,new)
     assert done['status']=='completed',done['error']
-    assert done['progress']==done['total']==12 and done['result']['excluded_directions']
+    assert done['progress']==done['total']==14 and done['result']['excluded_directions']
 
 
 def test_recheck_api_rejects_unfinished_and_foreign_sources(tmp_path,monkeypatch):
@@ -184,3 +185,36 @@ def test_missing_complete_pdf_keeps_direction_without_purchasing_review(tmp_path
     done=complete(store,service,job)
     assert done['status']=='completed' and done['progress']==done['total']
     assert not done['result']['excluded_directions'] and not calls
+
+
+def test_separator_restoration_never_omits_qualifiers_or_numeric_symbols():
+    proposal='支持模型组合，并且无需训练。'
+    rows=restored_plan(proposal,['支持模型组合','并且无需训练。'])
+    assert ''.join(r['source_text'] for r in rows)==proposal
+    for text,parts in [('温度-5℃。',['温度','5℃。']),('数值46.8。',['数值46','8。']),
+                       (proposal,['支持模型组合'])]:
+        with pytest.raises(ValueError):restored_plan(text,parts)
+
+
+def test_correction_is_independently_reviewed_and_preserves_rejected_attempt(tmp_path):
+    store,service,job,original,calls=setup(tmp_path,proposals=[POSITIVE])
+    generate=service.provider.generate;reviews=[]
+    async def corrected(prompt,payload,schema):
+        if schema.__name__=='ConditionReview':
+            answer=await generate(prompt,payload,schema);reviews.append(payload['finding']['claim_id'])
+            if len(reviews)==1:
+                answer.update(verdict='unsupported',coverage='evidence_insufficient',qualifiers_preserved=False)
+            return answer
+        if schema.__name__=='ConditionRepair':
+            calls.append('ConditionRepair')
+            assert payload['previous_attempt']['review']['verdict']=='unsupported'
+            return {'coverage':'fully_addressed','finding':payload['previous_attempt']['rejected_finding']['claim']}
+        return await generate(prompt,payload,schema)
+    service.provider.generate=corrected
+    done=complete(store,service,job)
+    assert done['status']=='completed' and done['progress']==done['total']
+    row=done['result']['excluded_directions'][0];condition=row['conditions'][0]
+    assert len(reviews)==2 and calls.count('ConditionRepair')==1
+    assert condition['review']['verdict']=='supported'
+    assert condition['prior_attempt']['review']['verdict']=='unsupported'
+    assert row['joint_review']['claim_id']==row['joint_finding']['identity']['claim_id']
