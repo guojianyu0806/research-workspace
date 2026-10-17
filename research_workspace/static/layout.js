@@ -147,6 +147,21 @@
       }
       output.append(tables);
 
+      const matrices = panel('矩阵与逐项依据','保留原页括号、行列及每个元素的位置；缺失或无法确认的元素不会补成零。结果均需核对原图。');
+      if (!data.matrices?.length) matrices.append(element('p','rm-muted','本页未检出受支持的矩阵结构。'));
+      for (const matrix of data.matrices || []) {
+        const card = element('article','rm-text-block');
+        card.append(element('h4','',matrix.latex ? `${matrix.row_count} 行 × ${matrix.column_count} 列 · 待核对` : '矩阵区域 · 未完整识别'),evidenceControl(matrix.evidence,'核对矩阵原图 →'));
+        if (matrix.latex) card.append(element('pre','rm-original-text',matrix.latex));
+        else card.append(element('p','rm-warning',`未输出完整LaTeX：${matrix.conversion || '识别依据不足'}`));
+        const audit = element('details'); audit.append(element('summary','','查看矩阵审核记录'));
+        audit.append(element('p','rm-muted',`方法：${matrix.method}；已核实括号字形 ${matrix.bracket_audit?.length || 0} 个。`));
+        for (const cell of matrix.cells || []) {
+          const row=element('p');row.append(element('span','',`第 ${cell.row+1} 行，第 ${cell.column+1} 列：${cell.latex || cell.text || '未确认'} `),evidenceControl(cell.evidence,'核对元素 →'));audit.append(row);
+        }
+        card.append(audit);matrices.append(card);
+      }
+      output.append(matrices);
       const figures = panel("图像区域与图注候选", "区域来自PDF中嵌入的图像；尚未识别图中内容，图注关联是位置建议。");
       if (!data.figures?.length) figures.append(element("p", "rm-muted", "本页未检测到嵌入图像区域；矢量图语义识别尚不支持。"));
       for (const [index, figure] of (data.figures || []).entries()) {

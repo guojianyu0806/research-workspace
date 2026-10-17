@@ -316,6 +316,21 @@ class LayoutService:
             finally:source.set_rotation(rotation)
             formulas.sort(key=lambda f:(f['bbox'][1],f['bbox'][0]))
 
+            from .matrix_geometry import extract_native_matrices
+            try:
+                source.set_rotation(0)
+                matrices,matrix_audit=extract_native_matrices(source)
+                for index,entry_matrix in enumerate(matrices):
+                    entry_matrix['bbox']=bbox(entry_matrix.pop('raw_bbox'))
+                    entry_matrix['id']=f'native-matrix-{index+1}'
+                    entry_matrix['evidence']=anchor(entry_matrix['original_text'],entry_matrix['bbox'],'native_matrix_region')
+                    for cell in entry_matrix['cells']:
+                        cell['bbox']=bbox(cell.pop('raw_bbox'))
+                        cell['evidence']=anchor(cell['original_text'],cell['bbox'],'native_matrix_entry')
+                for item in matrix_audit.get('rejected_delimiters',[]):
+                    item['bbox']=bbox(item.pop('raw_bbox'))
+            finally:source.set_rotation(rotation)
+
             reading = self._reading_order(regions,raw_boxes,source.cropbox.width,table_raw_boxes)
             if truncated:
                 notes.append('本页文字行超过10000行上限，结果已明确截断。')
@@ -327,7 +342,7 @@ class LayoutService:
                     'source_sha256':document['sha256'],'text_regions':regions,'truncated':truncated,
                     'metadata_candidates':candidates,'heading_candidates':headings,'reading_order':reading,
                     'tables':tables,'table_status':table_status,'scan_table_audit':scan_audit,'figures':figures,'captions':captions,
-                    'formulas':formulas,'formula_audit':math_audit,'appendix_markers':appendices,'limitations':notes,
+                    'formulas':formulas,'formula_audit':math_audit,'matrices':matrices,'matrix_audit':matrix_audit,'appendix_markers':appendices,'limitations':notes,
                     'unsupported':['general_OCR_layout','vector_figure_semantics','general_formula_to_latex','verified_author_affiliations']}
 
     @staticmethod

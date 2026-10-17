@@ -13,6 +13,8 @@ NAMES={
     'productdisplay':'∏','producttext':'∏','product':'∏',
     'integraldisplay':'∫','integraltext':'∫','integral':'∫',
     'radical':'√','radicalbig':'√','radicalBig':'√','radicalbigg':'√','radicalBigg':'√',
+    'bracketlefttp':'⎡','bracketleftbt':'⎣','bracketleftex':'⎢',
+    'bracketrighttp':'⎤','bracketrightbt':'⎦','bracketrightex':'⎥',
 }
 
 
