@@ -36,7 +36,7 @@ async def repair_rejected_claims(service, result, reviews, evidence, catalog, pa
             repaired=ClaimRepairPayload(claim=projected)
         else:
             background_only=payload['task']=='future_work'
-            audit["claim_repair_prompt_version"]="future-background-repair-v1" if background_only else "claim-repair-v1.3"
+            audit["claim_repair_prompt_version"]="future-background-repair-v1.1" if background_only else "claim-repair-v1.3"
             repaired=await service.provider.generate(_prompt("future_background_repair_v1" if background_only else "claim_repair_v1"),{
                 "task":"repair_grounded_claim","response_kind":payload["task"],
                 "request":('Repair ONLY this existing factual background card; research proposals are preserved outside this call.'

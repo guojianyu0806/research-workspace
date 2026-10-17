@@ -141,6 +141,7 @@ def test_future_candidate_repair_preserves_good_claims_and_both_proposals(tmp_pa
                 assert payload['repair_scope']=='background_fact_only' and payload['proposals_held_out']
                 assert 'Two directions.' not in payload['request'] and all(p not in payload['request'] for p in plans)
                 assert prompt.startswith('Prompt version: future-background-repair-v1')
+                assert 'paper-scoped wording' in prompt and 'name-only quotation' in prompt
                 return ClaimRepairPayload(claim={'text':'ORION predicts removed words.',
                     'citations':[{'evidence_id':payload['evidence'][0]['evidence_id'],'quote_id':'Q2'}]})
             if schema is CoveragePayload:return CoveragePayload(unverified_statements=[],missing_aspects=[])
