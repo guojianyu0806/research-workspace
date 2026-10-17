@@ -42,6 +42,7 @@ def test_bidirectional_identity_license_and_source_are_distinct_from_reproductio
     assert result['reproduction_verified'] is False
     assert not verify_repository(PAPER,PAPER['code_links'][0]['url'],transport(association=False))['open_source_verified']
     assert verify_repository(PAPER,PAPER['code_links'][0]['url'],transport(license='NOASSERTION'))['verification']=='association_only'
+    assert verify_repository(PAPER,PAPER['code_links'][0]['url'],transport(license='BUSL-1.1'))['verification']=='association_only'
     assert not verify_repository(PAPER,PAPER['code_links'][0]['url'],transport(redirect=True))['open_source_verified']
     assert not verify_repository(PAPER,PAPER['code_links'][0]['url'],transport(status=429))['open_source_verified']
 

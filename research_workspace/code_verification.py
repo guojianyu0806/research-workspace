@@ -10,6 +10,10 @@ from urllib.parse import urlsplit,quote
 import httpx
 
 SOURCE_EXTENSIONS={'.py','.ipynb','.cpp','.cc','.c','.cu','.rs','.java','.js','.ts','.jl','.r','.m'}
+SUPPORTED_OPEN_LICENSES={'MIT','Apache-2.0','BSD-2-Clause','BSD-3-Clause','ISC','GPL-2.0','GPL-3.0',
+    'GPL-2.0-only','GPL-2.0-or-later','GPL-3.0-only','GPL-3.0-or-later','LGPL-2.1','LGPL-3.0',
+    'LGPL-2.1-only','LGPL-2.1-or-later','LGPL-3.0-only','LGPL-3.0-or-later','AGPL-3.0',
+    'AGPL-3.0-only','AGPL-3.0-or-later','MPL-2.0','EPL-2.0'}
 
 
 class PublicCheckError(ValueError):
@@ -109,13 +113,14 @@ def verify_repository(paper,url,client=None):
             isinstance(x.get('path'),str) and '.'+x['path'].rsplit('.',1)[-1].lower() in SOURCE_EXTENSIONS]
         license_data=repo.get('license')
         license_id=license_data.get('spdx_id') if isinstance(license_data,dict) else None
-        licensed=bool(license_id and license_id not in {'NOASSERTION','NONE'})
+        licensed=license_id in SUPPORTED_OPEN_LICENSES
         usable=bool(paths) and licensed
         return {**result,'verification':'verified_open_source_association' if usable else 'association_only',
             'association_verified':True,'open_source_verified':usable,'repository':name,
             'repository_url':'https://github.com/'+name,'repository_sha':tree.get('sha'),
             'readme_sha':readme.get('sha'),'association_basis':'arxiv_identifier' if identifier_match else 'complete_title',
             'license_spdx':license_id,'archived':bool(repo.get('archived')),'source_file_examples':paths[:8],
+            'license_policy':'conservative_supported_open_license_allowlist; other_licenses_require_manual_check',
             'tree_truncated':bool(tree.get('truncated')),
             'reason':('论文来源链接与仓库README双向关联，已发现许可证和源码；未执行复现实验。'
                 +('仓库已归档，需核对依赖兼容性。' if repo.get('archived') else '')) if usable
