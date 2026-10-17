@@ -71,3 +71,19 @@ def test_plain_scan_has_no_invented_table_and_large_pages_stop_before_render(lib
     with pymupdf.open() as pdf:
         p=pdf.new_page(width=4000,height=4000)
         tables,audit=extract_scan_tables(p,library._ocr_configuration());assert tables==[] and audit['status']=='resource_limit'
+
+
+def test_horizontal_rules_without_column_grid_complete_fallback_without_crash(library):
+    with pymupdf.open() as native:
+        p=native.new_page(width=400,height=400)
+        for y in (90,130,170,210):p.draw_line((40,y),(340,y))
+        for row,values in enumerate([['Item','Count'],['Alpha','12.5'],['Beta','-7.25']]):
+            for column,value in enumerate(values):p.insert_text((55+150*column,116+40*row),value,fontsize=13)
+        pix=p.get_pixmap(dpi=144)
+        with pymupdf.open() as scan:
+            p=scan.new_page(width=400,height=400);p.insert_image(p.rect,stream=pix.tobytes('png'))
+            tables,audit=extract_scan_tables(p,library._ocr_configuration())
+    assert isinstance(tables,list) and audit['horizontal_rules']==4 and audit['vertical_rules']==0
+    assert audit['ocr_words']==6 and audit['model_calls']==0
+    # Aligned words alone do not prove a reliable cell partition.
+    assert all(t['needs_review'] for t in tables)

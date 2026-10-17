@@ -153,15 +153,6 @@ def extract_scan_tables(page,ocr,*,dpi=144):
         return tables,audit
 
 
-def _word_lines(words):
-    """OCR block ordering is not table row ordering; use physical baselines."""
-    rows=[]
-    for word in sorted(words,key=lambda w:((w['bbox'][1]+w['bbox'][3])/2,w['bbox'][0])):
-        box=word['bbox'];centre=(box[1]+box[3])/2;height=box[3]-box[1]
-        row=next((r for r in rows if abs(r['centre']-centre)<max(height*.4,1.5)),None)
-        if row is None:row={'centre':centre,'words':[]};rows.append(row)
-        row['words'].append(word)
-    return '\n'.join(' '.join(w['text'] for w in sorted(r['words'],key=lambda w:w['bbox'][0])) for r in rows)
     clean_pix=pymupdf.Pixmap(pymupdf.csGRAY,pix.width,pix.height,clean.tobytes(),False)
     clean_pix=pymupdf.Pixmap(pymupdf.csRGB,clean_pix)
     clean_pix.set_dpi(dpi,dpi)
@@ -202,3 +193,14 @@ def _word_lines(words):
         audit.update(status='extracted_needs_review' if tables else 'no_ruled_table',
             ocr_words=len(words),table_count=len(tables),language=ocr['languages'])
         return tables,audit
+
+
+def _word_lines(words):
+    """OCR block ordering is not table row ordering; use physical baselines."""
+    rows=[]
+    for word in sorted(words,key=lambda w:((w['bbox'][1]+w['bbox'][3])/2,w['bbox'][0])):
+        box=word['bbox'];centre=(box[1]+box[3])/2;height=box[3]-box[1]
+        row=next((r for r in rows if abs(r['centre']-centre)<max(height*.4,1.5)),None)
+        if row is None:row={'centre':centre,'words':[]};rows.append(row)
+        row['words'].append(word)
+    return '\n'.join(' '.join(w['text'] for w in sorted(r['words'],key=lambda w:w['bbox'][0])) for r in rows)
