@@ -78,6 +78,10 @@ def verify(job_id,source_commit):
               and not payload.get('source_task_id') and not synthesis.get('candidate_origin'))
         check('all_real_stages',all(k in items for k in ('future_synthesis','future_verification','future_fulltext_plan',
               'future_fulltext','future_filter_start','future_filter_result')))
+        diagnostics=[i for i in job['completed_items'] if str(i.get('stage','')).startswith('diagnostic:')]
+        check('retry_diagnostics_preserved',len({i['stage'] for i in diagnostics})==len(diagnostics)
+              and all(i.get('origin_stage') in {'grounding_validation','review_validation'}
+                  and i.get('recorded_at') and i.get('model_call_count',-1)>=0 for i in diagnostics))
         check('original_sections_immutable',result['sections']==synthesis['sections'])
         claims=[c for s in synthesis['sections'] for c in s['claims']]
         answer('original_local_context',synthesis,claims)
@@ -152,7 +156,9 @@ def verify(job_id,source_commit):
         manifest={'job_id':job_id,'software_commit':commit,'checks':len(checks),'new_downloads':new_downloads,'usage':usage,
             'scope':'normal API live discovery + actual candidate generation + official PDFs + fulltext review + condition filtering',
             'source_hashes':{p:hashlib.sha256(subprocess.check_output(['git','show',commit+':'+p],cwd=ROOT)).hexdigest() for p in
-                ('research_workspace/discovery.py','research_workspace/future_verification.py','research_workspace/future_fulltext.py','research_workspace/future_filter.py','research_workspace/jobs.py')}}
+                ('research_workspace/discovery.py','research_workspace/future_verification.py','research_workspace/future_fulltext.py',
+                 'research_workspace/future_filter.py','research_workspace/jobs.py','research_workspace/intelligence.py',
+                 'research_workspace/claim_repair.py','research_workspace/prompts/future_background_repair_v1.txt')}}
         (output/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     print('CHECKS',len(checks),'OUTPUT',output)
 

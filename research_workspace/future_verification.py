@@ -25,6 +25,7 @@ from .intelligence import StrictModel
 PROMPT_VERSION = "future-verification-v2"
 QUERY_PROMPT_VERSION = "future-query-v2"
 MAX_QUERIES = 3
+MAX_LIVE_QUERIES = 6
 MAX_PLANNING_DIRECTIONS = 12
 MAX_QUERY_CHARS = 180
 MAX_TOPIC_TERMS = 2
@@ -106,7 +107,7 @@ def _candidates(synthesis: dict) -> list[dict]:
     return result
 
 
-def _query_plan(candidates: list[dict], synthesis: dict, translated: dict | None = None) -> list[dict]:
+def _query_plan(candidates: list[dict], synthesis: dict, translated: dict | None = None, *, query_limit=MAX_QUERIES) -> list[dict]:
     # Local document titles may be filenames, so discard obvious file extensions.
     topic_words = _keywords(" ".join(str(item.get("title", ""))
                                     for item in synthesis.get("references", [])
@@ -159,7 +160,7 @@ def _query_plan(candidates: list[dict], synthesis: dict, translated: dict | None
                 existing["direction_ids"].append(candidate["direction_id"])
                 candidate["query_ids"].append(existing["query_id"])
                 continue
-            if len(plans) == MAX_QUERIES:
+            if len(plans) == query_limit:
                 candidate["query_limitation"] = "query_budget_exhausted"
                 continue
             plan = {"query_id": f"query-{len(plans) + 1}", "query": query,
@@ -205,11 +206,11 @@ def _checked_query_concepts(item: DirectionQueryConcepts, candidate: dict) -> di
     return item.model_dump(exclude={"direction_id"})
 
 
-async def _translate_query_conditions(provider, candidates: list[dict], check_cancel) -> tuple[dict, dict]:
+async def _translate_query_conditions(provider, candidates: list[dict], check_cancel, *, live=False) -> tuple[dict, dict]:
     eligible = [item for item in candidates
                 if re.search(r"[\u3400-\u9fff]", item["heading"] + item["proposed_work"])]
-    audit = {"prompt_version": QUERY_PROMPT_VERSION, "model_called": False,
-             "status": "not_needed", "generation_call_limit": 1,
+    audit = {"prompt_version": 'future-query-v3' if live else QUERY_PROMPT_VERSION, "model_called": False,
+             "status": "not_needed", "generation_call_limit": 2 if live else 1, 'generation_calls':0,
              "direction_limit": MAX_PLANNING_DIRECTIONS,
              "condition_limit_per_direction": 3, "max_query_characters": MAX_QUERY_CHARS,
              "max_topic_terms": MAX_TOPIC_TERMS, "max_condition_terms": MAX_CONDITION_TERMS,
@@ -218,18 +219,22 @@ async def _translate_query_conditions(provider, candidates: list[dict], check_ca
         return {}, audit
     selected = eligible[:MAX_PLANNING_DIRECTIONS]
     audit["direction_ids"] = [item["direction_id"] for item in selected]
-    await _check_cancel(check_cancel)
-    try:
-        prompt = Path(__file__).with_name("prompts").joinpath("future_query_v2.txt").read_text(encoding="utf-8")
-        audit["model_called"] = True
-        generated = await provider.generate(prompt, {
+    prompt = Path(__file__).with_name("prompts").joinpath("future_query_v3.txt" if live else "future_query_v2.txt").read_text(encoding="utf-8")
+    request={
             "task": "translate_future_direction_search_conditions",
             "directions": [{"direction_id": item["direction_id"], "heading": item["heading"],
                             "proposed_work": item["proposed_work"]} for item in selected],
-            "global_search_query_limit": MAX_QUERIES,
+            "global_search_query_limit": MAX_LIVE_QUERIES if live else MAX_QUERIES,
             "query_term_limits": {"topic": [1, MAX_TOPIC_TERMS], "condition": [2, MAX_CONDITION_TERMS],
                                   "combined": [3, MAX_QUERY_TERMS]},
-        }, FutureQueryPayload)
+        }
+    for attempt in range(audit['generation_call_limit']):
+      await _check_cancel(check_cancel)
+      generated=None
+      try:
+        audit["model_called"] = True
+        audit['generation_calls']+=1
+        generated = await provider.generate(prompt, request, FutureQueryPayload)
         payload = FutureQueryPayload.model_validate(
             generated.model_dump() if isinstance(generated, FutureQueryPayload) else generated)
         actual_ids = [item.direction_id for item in payload.directions]
@@ -240,7 +245,21 @@ async def _translate_query_conditions(provider, candidates: list[dict], check_ca
                       for item in payload.directions}
         audit.update(status="completed", concepts=translated)
         return translated, audit
-    except Exception:
+      except Exception as error:
+        # Only schema-bounded model data and our fixed validation messages enter
+        # the audit. Provider exception bodies may contain secrets and never do.
+        safe_reasons={'Query direction IDs mismatch','Query concept is not bound to the proposed direction',
+            'Invalid query terms','Invalid query term count','Topic is too broad or contains multiple conditions',
+            'A topic label alone does not preserve a research condition','Query must contain three to five core terms',
+            'Duplicate or topic-only query condition','Query length exceeds budget'}
+        reason=str(error) if type(error) is ValueError and str(error) in safe_reasons else 'invalid_schema_or_provider_failure'
+        record={'attempt':attempt+1,'status':'rejected','reason':reason}
+        if isinstance(generated,FutureQueryPayload):record['concepts']=generated.model_dump()
+        audit.setdefault('attempts',[]).append(record)
+        if generated is None:break
+        request={**request,'correction':{'validation_error':reason,'previous_plan':record.get('concepts'),
+            'requirement':'Return the same original directions, literal source_text spans and bounded core keyword phrases. Do not omit conditions.'}}
+    if audit['status']!='completed':
         audit.update(status="failed", error="query_planning_failed",
                      message="方向条件的英文检索规划失败或未通过绑定校验；退回主题关键词的方向不计为已核验。")
         return {}, audit
@@ -374,8 +393,9 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
         end=datetime.fromisoformat(started_at)
         window={'from':(end-timedelta(days=lookback_days)).isoformat(),'to':end.isoformat(),
                 'field':'submittedDate','lookback_days':lookback_days}
-    translated, planning = await _translate_query_conditions(provider, candidates, check_cancel)
-    plans = _query_plan(candidates, result, translated)
+    query_limit=MAX_LIVE_QUERIES if force_refresh else MAX_QUERIES
+    translated, planning = await _translate_query_conditions(provider, candidates, check_cancel,live=force_refresh)
+    plans = _query_plan(candidates, result, translated,query_limit=query_limit)
     sources: dict[str, dict] = {}
     errors: list[dict] = []
     directions: dict[str, dict] = {}
@@ -450,7 +470,7 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
                 allowed = set(source_id for plan in associated for source_id in plan["source_ids"])
                 if not associated:
                     directions[candidate["direction_id"]] = _insufficient(
-                        candidate, "无可用英文检索关键词或达到本次三条查询上限；该方向尚未核验。")
+                        candidate, f"无可用英文检索关键词或达到本次{query_limit}条查询上限；该方向尚未核验。")
                 elif candidate.get("query_quality") != "direction_specific":
                     directions[candidate["direction_id"]] = _insufficient(
                         candidate, "查询只保留了宽泛主题，未可靠覆盖原设想的具体研究条件；不能据此完成方向核验。")
@@ -501,14 +521,14 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
     audit = {"status": status, "prompt_version": PROMPT_VERSION, "started_at": started_at,
              'workflow_version':'future-live-v1' if force_refresh or window else 'future-abstract-legacy',
              "completed_at": _now(), "scope": "bounded_arxiv_abstracts_only",
-             "query_limit": MAX_QUERIES, "results_per_query": RESULTS_PER_QUERY,
+             "query_limit": query_limit, "results_per_query": RESULTS_PER_QUERY,
              "query_generation": "bounded_translated_conditions_with_explicit_keyword_fallback",
              "query_planning": planning,
              "sort_by": "submittedDate", "date_filter": window,'live_refresh_requested':force_refresh,
              "queries": plans, "sources": list(sources.values()), "directions": ordered,
              "errors": errors, "model_called": model_called or planning["model_called"],
-             "assessment_model_called": model_called, "generation_call_limit": 2,
-             "generation_calls": int(model_called) + int(planning["model_called"]),
+             "assessment_model_called": model_called, "generation_call_limit": 1+planning['generation_call_limit'],
+             "generation_calls": int(model_called) + planning['generation_calls'],
              "validation": "source_membership_and_exact_abstract_quote_and_translated_condition_overlap; classification_is_model_judgment",
              "full_text_reviewed": False, "novelty_proven": False,
              "notice": "只核验有限arXiv返回摘要；按提交时间排序不代表覆盖全部最新研究，排除项仍需全文确认。"}
@@ -530,7 +550,7 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
                     "摘要引文校验仅证明来源归属与文字匹配，不自动证明模型判定正确，也不构成研究空白证明。"]
     result["limitations"] = list(dict.fromkeys(limitations))
     result["trace"] = list(result.get("trace", [])) + [
-        {"step": "future_query_planning", "detail": f"英文条件规划状态：{planning['status']}；该阶段至多1次生成调用，外部检索总上限{MAX_QUERIES}条。"},
+        {"step": "future_query_planning", "detail": f"英文条件规划状态：{planning['status']}；该阶段至多{planning['generation_call_limit']}次生成调用，外部检索总上限{query_limit}条。"},
         {"step": "public_research_search", "detail": f"计划{len(plans)}条查询，实际成功{sum(p['status'] == 'completed' for p in plans)}条；返回{len(sources)}条可引用arXiv摘要。"},
         {"step": "future_work_screening", "detail": f"{len(ordered)}个方向中{reviewed}个形成有限摘要判定；其余证据不足。未作出已解决或新颖性证明。"},
     ]

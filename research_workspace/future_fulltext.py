@@ -112,9 +112,12 @@ async def fulltext_step(store, service, job, abstract_result):
         fresh=bool(own_queries) and all(q.get('status')=='completed' and q.get('cached') is False
             and (q.get('receipt') or {}).get('id') for q in own_queries)
         covered=not (set(direction.get('required_queries',[]))-{q.get('query','') for q in own_queries})
+        specific=direction.get('query_quality')=='direction_specific'
         record['search_audit']={'live_required':live_required,'verified':bool(fresh and covered),
+            'query_quality':direction.get('query_quality'),'conditions_preserved':specific,
             'date_filter':plan.get('date_filter'),'queries':deepcopy(own_queries),
             'note':'实时查询不完整、命中缓存或缺少回执时禁止自动筛除。'}
+        if live_required and not specific:record['search_audit']['verified']=False
         store.check_cancel(jid)
         if ready:
             docs = list(dict.fromkeys(r['document_id'] for r in ready))

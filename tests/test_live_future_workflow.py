@@ -171,3 +171,48 @@ def test_retries_preserve_failed_review_history_without_advancing_progress(tmp_p
     saved=store.get(job['id']);archives=[i for i in saved['completed_items'] if i['stage'].startswith('diagnostic:')]
     assert [i['result']['attempt'] for i in archives]==[1,2]
     assert saved['progress']==1 and saved['total']==4
+
+
+def test_live_query_repair_preserves_literal_binding_and_has_a_bounded_budget():
+    from research_workspace.future_verification import _translate_query_conditions,_query_plan
+    candidates=[{'direction_id':'direction-1','heading':'方向','proposed_work':'研究图预测在传感器噪声下的表现。','query_ids':[]}]
+    calls=[]
+    class Planner:
+        configured=True
+        async def generate(self,prompt,payload,schema):
+            calls.append(payload)
+            return schema.model_validate({'directions':[{'direction_id':'direction-1',
+                'topic':{'source_text':'图预测','english_terms':'graph prediction'},
+                'conditions':[{'source_text':'改写的传感器噪声' if len(calls)==1 else '传感器噪声',
+                    'english_terms':'sensor noise'}]}]})
+    translated,audit=asyncio.run(_translate_query_conditions(Planner(),candidates,None,live=True))
+    assert audit['status']=='completed' and audit['generation_calls']==audit['generation_call_limit']==2
+    assert audit['attempts'][0]['reason']=='Query concept is not bound to the proposed direction'
+    assert calls[1]['correction']['previous_plan']==audit['attempts'][0]['concepts']
+    assert calls[1]['global_search_query_limit']==6
+    assert _query_plan(candidates,{},translated,query_limit=6)[0]['query']=='graph prediction sensor noise'
+
+
+def test_live_query_budget_can_cover_two_three_condition_directions():
+    from research_workspace.future_verification import _query_plan
+    candidates=[{'direction_id':f'direction-{i}','heading':'原始方向','proposed_work':'保留原始全部条件。','query_ids':[]} for i in (1,2)]
+    translated={d['direction_id']:{'topic':{'source_text':'方向','english_terms':'graph'},'conditions':[
+        {'source_text':str(i),'english_terms':f'{word} noise'} for i,word in enumerate(words)]}
+        for d,words in zip(candidates,[['sensor','pixel','label'],['input','output','channel']])}
+    plans=_query_plan(candidates,{},translated,query_limit=6)
+    assert len(plans)==6 and all(len(d['query_ids'])==len(d['required_queries'])==3 for d in candidates)
+    assert all('query_limitation' not in d for d in candidates)
+
+
+def test_topic_fallback_live_receipt_cannot_satisfy_fulltext_search_scope(tmp_path):
+    from research_workspace.future_fulltext import fulltext_step
+    from research_workspace.jobs import JobStore
+    store=JobStore(Library(tmp_path));job=store.create('future_work',{})
+    query={'query_id':'q1','query':'broad topic','status':'completed','cached':False,'receipt':{'id':'fresh'}}
+    plan={'papers':[],'directions':[{'direction_id':'direction-1','section_index':0,'proposed_work':'原方向',
+        'query_ids':['q1'],'required_queries':['broad topic'],'query_quality':'insufficient'}],
+        'queries':[query],'live_search_required':True,'date_filter':{}}
+    store.save_item(job['id'],'future_fulltext_plan',{'stage':'future_fulltext_plan','result':plan},5)
+    asyncio.run(fulltext_step(store,object(),store.get(job['id']),{}))
+    row=next(i for i in store.get(job['id'])['completed_items'] if i['stage']=='future_direction:direction-1')
+    assert row['result']['search_audit']['verified'] is False and row['result']['search_audit']['conditions_preserved'] is False
