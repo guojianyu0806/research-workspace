@@ -54,7 +54,8 @@ class Relation(StrictInput):
 
 
 class ResearchTask(StrictInput):
-    kind: Literal['qa','compare','translate','translate_text','review','future_work','draft','discover_qa']
+    kind: Literal['qa','compare','translate','translate_text','review','future_work','future_filter','draft','discover_qa']
+    source_task_id: str | None = Field(default=None,max_length=100)
     paper_id: str | None = Field(default=None,max_length=150)
     document_ids: list[str] = Field(default_factory=list,max_length=20)
     document_id: str | None = None
@@ -68,6 +69,7 @@ class ResearchTask(StrictInput):
     target_language: Literal['zh','en'] = 'zh'
     glossary: dict[str,str] | None = Field(default=None,max_length=50)
     full_text_verify: bool = True
+    assess_solved: bool = True
 
 
 class SubscriptionInput(StrictInput):
@@ -131,7 +133,7 @@ def task_markdown(job):
         return -1
 
     saved = {item.get('stage'):item.get('result') for item in job.get('completed_items',[]) if isinstance(item,dict)}
-    result = (job['result'] or saved.get('future_fulltext') or saved.get('future_verification') or saved.get('future_synthesis') or {}) if job['kind']=='future_work' else (job['result'] or {'blocks':job.get('completed_items',[])})
+    result = (job['result'] or saved.get('future_filter_result') or saved.get('future_fulltext') or saved.get('future_verification') or saved.get('future_synthesis') or {}) if job['kind'] in {'future_work','future_filter'} else (job['result'] or {'blocks':job.get('completed_items',[])})
     lines = [f'# {job["kind"]}',f'任务编号：{job["id"]}',f'状态：{job["status"]}','']
     glossary=result.get('glossary') or job.get('payload',{}).get('glossary')
     if glossary:
@@ -216,6 +218,29 @@ def task_markdown(job):
         for error in audit.get('errors',[]):
             lines.append('核验提示：'+plain(error.get('code') or '未知状态')+'；'+plain(error.get('message') or '本次核验存在未完成步骤。'))
         lines.append('## 原始分节内容（保留供核对）')
+    if isinstance(result.get('future_direction_filter'),dict):
+        filtering=result['future_direction_filter']
+        lines.extend(['## 全文条件覆盖与筛选',plain(filtering['notice'])])
+        def add_filter_finding(finding,review):
+            if not finding:return
+            lines.extend(['结论编号：'+plain(finding['identity']['claim_id']),plain(finding['claim']['text'])])
+            for cite in finding['identity']['citations']:
+                lines.extend(['文献 '+plain(cite['document_id'])+'；解析 '+plain(cite['run_id'])+'；第 '+str(cite['page'])+' 页；文本块 '+plain(cite['block_id']),'> '+plain(cite['quote'])])
+            if review:lines.append('本条审核：'+plain(review['verdict'])+'；'+plain(review['reason']))
+        for direction in filtering['directions']:
+            lines.extend(['### '+plain(direction['direction_id'])+' · '+plain(direction.get('heading','')),
+                '判定：'+plain(direction['status'])+'；'+('移出重点候选' if direction['excluded'] else '保留原方向'),
+                '原始设想：'+plain(direction['proposed_work']),'判定编号：'+plain(direction['decision_id']),plain(direction['reason'])])
+            for condition in direction['conditions']:
+                lines.extend(['#### '+plain(condition['condition_id'])+' · '+plain(condition['source_text']),
+                    '条件状态：'+plain(condition['status'])])
+                add_filter_finding(condition.get('finding'),condition.get('review'))
+                if not condition.get('finding'):lines.append(plain(condition['reason']))
+            if direction['excluded']:
+                lines.append('#### 全部条件的联合覆盖依据')
+                add_filter_finding(direction.get('joint_finding'),direction.get('joint_review'))
+            elif direction.get('joint_review'):
+                lines.append('联合审核未确认全部条件共同满足：'+plain(direction['joint_review']['reason']))
     if isinstance(result.get('future_fulltext'),dict):
         full = result['future_fulltext']
         lines.extend(['## 公开论文正文核验',plain(full.get('notice',''))])
@@ -239,7 +264,7 @@ def task_markdown(job):
     for index,section in enumerate(result.get('sections',[])):
         lines.append('## '+section.get('heading',''))
         if index in excluded_sections:
-            lines.append('**此方向暂移出重点候选，需全文确认。以下保留原章节供核对，不作为当前推荐方向。**')
+            lines.append('**本方向已有充分全文覆盖依据并通过联合审核，已移出重点候选；原始设想与记录保留。**' if result.get('future_direction_filter') else '**此方向暂移出重点候选，需全文确认。以下保留原章节供核对，不作为当前推荐方向。**')
         for claim in section.get('claims',[]):
             lines.append(claim.get('text','')+' '+ ' '.join('['+c['evidence_id']+']' for c in claim.get('citations',[])))
         if section.get('proposed_work'):
@@ -336,7 +361,12 @@ def build_router():
             from .intelligence import validate_glossary
             if body.kind not in {'translate','translate_text'}:raise HTTPException(400,'术语表仅适用于翻译任务。')
             payload['glossary']=validate_glossary(body.glossary)
-        if body.kind=='discover_qa':
+        if body.kind=='future_filter':
+            if not body.source_task_id:raise HTTPException(400,'请选择已完成正文核验的来源任务。')
+            source=JobStore(library).get(body.source_task_id)
+            if source['status']!='completed' or not (source.get('result') or {}).get('future_fulltext'):
+                raise HTTPException(400,'来源任务需先完成正文核验。')
+        elif body.kind=='discover_qa':
             from .discovery import DiscoveryService
             if not body.paper_id or not body.question.strip():raise HTTPException(400,'请选择公开论文并填写研究问题。')
             paper=DiscoveryService(library).get_paper(body.paper_id)

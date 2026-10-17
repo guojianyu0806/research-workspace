@@ -15,7 +15,7 @@ class TaskCancelled(Exception):
 
 
 class JobStore:
-    KINDS = {'qa','compare','translate','translate_text','review','future_work','draft','discover_qa'}
+    KINDS = {'qa','compare','translate','translate_text','review','future_work','future_filter','draft','discover_qa'}
     SUMMARY_COLUMNS = 'id,kind,status,error,progress,total,cancel_requested,created_at,updated_at,result IS NOT NULL AS has_result'
 
     def __init__(self, library: Library):
@@ -268,6 +268,13 @@ class JobStore:
                 result = await self._text_step(service,job)
                 if result is None:
                     return True
+            elif kind=='future_filter':
+                from .future_filter import filter_step
+                source=self.get(payload['source_task_id'])
+                if source['status']!='completed' or not (source.get('result') or {}).get('future_fulltext'):
+                    raise ValueError('请选择本工作空间中已完成正文核验的任务。')
+                result=await filter_step(self,service,job,source['result'])
+                if result is None:return True
             elif kind=='future_work':
                 from .future_verification import verify_future_work
                 saved = {item.get('stage'):item.get('result') for item in job['completed_items']}
@@ -289,6 +296,10 @@ class JobStore:
                     from .future_fulltext import fulltext_step
                     result = await fulltext_step(self,service,job,result)
                     if result is None:return True
+                    if payload.get('assess_solved',False):
+                        from .future_filter import filter_step
+                        result=await filter_step(self,service,job,result)
+                        if result is None:return True
             else:
                 result = await service.synthesize(kind,payload['document_ids'],instruction=payload.get('instruction',''),
                                                   check_cancel=lambda:self.check_cancel(job_id))

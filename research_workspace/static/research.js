@@ -47,7 +47,7 @@
   }
   const jsonOptions = (body) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const pending = (job) => job && ["queued", "running"].includes(job.status);
-  const kindLabels = { qa: "文献问答", compare: "多篇比较", translate: "文献翻译", translate_text: "学术文本翻译", review: "专题综述", future_work: "未来方向", draft: "论文框架" };
+  const kindLabels = { qa: "文献问答", compare: "多篇比较", translate: "文献翻译", translate_text: "学术文本翻译", review: "专题综述", future_work: "未来方向", future_filter: "全文方向筛选", draft: "论文框架" };
   const statusLabels = { queued: "排队中", running: "执行中", completed: "已完成", failed: "失败", cancelled: "已取消", interrupted: "调用中断，结果未知" };
   function dateLabel(value) {
     const date = new Date(value);
@@ -275,8 +275,18 @@
     const progress = node("progress", "rs-progress"); progress.hidden = true;
     const actions = node("div", "rs-actions");
     const cancel = button("取消任务"), retry = button("继续重试");
+    const recheckDirections = button("按全文判定并筛选方向"); recheckDirections.hidden = true;
     const exportLink = link("导出任务与来源", "#");
-    actions.append(cancel, retry, exportLink); actions.hidden = true;
+    actions.append(cancel, retry, recheckDirections, exportLink); actions.hidden = true;
+    life.on(recheckDirections,"click",async()=>{
+      const sourceTask=state.selectedJob?.id;if(!sourceTask)return;
+      recheckDirections.disabled=true;
+      try {
+        const response=await life.api('/api/research/tasks',jsonOptions({kind:'future_filter',source_task_id:sourceTask}));
+        if(life.alive){displayJob(response.job);schedulePoll();revealTaskResult();}
+      } catch(error){life.show(error.message,true);}
+      finally{if(life.alive)recheckDirections.disabled=!state.configured;}
+    });
     const resultArea = node("div", "rs-result");
     resultArea.append(node("p", "rs-empty", "这里将显示实际任务结果。模型未配置时不会生成示例答案。"));
     const eventDetails = node("details", "rs-events");
@@ -338,7 +348,7 @@
       promptField.firstChild.textContent = label;
       prompt.maxLength = isTextTranslation ? 60000 : ["qa", "compare"].includes(taskKind) ? 4000 : 10000;
       prompt.placeholder = isTextTranslation ? "粘贴需要翻译的摘要或正文。" : taskKind === "draft" ? "描述研究目标、已有工作与准备验证的想法。" : "说明希望核验的问题或关注的研究方向。";
-      inputNote.textContent = taskKind === "future_work" ? "生成候选后检索arXiv摘要，并下载最多3篇关联公开PDF核对正文。逐方向保留原文引用、解析版本和独立审核；有限检索不证明已解决或新颖性。"
+      inputNote.textContent = taskKind === "future_work" ? "生成候选后检索arXiv及最多3篇公开PDF，逐条件审核全文。仅同一论文充分、共同覆盖全部条件且联合审核通过时移出候选；部分覆盖和证据不足保留，原始记录不删除。"
         : isDocumentTranslation ? "整篇翻译覆盖全部可用文本块；扫描或失败页面会单独标注，不会假装完成。"
         : taskKind === "draft" ? "生成的是待验证研究框架，不会把计划中的实验当成已完成结果。" : "";
     }
@@ -390,8 +400,8 @@
       const signature = `${job.id}:${job.updated_at}:${job.completed_items?.length || 0}`;
       if (state.resultStamp === signature) return;
       state.resultStamp = signature;
-      const checkpoints = job.kind === "future_work" ? new Map((job.completed_items || []).map((item) => [item.stage, item.result])) : new Map();
-      const output = job.result || checkpoints.get("future_fulltext") || checkpoints.get("future_verification") || checkpoints.get("future_synthesis");
+      const checkpoints = ['future_work','future_filter'].includes(job.kind) ? new Map((job.completed_items || []).map((item) => [item.stage, item.result])) : new Map();
+      const output = job.result || checkpoints.get("future_filter_result") || checkpoints.get("future_fulltext") || checkpoints.get("future_verification") || checkpoints.get("future_synthesis");
       const addGlossary=() => {
         const entries=Object.entries(output?.glossary || job.payload?.glossary || {});
         if(!entries.length) return;
@@ -425,6 +435,38 @@
       if (output.status === "insufficient_evidence") resultArea.append(node("p", "rs-result-note", "证据不足：本次未生成确定性结论。"));
       const isFutureWork = job.kind === "future_work" || output.kind === "future_work";
       if (isFutureWork && !job.result) resultArea.append(node("p", "rs-muted", "以下展示已保存的阶段结果；任务的完成或中断状态以上方记录为准。"));
+      if (output.future_direction_filter) {
+        const audit=output.future_direction_filter,panel=node('section','rs-result-section rs-direction-filter');
+        panel.append(node('h4','','全文条件覆盖与筛选'),node('p','rs-muted',audit.notice));
+        const labels={fully_addressed:'充分覆盖 · 移出重点候选',partially_addressed:'部分覆盖 · 保留',evidence_insufficient:'证据不足 · 保留'};
+        const showFinding=(parent,finding,review)=>{
+          if(!finding)return;
+          parent.append(node('p','rs-prose',finding.claim.text),citationButtons(finding.claim,new Map(finding.sources.map(s=>[s.evidence_id,s]))));
+          for(const cite of finding.claim.citations)parent.append(node('blockquote','rs-future-quote',cite.quote));
+          const badge=node('p','rs-small rs-muted',`本条审核：${review?.verdict==='supported'?'通过':'未通过'} · ${finding.identity.claim_id.slice(0,14)}…`);
+          badge.title=finding.identity.claim_id;parent.append(badge);
+          if(review?.reason)parent.append(node('p','rs-small rs-muted',review.reason));
+        };
+        for(const direction of audit.directions || []) {
+          const card=node('section',`rs-future-direction${direction.excluded?' is-excluded':''}`);
+          card.append(node('h5','',`${direction.direction_id} · ${direction.heading}`),node('p','rs-future-status',labels[direction.status] || '保留待核验'),
+            node('p','rs-proposal',direction.proposed_work),node('p','rs-muted',direction.reason));
+          for(const condition of direction.conditions || []) {
+            const item=node('article','rs-future-direction rs-filter-condition');
+            item.append(node('h6','',`${condition.condition_id} · ${condition.source_text}`),
+              node('p','rs-muted',condition.status==='fully_addressed'?'本条件已充分覆盖':condition.status==='partially_addressed'?'本条件仅部分覆盖':'本条件证据不足'));
+            showFinding(item,condition.finding,condition.review);
+            if(!condition.finding)item.append(node('p','rs-muted',condition.reason));card.append(item);
+          }
+          if(direction.excluded) {
+            const proof=node('article','rs-future-direction rs-filter-joint');proof.append(node('h6','','全部条件的联合覆盖依据'));
+            showFinding(proof,direction.joint_finding,direction.joint_review);card.append(proof);
+          } else if(direction.joint_review)card.append(node('p','rs-muted','联合审核未确认全部条件共同满足：'+direction.joint_review.reason));
+          const details=node('details','rs-events');details.append(node('summary','','查看本方向完整判定与审核记录'),node('pre','rs-prose',JSON.stringify(direction,null,2)));
+          card.append(details);panel.append(card);
+        }
+        resultArea.append(panel);
+      }
       if (output.future_fulltext) {
         const full = output.future_fulltext, panel = node("section", "rs-result-section");
         panel.append(node("h4", "", "公开论文正文核验"), node("p", "rs-muted", full.notice));
@@ -465,7 +507,7 @@
           const group = node("section", "rs-result-section"); group.append(node("h4", "", section.heading || "研究内容"));
           if (excludedSections.has(index)) {
             group.classList.add("is-excluded");
-            group.append(node("p", "rs-future-excluded-note", "此方向暂移出重点候选，需全文确认。以下保留原章节供核对，不作为当前推荐方向。"));
+            group.append(node("p", "rs-future-excluded-note", output.future_direction_filter ? "本方向已有充分全文覆盖依据并通过联合审核，已移出重点候选。原始设想与记录保留。" : "此方向暂移出重点候选，需全文确认。以下保留原章节供核对，不作为当前推荐方向。"));
           }
           renderClaims(group, section.claims, sources);
           if (section.proposed_work) group.append(node("p", "rs-proposal", "待验证研究设想：" + section.proposed_work));
@@ -520,7 +562,7 @@
       state.jobs = [job, ...state.jobs.filter((item) => item.id !== job.id)].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       detailHeading.textContent = kindLabels[job.kind] || "研究任务";
       meta.textContent = `${dateLabel(job.created_at)} · 任务 ${job.id.slice(0, 8)}`;
-      const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${['discover_qa','future_work'].includes(job.kind) ? '步' : '段'}` : "";
+      const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${['discover_qa','future_work','future_filter'].includes(job.kind) ? '步' : '段'}` : "";
       status.textContent = (job.cancel_requested && pending(job) ? "已请求取消，等待当前操作结束" : statusLabels[job.status] || job.status) + counter + (job.error ? `：${job.error}` : "")
         + (job.status === "interrupted" ? "。上一次调用的结果与扣费状态未知，继续重试可能重复消耗模型额度。" : "");
       status.classList.toggle("rs-error-text", ["failed", "interrupted"].includes(job.status));
@@ -532,6 +574,8 @@
       progress.hidden = !pending(job) && !(job.total > 0);
       if (job.total > 0) { progress.max = job.total; progress.value = job.progress; } else progress.removeAttribute("value");
       actions.hidden = false; cancel.hidden = !pending(job); cancel.disabled = Boolean(job.cancel_requested);
+      recheckDirections.hidden=job.status!=='completed' || !job.result?.future_fulltext;
+      recheckDirections.disabled=!state.configured;
       retry.hidden = !["failed", "cancelled", "interrupted"].includes(job.status); retry.disabled = !state.configured;
       retry.textContent = job.status === "interrupted" ? "确认重试（可能重复消耗）" : "继续重试";
       exportLink.href = `/api/research/tasks/${encodeURIComponent(job.id)}/export`; exportLink.download = `research-${job.id}.md`;
