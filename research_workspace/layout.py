@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v8-scan-composition'
+LAYOUT_VERSION = 'local-layout-v9-recursive-scan'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -359,6 +359,8 @@ class LayoutService:
                             geometry['coordinate_system']='normalized_rendered_page'
                         if formula.get('observed_rule'):
                             x0,y,x1=formula.pop('observed_rule');formula['rule_evidence']=[{'bbox':bbox([x0,y-.25,x1,y+.25]),'kind':'observed_raster_horizontal_rule'}]
+                    for candidate in raster_math_audit.get('composition_audit',{}).get('recursive_audit',{}).get('candidate_regions',[]):
+                        raster_record(candidate,'ocr_recursive_structure_candidate')
                     for index,formula in enumerate(scan_formulas):
                         raster_formula(formula);formula['id']=f'scan-formula-{index+1}'
                         formulas.append(formula)

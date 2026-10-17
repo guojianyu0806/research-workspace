@@ -44,13 +44,28 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
         x0,y0,x1,y1=[int(round(v*2)) for v in box]
         return mask[y0:y1,x0:x1].copy(),x0,y0
 
-    def sequence(box,children,role):
+    def sequence(box,children,role,ignored_pixels=(),parse_scripts=False):
         own,x0,y0=region_mask(box);total=int(own.sum());parts=[]
+        ignored=0
+        for y,x in ignored_pixels:
+            if 0<=y-y0<own.shape[0] and 0<=x-x0<own.shape[1]:
+                ignored+=int(own[y-y0,x-x0]);own[y-y0,x-x0]=False
         # A parent owns the original child record, including failed readings.
         for child in sorted(children,key=lambda c:c['raw_bbox'][0]):
             b=child['raw_bbox'];part=deepcopy(child);part['role']='nested_structure';parts.append(part)
             own[max(0,round(b[1]*2)-y0):round(b[3]*2)-y0,max(0,round(b[0]*2)-x0):round(b[2]*2)-x0]=False
         cc=join_ink_parts(components(own))
+        if parse_scripts:
+            from .scan_operators import pair_regions,transcribe_pair
+            for base,script,side in pair_regions(cc):
+                b=base['box']
+                if script[3]-script[1] < .5*(b[3]-b[1]) or budget['remaining']<4:continue
+                raw=lambda r:[(r[0]+x0)/2,(r[1]+y0)/2,(r[2]+x0)/2,(r[3]+y0)/2]
+                region=union([b,script])
+                if any(pymupdf.Rect(raw(region)).intersects(pymupdf.Rect(p['raw_bbox'])) for p in parts):continue
+                node=transcribe_pair(page,raw(b),raw(script),side,configuration,budget);node['role']='nested_structure';parts.append(node)
+                own[region[1]:region[3],region[0]:region[2]]=False
+            cc=join_ink_parts(components(own))
         specials=[]
         # Square brackets have a continuous stem and two visible arms. Curved
         # parentheses cannot pass this test, even if OCR calls either a bar.
@@ -124,7 +139,7 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
         text=''.join('@' if p['role']=='nested_structure' else p['latex'] or '?' for p in parts)
         return {'raw_bbox':box,'role':role,'operands':parts,'latex':''.join(p['latex'] or '?' for p in parts) if complete else None,
             'original_text':' '.join(p['original_text'] for p in parts),'token_text':text,
-            'coverage_audit':{'ink_pixels':total,'unassigned_ink_pixels':int(own.sum()),'all_children_resolved':complete},
+            'coverage_audit':{'ink_pixels':total,'observed_operator_ink_pixels':ignored,'unassigned_ink_pixels':int(own.sum()),'all_children_resolved':complete},
             'needs_review':True}
 
     # Observe rule extents first; children inside either operand take priority
@@ -221,5 +236,9 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
         if not any(pymupdf.Rect(w['raw_bbox']).intersects(pymupdf.Rect(box)) for w in wholes):wholes.append(node)
     # Only add new nested fractions; flat fraction records already exist.
     new=[f for f in fractions if f['method']==VERSION]
-    return new+wholes,{'version':VERSION,'ocr_calls':96-budget['remaining'],'ocr_budget':96,
-        'model_calls':0,'max_depth':8,'max_nodes':128,'needs_review':True}
+    used=96-budget['remaining'];budget={'remaining':128}
+    from .scan_recursive import recursive_scan_structures
+    recursive,recursive_audit=recursive_scan_structures(pixels,primitives,excluded,sequence,valid_sequence,budget)
+    recursive_audit.update({'ocr_calls':128-budget['remaining'],'ocr_budget':128})
+    return new+wholes+recursive,{'version':VERSION,'ocr_calls':used,'ocr_budget':96,
+        'recursive_audit':recursive_audit,'model_calls':0,'max_depth':8,'max_nodes':128,'needs_review':True}

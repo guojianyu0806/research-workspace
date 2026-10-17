@@ -192,6 +192,14 @@
       if (data.formula_audit?.truncated || ['glyph_budget_exceeded','vector_budget_exceeded'].includes(data.formula_audit?.status))
         formulas.append(element('p','rm-warning','本页公式或字形超过本地分析上限；此处不是完整公式清单，请核对原页。'));
       if (!data.formulas?.length) formulas.append(element("p", "rm-muted", "本页未检测到受支持的公式候选；未知图片符号不会被猜测转写。"));
+      const recursiveAudit=data.raster_math_audit?.composition_audit?.recursive_audit;
+      if (recursiveAudit?.candidate_regions?.length) {
+        const candidates=element('details');candidates.append(element('summary','','查看递归结构候选与未识别区域'));
+        candidates.append(element('p','rm-muted',`结构候选 ${recursiveAudit.candidate_count} 个；局部OCR ${recursiveAudit.ocr_calls}/${recursiveAudit.ocr_budget} 次。子候选可能由父结构包含，尚未恢复的区域不能作为完整结果。`));
+        for (const region of recursiveAudit.candidate_regions.slice(0,64)) candidates.append(element('p','rm-muted',`${region.kind==='radical' ? '根号' : '分式'} · ${region.parsed ? '已保留解析观察' : region.reason || '子候选或待复核区域'}`),evidenceControl(region.evidence,'核对结构候选 →'));
+        if (recursiveAudit.candidate_regions.length>64) candidates.append(element('p','rm-muted','其余候选位置保存在结构JSON中。'));
+        formulas.append(candidates);
+      }
       for (const formula of data.formulas || []) {
         const item = element("article", "rm-text-block");
         item.append(element("span", "rm-badge", "需复核"), element("p", "rm-original-text", formula.original_text || formula.text), evidenceControl(formula.evidence));
@@ -230,6 +238,7 @@
             for (const view of [...(value.ocr_audit?.views || []),...(value.ocr_audit?.recheck_views || [])]) own.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}${view.dpi ? `，${view.dpi} DPI` : ''}：${view.text || '未识别'}`));
             if (value.ocr_audit?.method) own.append(element('p','rm-muted',`像素几何依据：${value.ocr_audit.method}`));
             if (value.coverage_audit) own.append(element('p','rm-muted',`未归属墨迹：${value.coverage_audit.unassigned_ink_pixels} 像素；子项${value.coverage_audit.all_children_resolved ? '已分别转写，仍待复核' : '尚未全部确认'}`));
+            if (value.coverage_audit?.observed_operator_ink_pixels) own.append(element('p','rm-muted',`已分离本层运算符墨迹 ${value.coverage_audit.observed_operator_ink_pixels} 像素，原图保留。`));
             audit.append(own);
             if (depth<8) for (const child of value.operands || []) appendObservation(child,depth+1);
           }
