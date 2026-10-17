@@ -2222,10 +2222,13 @@ _NON_MATH_SPAN = re.compile(
     r"\\[A-Za-z]+(?:\{[^{}]*\})*|[α-ωΑ-Ω∑∏∫√≤≥±]|"
     r"[+-]?\d+(?:[.,]\d+)*(?:[eE][+-]?\d+)?(?:%|‰)?"
 )
+_MONTH_NAME=r'(?i:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
+_DATE_SPAN=rf'(?<!\w)(?:\d{{1,2}}[ \t]+{_MONTH_NAME}\.?[ \t]+\d{{4}}|{_MONTH_NAME}\.?[ \t]+\d{{1,2}},?[ \t]+\d{{4}})(?!\w)'
 _PROTECTED_SPAN = re.compile(
     r"```[\s\S]*?```|`[^`\n]+`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|"
     r"\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|"
     r"https?://[^\s)]+|\[[^\]\n]{1,300}\]|"
+    rf"{_DATE_SPAN}|arXiv:\s*\d{{4}}\.\d{{4,5}}(?:v\d+)?|"
     rf"(?P<raw_math>{_RAW_MATH})|{_NON_MATH_SPAN.pattern}",
     re.MULTILINE,
 )

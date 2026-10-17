@@ -41,6 +41,23 @@ def test_live_formula_regression_exposes_prose_and_preserves_only_math():
     assert restore_text(protected, replacements) == SOURCE_WITH_FORMULA
 
 
+@pytest.mark.parametrize('date',['11 Dec 2013','December 11, 2013','11 December 2013','Sep. 2 2026'])
+def test_original_date_is_one_preserved_span_not_new_numeric_month(date):
+    source=f'Published {date}. The benchmark remains public.'
+    protected,replacements=protect_text(source)
+    assert date in replacements.values() and 'The benchmark remains public.' in protected
+    assert restore_text(protected,replacements)==source
+
+
+def test_arxiv_date_header_keeps_identifier_and_date_literal(tmp_path):
+    source='arXiv:1312.3005v1  [cs.CL]  11 Dec 2013'
+    protected,replacements=protect_text(source)
+    assert list(replacements.values())==['arXiv:1312.3005v1','[cs.CL]','11 Dec 2013']
+    provider=FixtureProvider(lambda request,count:request['text'])
+    result=asyncio.run(IntelligenceService(Library(tmp_path),provider).translate_text(source,target_language='zh'))
+    assert result['translated_text']==source and len(provider.requests)==1
+
+
 @pytest.mark.parametrize(("source", "formula", "prose"), [
     ("公式E=mc^2仍待验证。", "E=mc^2", "仍待验证"),
     ("The equation E = mc^2 is an example.", "E = mc^2", "is an example"),
