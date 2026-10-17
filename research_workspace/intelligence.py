@@ -335,9 +335,10 @@ class ChatCompletionProvider:
                         request_body['reasoning_effort'] = 'low'
                 issue = "response_envelope"
                 try:
-                    response = await client.post(
+                    from .model_usage import tracked_post
+                    response = await tracked_post(client,
                         endpoint, headers={"Authorization": f"Bearer {self.config.api_key}"},
-                        json=request_body,
+                        json=request_body,model=self.config.model,schema=output_model.__name__,prompt=prompt,attempt=attempt+1,
                     )
                 except (httpx.ConnectTimeout, httpx.ConnectError):
                     if attempt + 1 == attempts:

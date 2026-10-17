@@ -130,6 +130,17 @@ def task_markdown(job):
     saved = {item.get('stage'):item.get('result') for item in job.get('completed_items',[]) if isinstance(item,dict)}
     result = (job['result'] or saved.get('future_verification') or saved.get('future_synthesis') or {}) if job['kind']=='future_work' else (job['result'] or {'blocks':job.get('completed_items',[])})
     lines = [f'# {job["kind"]}',f'任务编号：{job["id"]}',f'状态：{job["status"]}','']
+    usage=job.get('usage',{})
+    if usage.get('calls'):
+        lines.extend(['## 模型用量回执',f'实际请求：{usage["calls"]} 次；提供Token回执：{usage["usage_reported_calls"]} 次。',
+            f'已报告总Tokens：{usage.get("total_tokens") if usage.get("total_tokens") is not None else "未知"}；金额未估算；不含未报告与历史用量。',''])
+        for call in job.get('model_calls',[]):
+            lines.append(f'- {plain(call["id"])} · {plain(call["model"])} · {plain(call["output_schema"])} · {plain(call["state"])} · Tokens：{call["usage"].get("total_tokens","未知")} · Prompt SHA-256：{plain(call["prompt_sha256"])}')
+        lines.append('')
+        if usage.get('cost'):
+            cost=usage['cost']
+            lines.extend([f'已报告调用的公开价格估算范围：USD {plain(cost["min"])} 至 {plain(cost["max"])}；{cost["estimated_calls"]}/{usage["calls"]} 次可估算，非实际账单。',
+                f'价格快照：{plain(cost["price_checked_at"])}；[官方价格]({cost["price_source"]})',''])
     audit = result.get('future_verification')
     all_directions = audit.get('directions',[]) if isinstance(audit,dict) else []
     retained = result.get('retained_directions',[item for item in all_directions if not item.get('excluded')])

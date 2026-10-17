@@ -265,6 +265,7 @@
     const detailHeading = node("h3", "rs-card-title", "选择或创建一个任务");
     const meta = node("p", "rs-muted rs-small");
     const status = node("p", "rs-job-status"); status.setAttribute("role", "status");
+    const usage = node("p", "rs-muted rs-small");
     const progress = node("progress", "rs-progress"); progress.hidden = true;
     const actions = node("div", "rs-actions");
     const cancel = button("取消任务"), retry = button("继续重试");
@@ -275,7 +276,7 @@
     const eventDetails = node("details", "rs-events");
     eventDetails.append(node("summary", "", "执行记录"));
     const eventList = node("ol", "rs-event-list"); eventDetails.append(eventList); eventDetails.hidden = true;
-    detail.append(shortcuts, detailHeading, meta, status, progress, actions, resultArea, eventDetails);
+    detail.append(shortcuts, detailHeading, meta, status, usage, progress, actions, resultArea, eventDetails);
     layout.append(sidebar, detail); life.shell.append(layout);
 
     function revealSection(section) {
@@ -475,6 +476,11 @@
       status.textContent = (job.cancel_requested && pending(job) ? "已请求取消，等待当前操作结束" : statusLabels[job.status] || job.status) + counter + (job.error ? `：${job.error}` : "")
         + (job.status === "interrupted" ? "。上一次调用的结果与扣费状态未知，继续重试可能重复消耗模型额度。" : "");
       status.classList.toggle("rs-error-text", ["failed", "interrupted"].includes(job.status));
+      const meter=job.usage;
+      usage.textContent=meter?.calls ? `模型请求 ${meter.calls} 次 · 服务商已报告 ${meter.total_tokens ?? "未知"} Tokens（输入 ${meter.prompt_tokens ?? "未知"} / 输出 ${meter.completion_tokens ?? "未知"}） · 用量回执 ${meter.usage_reported_calls}/${meter.calls} 次${meter.unknown_outcomes ? ` · ${meter.unknown_outcomes} 次结果未知` : ""} · 金额未估算`
+        : "尚无模型用量记录；历史调用不会补算。";
+      if (meter?.cost) usage.textContent=usage.textContent.replace("金额未估算",`已报告调用估算 US$${Number(meter.cost.min).toFixed(6)}–${Number(meter.cost.max).toFixed(6)}（${meter.cost.estimated_calls}/${meter.calls} 次；公开价${meter.cost.price_checked_at}，非账单）`);
+      if (pending(job) && job.events?.length) usage.textContent += ` · 当前阶段：${job.events.at(-1).message}`;
       progress.hidden = !pending(job) && !(job.total > 0);
       if (job.total > 0) { progress.max = job.total; progress.value = job.progress; } else progress.removeAttribute("value");
       actions.hidden = false; cancel.hidden = !pending(job); cancel.disabled = Boolean(job.cancel_requested);
@@ -483,6 +489,7 @@
       exportLink.href = `/api/research/tasks/${encodeURIComponent(job.id)}/export`; exportLink.download = `research-${job.id}.md`;
       eventList.replaceChildren();
       for (const event of job.events || []) eventList.append(node("li", "", `${dateLabel(event.created_at)} ${event.message || event.stage || ""}`));
+      for (const call of job.model_calls || []) eventList.append(node("li", "", `${call.model} · ${call.output_schema} · ${call.state} · ${call.duration_ms ?? "待返回"} ms · ${call.usage?.total_tokens ?? "未知"} Tokens · 请求 ${call.id.slice(0,8)}`));
       eventDetails.hidden = !job.events?.length;
       renderResult(job); renderHistory();
     }

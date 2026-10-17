@@ -29,6 +29,8 @@ class JobStore:
               CREATE TABLE IF NOT EXISTS research_job_events(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,job_id TEXT,stage TEXT,message TEXT,created_at TEXT);
             ''')
+        from .model_usage import UsageStore
+        self.usage_store=UsageStore(library)
 
     def create(self,kind,payload):
         if kind not in self.KINDS:
@@ -50,6 +52,8 @@ class JobStore:
             item['result'] = json.loads(item['result']) if item['result'] else None
             item['events'] = [dict(r) for r in db.execute('SELECT stage,message,created_at FROM research_job_events WHERE job_id=? ORDER BY id',(job_id,))]
             item['completed_items'] = [json.loads(r[0]) for r in db.execute('SELECT payload FROM research_job_items WHERE job_id=? ORDER BY rowid',(job_id,))] if include_items else []
+            item['usage']=self.usage_store.summary(db,job_id)
+            item['model_calls']=self.usage_store.calls(db,job_id)
         return item
 
     def summary(self,job_id):
@@ -66,6 +70,8 @@ class JobStore:
         item['has_result'] = bool(item['has_result'])
         event = db.execute('SELECT stage,message,created_at FROM research_job_events WHERE job_id=? ORDER BY id DESC LIMIT 1',(item['id'],)).fetchone()
         item['last_event'] = dict(event) if event else None
+        from .model_usage import UsageStore
+        item['usage']=UsageStore.summary(db,item['id'])
         return item
 
     def list(self):
@@ -116,6 +122,7 @@ class JobStore:
         with self.library._connection() as db:
             rows = db.execute("SELECT id,cancel_requested FROM research_jobs WHERE status='running'").fetchall()
             for row in rows:
+                self.usage_store.recover(row['id'],db)
                 status = 'cancelled' if row['cancel_requested'] else 'interrupted'
                 db.execute('UPDATE research_jobs SET status=?,error=?,updated_at=? WHERE id=?',(status,message,_now(),row['id']))
                 db.execute('INSERT INTO research_job_events(job_id,stage,message,created_at) VALUES(?,?,?,?)',(row['id'],status,message,_now()))
@@ -194,10 +201,15 @@ class JobStore:
                 'trace':[service._trace('translate',f'已核验目标语言并持久保存{len(chunks)}个片段；可从已保存片段继续。')]}
 
     async def process_next(self, service=None):
+        from .model_usage import record_model_calls
+        # ContextVars keep concurrent accounts and reused providers independent.
+        job=self.claim()
+        if job is None:return False
+        with record_model_calls(self.usage_store,job['id']):
+            return await self._process_next_recorded(service,job)
+
+    async def _process_next_recorded(self, service,job):
         from .intelligence import IntelligenceService
-        job = self.claim()
-        if job is None:
-            return False
         job_id, kind, payload = job['id'], job['kind'], job['payload']
         service = service or IntelligenceService(self.library)
         try:
