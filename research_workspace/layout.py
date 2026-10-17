@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v4-math-geometry'
+LAYOUT_VERSION = 'local-layout-v5-math-operators'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -307,9 +307,11 @@ class LayoutService:
                     # native equation region; other candidates remain untouched.
                     formulas=[f for f in formulas if not (_coverage(f['bbox'],box)>.65)]
                     evidence=anchor(formula['original_text'],box,'native_formula_geometry')
-                    formulas.append({k:v for k,v in formula.items() if k not in {'raw_bbox','glyphs','rules'}} | {
+                    formulas.append({k:v for k,v in formula.items() if k not in {'raw_bbox','glyphs','rules','source_rows'}} | {
                         'id':f'formula-geometry-{formula_index+1}','bbox':box,'evidence':evidence,
                         'glyph_evidence':[{**g,'bbox':bbox(g['bbox'])} for g in formula['glyphs']],
+                        'source_rows':[{k:v for k,v in row.items() if k!='raw_bbox'} | {
+                            'bbox':bbox(row['raw_bbox']),'evidence':anchor(row['original_text'],bbox(row['raw_bbox']),'aligned_formula_row')} for row in formula.get('source_rows',[])],
                         'rule_evidence':[{'bbox':bbox([r[0],r[1]-.15,r[2],r[1]+.15]),'kind':'observed_horizontal_rule'} for r in formula['rules']]})
             finally:source.set_rotation(rotation)
             formulas.sort(key=lambda f:(f['bbox'][1],f['bbox'][0]))

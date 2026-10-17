@@ -164,7 +164,7 @@
       }
       output.append(figures);
 
-      const formulas = panel("公式候选", "原文始终保留；原生公式按字形、分数线、根号线和上下标位置生成有限LaTeX。扫描图片公式与任意矩阵仍不支持。");
+      const formulas = panel("公式候选", "原文始终保留；原生公式按字形、分数线、根号线和上下标位置生成有限LaTeX。已补充有明确依据的求和上下限及对齐多行等式；扫描图片公式与任意矩阵仍不支持。");
       if (data.formula_audit?.truncated || ['glyph_budget_exceeded','vector_budget_exceeded'].includes(data.formula_audit?.status))
         formulas.append(element('p','rm-warning','本页公式或字形超过本地分析上限；此处不是完整公式清单，请核对原页。'));
       if (!data.formulas?.length) formulas.append(element("p", "rm-muted", "本页未检测到原生文字中的公式候选；图片公式不会被猜测转写。"));
@@ -174,15 +174,22 @@
         if (formula.latex) {
           item.append(element("p", "rm-field-title", "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
         } else item.append(element("p", "rm-muted", "该公式不在可靠转写子集中，仅保留原文。"));
-        if (formula.method === 'native-math-geometry-v1') {
+        if (formula.method?.startsWith('native-math-geometry-')) {
           const audit = element('details'); audit.append(element('summary', '', '查看转写依据'));
           audit.append(element('p', 'rm-muted', `原生字形 ${formula.glyph_count} 个 · 水平线段 ${formula.rule_evidence?.length || 0} 条。全部位置随结构JSON导出。`));
           const reasons = {unmapped_native_glyph:'存在未映射字形', unassigned_glyph_inside_formula_region:'区域内有未归属字形',
             radical_extent_not_observed:'未找到明确的根号覆盖线', multiple_unresolved_math_rows:'多行结构尚未可靠分解',
             unattached_math_script:'上下标归属不明确', unbalanced_math_delimiters:'括号结构不完整',
             formula_complexity_limit:'超过有限解析的复杂度上限', prose_mixed_with_math:'公式与说明文字混排',
-            large_operator_limits_require_review:'求和、积分的上下限尚需人工核对', multiline_continuation_requires_review:'多行等式尚未完整恢复'};
+            large_operator_limits_require_review:'求和、积分的上下限尚需人工核对', orphan_or_ambiguous_continuation:'等式续行没有明确可连接的前式', operator_baseline_ambiguous:'大型运算符的主行不明确', multiline_continuation_requires_review:'多行等式尚未完整恢复'};
           if (!formula.latex) audit.append(element('p','rm-warning', reasons[formula.conversion] || '结构超出当前支持范围，保留原文供核对。'));
+          for (const glyph of formula.glyph_evidence || []) if (glyph.glyph_mapping) {
+            const mapping = glyph.glyph_mapping;
+            audit.append(element('p','rm-muted',`嵌入字形 ${mapping.glyph_name}：原文本层 ${mapping.native_text} → ${mapping.mapped_text}`));
+          }
+          for (const [rowIndex,row] of (formula.source_rows || []).entries()) {
+            audit.append(element('p','rm-muted',`第 ${rowIndex+1} 行 · ${row.original_text}`),evidenceControl(row.evidence,`核对第 ${rowIndex+1} 行 →`));
+          }
           item.append(audit);
         }
         formulas.append(item);

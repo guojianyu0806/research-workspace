@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from statistics import median
 
-VERSION='native-math-geometry-v1'
+VERSION='native-math-geometry-v2'
 SYMBOLS=dict(zip('αβγδεζηθικλμνξοπρστυφχψω',
     ['\\'+s for s in ['alpha','beta','gamma','delta','epsilon','zeta','eta','theta','iota','kappa','lambda','mu','nu','xi','omicron','pi','rho','sigma','tau','upsilon','phi','chi','psi','omega']]))
 SYMBOLS.update({'∈':r'\in','∉':r'\notin','≤':r'\leq','≥':r'\geq','≠':r'\neq','≈':r'\approx',
@@ -33,15 +33,34 @@ def composite(nodes,latex,y,size):
 def _atom(g):
     c=g['char']
     if g['font'].startswith('CMEX') and c.isascii() and c.isalpha():raise Unsupported('unmapped_native_glyph')
-    if c in SYMBOLS:return SYMBOLS[c]
-    if re.fullmatch(r'[A-Za-z0-9=+*/(),.\[\]:;<>!\-^_]',c):return c
-    raise Unsupported('unmapped_native_glyph')
+    if c in SYMBOLS:value=SYMBOLS[c]
+    elif re.fullmatch(r'[A-Za-z0-9=+*/(),.\[\]:;<>!\-^_]',c):value=c
+    else:raise Unsupported('unmapped_native_glyph')
+    if g['flags']&16 and c.isalpha():value=(r'\mathbf{' if c.isascii() else r'\boldsymbol{')+value+'}'
+    return value
 
 
 def _parse(glyphs,rules,depth=0):
     if depth>8 or len(glyphs)>400:raise Unsupported('formula_complexity_limit')
     if not glyphs:raise Unsupported('empty_math_operand')
     size=max(g['size'] for g in glyphs);nodes=list(glyphs);used_rules=[]
+    for operator in [n for n in nodes if n['char'] in {'∑','∏','∫'}]:
+        nearby=[n for n in nodes if n is not operator and n['size']>=size*.88
+            and operator['box'][2]-1<=n['box'][0]<=operator['box'][2]+size*4
+            and abs(n['y']-(operator['y']+(size if operator['font'].startswith('CMEX') else 0)))<size*.75]
+        if not nearby:raise Unsupported('operator_baseline_ambiguous')
+        baseline=median(n['y'] for n in nearby)
+        limits=[n for n in nodes if n is not operator and n['size']<size*.88
+            and operator['box'][0]-size*.6<=(n['box'][0]+n['box'][2])/2<=operator['box'][2]+size*.6
+            and operator['y']-size*1.5<n['y']<baseline+size*1.7]
+        above=[n for n in limits if n['y']<baseline-size*.35]
+        below=[n for n in limits if n['y']>baseline+size*.45]
+        if len(above)+len(below)!=len(limits):raise Unsupported('ambiguous_operator_limit')
+        latex={'∑':r'\sum','∏':r'\prod','∫':r'\int'}[operator['char']]
+        if below:latex+='_{'+_parse(below,[],depth+1)['latex']+'}'
+        if above:latex+='^{'+_parse(above,[],depth+1)['latex']+'}'
+        combined=composite([operator,*limits],latex,baseline,size)
+        nodes=[n for n in nodes if not n['ids']&combined['ids']]+[combined]
     # Wider rules first: the denominator may itself contain a radical or fraction.
     for rule in sorted(rules,key=lambda r:r[2]-r[0],reverse=True):
         x0,y,x1=rule
@@ -108,6 +127,7 @@ def _parse(glyphs,rules,depth=0):
     value=' '.join(rendered)
     if value.count('(')!=value.count(')') or value.count('[')!=value.count(']'):raise Unsupported('unbalanced_math_delimiters')
     result=composite(nodes,value,baseline,size)
+    result['relation_indexes']=[sum(len(s)+1 for s in rendered[:i]) for i,n in enumerate(merged) if n['char']=='=']
     if result['ids']!=set().union(*(g['ids'] for g in glyphs)):raise Unsupported('unconsumed_math_glyph')
     return result
 
@@ -122,13 +142,19 @@ def extract_display_formulas(page):
             for span in line.get('spans',[]):
                 for char in span.get('chars',[]):
                     if not char['c'].strip():continue
-                    g={'char':char['c'],'box':list(char['bbox']),'y':char['origin'][1],
+                    g={'char':char['c'],'box':list(char['bbox']),'origin_x':char['origin'][0],'y':char['origin'][1],
                         'size':span['size'],'font':span['font'],'flags':span['flags'],'ids':{len(glyphs)}}
                     glyphs.append(g);own.append(g)
             if own:lines.append(own)
     if len(glyphs)>15000:return [],{'version':VERSION,'status':'glyph_budget_exceeded','model_calls':0}
+    from .native_math_fonts import recover_glyph_names
+    font_audit=recover_glyph_names(page,glyphs)
     seeds=[ln for ln in lines if any(g['char'] in '=≤≥' for g in ln)
         and sum(bool(re.match(r'CM|MS[AB]',g['font'])) or bool(g['flags']&2) for g in ln)>.45*len(ln)]
+    operators=[g for g in glyphs if g['char'] in {'∑','∏','∫'}]
+    seeds=[s for s in seeds if not any(max(g['size'] for g in s)<op['size']*.88
+        and op['box'][0]-op['size']*.6<=median((g['box'][0]+g['box'][2])/2 for g in s)<=op['box'][2]+op['size']*.6
+        and abs(median(g['y'] for g in s)-op['y'])<op['size']*3 for op in operators)]
     context=[g for ln in lines if (sum(bool(re.match(r'CM|MS[AB]',g['font'])) or bool(g['flags']&2) for g in ln)>.45*len(ln)
         or len(ln)<=4 and all(g['char'] in '()[]0123456789=+-,.' for g in ln)) for g in ln]
     rules=[]
@@ -158,28 +184,75 @@ def extract_display_formulas(page):
         if local:
             box=union([{'box':box}]+[{'box':[r[0],r[1]-.15,r[2],r[1]+.15]} for r in local])
         try:
-            if seed[0]['char'] in '=≤≥':raise Unsupported('multiline_continuation_requires_review')
             prose=[]
             for i,g in enumerate(seed):
                 if i and g['box'][0]-seed[i-1]['box'][2]>size*.15:prose.append(' ')
                 prose.append(g['char'] if not (re.match(r'CM|MS[AB]',g['font']) or g['flags']&2) else ' ')
             words=re.findall(r'[A-Za-z]{3,}', ''.join(prose))
             if len(words)>=3:raise Unsupported('prose_mixed_with_math')
-            if any((g['char'] in '∑∏∫' or g['font'].startswith('CMEX') and g['char'].isascii() and g['char'].isalpha()) and abs(g['box'][0]-box[0])<size*2 and abs(g['y']-baseline)<max(g['size'],size)*3 for g in glyphs):
+            if any((g['font'].startswith('CMEX') and g['char'].isascii() and g['char'].isalpha()) and abs(g['box'][0]-box[0])<size*2 and abs(g['y']-baseline)<max(g['size'],size)*3 for g in glyphs):
                 raise Unsupported('large_operator_limits_require_review')
-            if any(s[0]['char']=='=' and 0<median(g['y'] for g in s)-baseline<size*1.8 and abs(s[0]['box'][0]-box[0])<size*2 for s in seeds if s is not seed):
-                raise Unsupported('multiline_continuation_requires_review')
             missing=[g for g in glyphs if g not in own and box[0]<(g['box'][0]+g['box'][2])/2<box[2] and box[1]<(g['box'][1]+g['box'][3])/2<box[3]]
             if missing:raise Unsupported('unassigned_glyph_inside_formula_region')
             parsed=_parse(own,local);latex=parsed['latex'];status='transcribed_needs_review';reason='native_geometry_complete_glyph_coverage'
         except Unsupported as error:latex=None;status='unsupported_geometry';reason=str(error)
         formulas.append({'raw_bbox':box,'latex':latex,'status':status,'conversion':reason,'method':VERSION,
             'original_text':page.get_text('text',clip=box).strip(),'needs_review':True,
-            'glyphs':[{'text':g['char'],'bbox':g['box'],'origin_y_unrotated_points':g['y'],'size':g['size'],'font':g['font']} for g in own],
+            'relation_indexes':parsed.get('relation_indexes',[]) if latex else [],'baseline':baseline,'base_size':size,
+            'relation_x':min((g['box'][0] for g in own if g['char']=='=' and g['size']>=size*.88),default=None),
+            'glyphs':[{'text':g['char'],'native_text':g.get('native_text',g['char']),'glyph_mapping':g.get('glyph_mapping'),
+                'bbox':g['box'],'origin_y_unrotated_points':g['y'],'size':g['size'],'font':g['font'],'flags':g['flags']} for g in own],
             'rules':[list(r) for r in local],'glyph_count':len(own)})
-    return formulas,{'version':VERSION,'status':'analyzed','formula_count':len(formulas),'seed_count':len(seeds),'truncated':len(seeds)>40,'seed_budget':40,'model_calls':0,
-        'supported':['native_scripts','vector_rule_fractions','vector_rule_radicals','nested_operators'],
+    formulas=_join_aligned(formulas,glyphs,page)
+    for formula in formulas:
+        for key in ('relation_indexes','baseline','base_size','relation_x'):formula.pop(key,None)
+    return formulas,{'version':VERSION,'status':'analyzed','formula_count':len(formulas),'seed_count':len(seeds),'truncated':len(seeds)>40,'seed_budget':40,'model_calls':0,'glyph_mapping_audit':font_audit,
+        'supported':['native_scripts','vector_rule_fractions','vector_rule_radicals','nested_operators','embedded_named_operators','observed_operator_limits','aligned_equal_continuations'],
         'unsupported':['scanned_math','arbitrary_matrices','missing_font_maps','unbounded_multiline_derivations']}
+
+
+def _join_aligned(formulas,glyphs,page):
+    """Join only aligned bare-equality continuations with complete row parses."""
+    ordered=sorted(formulas,key=lambda f:(f['baseline'],f['raw_bbox'][0]));result=[]
+    def aligned(row):
+        value=row['latex'];indexes=row['relation_indexes']
+        if len(indexes)!=1:raise Unsupported('ambiguous_alignment_relation')
+        i=indexes[0]
+        return value[:i]+'&'+value[i:]
+    def source_row(row):
+        return {'latex':row['latex'],'raw_bbox':row['raw_bbox'],'original_text':row['original_text'],
+                'baseline_unrotated_points':row['baseline']}
+    for current in ordered:
+        if not current['latex'] or not current['latex'].lstrip().startswith('='):
+            result.append(current);continue
+        previous=result[-1] if result else None
+        eligible=bool(previous and previous['latex'] and previous['relation_x'] is not None and current['relation_x'] is not None
+            and abs(previous['relation_x']-current['relation_x'])<2
+            and current['base_size']*.6<current['baseline']-previous['baseline']<current['base_size']*4.5
+            and len(previous.get('source_rows',[]))<8)
+        if eligible:
+            combined=union([{'box':previous['raw_bbox']},{'box':current['raw_bbox']}])
+            own={(round(g['bbox'][0],3),round(g['origin_y_unrotated_points'],3),g['text']) for row in (previous,current) for g in row['glyphs']}
+            missing=[g for g in glyphs if combined[0]<(g['box'][0]+g['box'][2])/2<combined[2]
+                and combined[1]<(g['box'][1]+g['box'][3])/2<combined[3]
+                and (round(g['box'][0],3),round(g['y'],3),g['char']) not in own]
+            eligible=not missing
+        if not eligible:
+            current['latex']=None;current['status']='unsupported_geometry';current['conversion']='orphan_or_ambiguous_continuation'
+            result.append(current);continue
+        try:
+            rows=previous.get('source_rows',[source_row(previous)])+[source_row(current)]
+            latex_rows=(previous['_aligned_latex_rows'] if '_aligned_latex_rows' in previous else [aligned(previous)])+[aligned(current)]
+        except Unsupported:
+            current['latex']=None;current['status']='unsupported_geometry';current['conversion']='ambiguous_alignment_relation'
+            result.append(current);continue
+        previous.update(raw_bbox=combined,latex=r'\begin{aligned}'+r' \\ '.join(latex_rows)+r'\end{aligned}',
+            source_rows=rows,_aligned_latex_rows=latex_rows,baseline=current['baseline'],
+            glyphs=previous['glyphs']+current['glyphs'],rules=previous['rules']+current['rules'],
+            glyph_count=previous['glyph_count']+current['glyph_count'],
+            original_text=page.get_text('text',clip=combined).strip(),conversion='complete_aligned_rows_with_glyph_coverage')
+    for formula in result:formula.pop('_aligned_latex_rows',None)
+    return result
 
 
 def pymupdf_flags():

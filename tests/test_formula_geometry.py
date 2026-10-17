@@ -40,7 +40,7 @@ def test_fraction_positions_and_versioned_evidence(tmp_path, monkeypatch, rotati
     run = doc['current_run']['id']
     saved_before = lib.get_page(doc['id'], 1, run)
     result = LayoutService(lib).analyze_page(doc['id'], 1, run)
-    formulas = [f for f in result['formulas'] if f.get('method') == 'native-math-geometry-v1']
+    formulas = [f for f in result['formulas'] if f.get('method') == 'native-math-geometry-v2']
     assert len(formulas) == 1
     formula = formulas[0]
     assert compact(formula['latex']) == r'x=\frac{a+b}{c}'
@@ -105,17 +105,61 @@ def test_plain_text_and_image_math_not_fabricated():
             assert values == [] and 'scanned_math' in audit['unsupported']
 
 
-def test_multiline_and_mixed_prose_are_not_reported_as_complete_equations():
+def test_aligned_rows_recover_completely_while_mixed_prose_remains_unsupported():
     source = ROOT/'data/samples/UnderstandingDeepLearning_02_09_26_C.pdf'
     if not source.exists():
         pytest.skip('Optional existing textbook sample unavailable')
     with pymupdf.open(source) as pdf:
         values = extract_display_formulas(pdf[31])[0]
-        continued = [f for f in values if f['conversion'] == 'multiline_continuation_requires_review']
-        assert len(continued) == 2 and all(f['latex'] is None for f in continued)
+        continued = [f for f in values if f['conversion'] == 'complete_aligned_rows_with_glyph_coverage']
+        assert len(continued) == 1 and len(continued[0]['source_rows']) == 2
+        assert compact(continued[0]['latex']) == r'\begin{aligned}y&=f[x,\boldsymbol{\varphi}]\\&=\varphi_{0}+\varphi_{1}x.\end{aligned}'
         values = extract_display_formulas(pdf[38])[0]
         prose = [f for f in values if f['conversion'] == 'prose_mixed_with_math']
         assert prose and all(f['latex'] is None for f in prose)
         values = extract_display_formulas(pdf[32])[0]
-        limits = [f for f in values if f['conversion'] == 'large_operator_limits_require_review']
-        assert limits and all(f['latex'] is None for f in limits)
+        assert len(values)==1
+        assert compact(values[0]['latex']) == r'\begin{aligned}L[\boldsymbol{\varphi}]&=\sum_{i=1}^{I}(f[x_{i},\boldsymbol{\varphi}]-y_{i})^{2}\\&=\sum_{i=1}^{I}(\varphi_{0}+\varphi_{1}x_{i}-y_{i})^{2}.\end{aligned}'
+        mappings=[g['glyph_mapping'] for g in values[0]['glyphs'] if g.get('glyph_mapping')]
+        assert len(mappings)==2 and all(m['glyph_name']=='summationdisplay' and m['native_text']=='X' and m['mapped_text']=='∑' for m in mappings)
+        assert not any(compact(f['latex'])=='i=1' for f in values)
+        values,audit=extract_display_formulas(pdf[71])
+        product=next(f for f in values if f['latex'] and r'\prod' in f['latex'])
+        assert compact(product['latex'])==r'Pr(\mathbf{y}_{1},\mathbf{y}_{2},...,\mathbf{y}_{I}\vert\mathbf{x}_{1},\mathbf{x}_{2},...,\mathbf{x}_{I})=\prod_{i=1}^{I}Pr(\mathbf{y}_{i}\vert\mathbf{x}_{i}).'
+        assert any(m['glyph_name']=='productdisplay' and m['mapped_text']=='∏' for m in audit['glyph_mapping_audit'])
+
+
+def test_orphan_continuations_and_intervening_prose_are_not_joined():
+    with pymupdf.open() as pdf:
+        p=pdf.new_page()
+        p.insert_text((40,80),'x = a + b',fontsize=14,fontname='tiit')
+        p.insert_text((40,105),'A paragraph separates the equations.',fontsize=12)
+        p.insert_text((49,130),'= c + d',fontsize=14,fontname='tiit')
+        p.insert_text((40,210),'z = a + c',fontsize=14,fontname='tiit')
+        values=extract_display_formulas(p)[0]
+    assert len(values)==3
+    assert values[0]['latex'] and values[1]['latex'] is None and values[2]['latex']
+    assert values[1]['conversion']=='orphan_or_ambiguous_continuation'
+    assert not any(f.get('source_rows') for f in values)
+
+
+@pytest.mark.parametrize('rotation',[0,90])
+def test_named_summations_and_each_aligned_row_have_versioned_anchors(tmp_path,monkeypatch,rotation):
+    source=ROOT/'data/samples/UnderstandingDeepLearning_02_09_26_C.pdf'
+    if not source.exists():pytest.skip('Optional existing textbook absent')
+    monkeypatch.setenv('RESEARCH_OCR_ENABLED','0')
+    lib=Library(tmp_path)
+    with pymupdf.open(source) as original,pymupdf.open() as one:
+        one.insert_pdf(original,from_page=32,to_page=32);one[0].set_rotation(rotation)
+        data=one.tobytes()
+    doc=lib.import_document(data,'loss-equations.pdf')['document'];lib.process_next_job()
+    run=doc['current_run']['id'];saved=lib.get_page(doc['id'],1,run)
+    result=LayoutService(lib).analyze_page(doc['id'],1,run)
+    formula=next(f for f in result['formulas'] if f.get('source_rows'))
+    assert len(formula['source_rows'])==2 and formula['latex'].count(r'\sum')==2
+    for row in formula['source_rows']:
+        assert row['evidence']['document_id']==doc['id'] and row['evidence']['run_id']==run
+        assert row['evidence']['page']==1 and row['bbox']==row['evidence']['bbox']
+        assert all(0<=v<=1 for v in row['bbox']) and 'raw_bbox' not in row
+    assert any(g['native_text']=='X' and g['text']=='∑' for g in formula['glyph_evidence'])
+    assert lib._source_path(doc['id']).read_bytes()==data and lib.get_page(doc['id'],1,run)==saved

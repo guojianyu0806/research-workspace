@@ -49,7 +49,7 @@ def main():
         for number, gold in expected.items():
             saved = library.get_page(doc['id'], number, run)
             result = LayoutService(library).analyze_page(doc['id'], number, run)
-            values = [f for f in result['formulas'] if f.get('method') == 'native-math-geometry-v1']
+            values = [f for f in result['formulas'] if f.get('method') == 'native-math-geometry-v2']
             check(f'page{number}_exact_formula_structures', [compact(f['latex']) for f in values] == [compact(x) for x in gold])
             check(f'page{number}_stable_saved_parse', saved == library.get_page(doc['id'], number, run))
             check(f'page{number}_unique_ids', len({f['id'] for f in result['formulas']}) == len(result['formulas']))
@@ -63,7 +63,7 @@ def main():
     check('source_unchanged', source.read_bytes() == original and library._source_path(doc['id']).read_bytes() == original)
     negatives = []
     for filename, pages in [('1810.04805v2.pdf', [7]), ('2005.11401v4.pdf', [3,4]),
-            ('UnderstandingDeepLearning_02_09_26_C.pdf', [32,33,39])]:
+            ('UnderstandingDeepLearning_02_09_26_C.pdf', [32,33,39,72])]:
         path = ROOT/'data/samples'/filename
         before = hashlib.sha256(path.read_bytes()).hexdigest()
         with pymupdf.open(path) as pdf:
@@ -71,16 +71,31 @@ def main():
                 values, audit = extract_display_formulas(pdf[number-1])
                 negatives.append({'file': filename, 'page': number, 'formulas': values, 'audit': audit})
                 check(f'{filename}_page{number}_unsupported_not_guessed', all(f['latex'] is None for f in values if f['status'] == 'unsupported_geometry'))
+                for i,formula in enumerate(values):
+                    if formula.get('source_rows') or formula['latex'] and r'\prod' in formula['latex']:
+                        pdf[number-1].get_pixmap(dpi=170,clip=pymupdf.Rect(formula['raw_bbox'])+(-3,-3,3,3)).save(
+                            str(output/f'complex-{number}-formula{i+1}.png'))
         check(filename+'_source_unchanged', hashlib.sha256(path.read_bytes()).hexdigest() == before)
     rag = next(n for n in negatives if n['file'].startswith('2005') and n['page']==3)
-    check('rag_both_encoder_subscripts', any(compact(f['latex']) == r'd(z)=\operatorname{BERT}_{d}(z),q(x)=\operatorname{BERT}_{q}(x)' for f in rag['formulas']))
+    check('rag_both_encoder_subscripts', any(compact(f['latex']) == r'\mathbf{d}(z)=\operatorname{BERT}_{d}(z),\mathbf{q}(x)=\operatorname{BERT}_{q}(x)' for f in rag['formulas']))
     textbook = [f for n in negatives if n['file'].startswith('Understanding') for f in n['formulas']]
-    for reason in ['multiline_continuation_requires_review','prose_mixed_with_math','large_operator_limits_require_review']:
+    for reason in ['prose_mixed_with_math']:
         check(reason, any(f['conversion']==reason and f['latex'] is None for f in textbook))
+    check('three_complete_aligned_regions',all(any(len(f.get('source_rows',[]))==2 and f['latex'] is not None for f in n['formulas'])
+        for n in negatives if n['file'].startswith('Understanding') and n['page'] in [32,33,39]))
+    sums=next(n for n in negatives if n['file'].startswith('Understanding') and n['page']==33)['formulas']
+    check('two_sums_and_limits_in_one_complete_region',len(sums)==1 and compact(sums[0]['latex'])==
+        r'\begin{aligned}L[\boldsymbol{\varphi}]&=\sum_{i=1}^{I}(f[x_{i},\boldsymbol{\varphi}]-y_{i})^{2}\\&=\sum_{i=1}^{I}(\varphi_{0}+\varphi_{1}x_{i}-y_{i})^{2}.\end{aligned}')
+    mappings=[g['glyph_mapping'] for f in sums for g in f['glyphs'] if g.get('glyph_mapping')]
+    check('summation_from_actual_font_glyph_names',len(mappings)==2 and all(m['glyph_name']=='summationdisplay'
+        and m['native_text']=='X' and m['mapped_text']=='∑' and len(m['font_sha256'])==64 for m in mappings))
+    check('limits_not_mislabelled_as_standalone_equations',not any(compact(f['latex'])=='i=1' for f in sums))
+    products=next(n for n in negatives if n['file'].startswith('Understanding') and n['page']==72)['formulas']
+    check('product_with_observed_limits',any(compact(f['latex'])==r'Pr(\mathbf{y}_{1},\mathbf{y}_{2},...,\mathbf{y}_{I}\vert\mathbf{x}_{1},\mathbf{x}_{2},...,\mathbf{x}_{I})=\prod_{i=1}^{I}Pr(\mathbf{y}_{i}\vert\mathbf{x}_{i}).' for f in products))
     report = {'checks': checks, 'expected_attention_formulas': sum(map(len,expected.values())), 'model_calls': 0,
         'source_sha256': hashlib.sha256(original).hexdigest(), 'document_id': doc['id'], 'run_id': run,
         'negative_and_scope_samples': negatives, 'status': 'finite_native_subset_verified',
-        'limitations': ['No scan-formula OCR', 'No arbitrary matrices, large-operator limits or multiline derivations',
+        'limitations': ['No general scan-formula OCR', 'No arbitrary matrices or unbounded multiline derivations',
             'All transcriptions remain unverified candidates until original-page review']}
     (output/'results.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({'output': str(output), 'checks': len(checks), 'passed': sum(x['passed'] for x in checks),
