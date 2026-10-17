@@ -66,6 +66,7 @@ class ResearchTask(StrictInput):
     page: int | None = Field(default=None,ge=1)
     block_ids: list[str] | None = Field(default=None,max_length=10000)
     target_language: Literal['zh','en'] = 'zh'
+    glossary: dict[str,str] | None = Field(default=None,max_length=50)
 
 
 class SubscriptionInput(StrictInput):
@@ -131,6 +132,9 @@ def task_markdown(job):
     saved = {item.get('stage'):item.get('result') for item in job.get('completed_items',[]) if isinstance(item,dict)}
     result = (job['result'] or saved.get('future_verification') or saved.get('future_synthesis') or {}) if job['kind']=='future_work' else (job['result'] or {'blocks':job.get('completed_items',[])})
     lines = [f'# {job["kind"]}',f'任务编号：{job["id"]}',f'状态：{job["status"]}','']
+    glossary=result.get('glossary') or job.get('payload',{}).get('glossary')
+    if glossary:
+        lines.extend(['## 本任务统一术语']+[f'- {plain(source)} → {plain(target)}' for source,target in glossary.items()]+[''])
     usage=job.get('usage',{})
     if usage.get('calls'):
         lines.extend(['## 模型用量回执',f'实际请求：{usage["calls"]} 次；提供Token回执：{usage["usage_reported_calls"]} 次。',
@@ -303,6 +307,10 @@ def build_router():
         if not service.capabilities()['configured']:
             raise HTTPException(503,'尚未配置大模型服务。请先完成本机模型配置；此处不会生成模拟结果。')
         payload = body.model_dump(exclude_none=True)
+        if body.glossary is not None:
+            from .intelligence import validate_glossary
+            if body.kind not in {'translate','translate_text'}:raise HTTPException(400,'术语表仅适用于翻译任务。')
+            payload['glossary']=validate_glossary(body.glossary)
         if body.kind=='discover_qa':
             from .discovery import DiscoveryService
             if not body.paper_id or not body.question.strip():raise HTTPException(400,'请选择公开论文并填写研究问题。')

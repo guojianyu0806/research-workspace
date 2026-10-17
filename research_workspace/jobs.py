@@ -165,16 +165,17 @@ class JobStore:
     async def _text_step(self,service,job):
         """Save one segment per step; share the service's bounded language repair."""
         from .intelligence import (MAX_TRANSLATION_TEXT_CHARS, PROMPT_VERSION, ModelOutputError,
-            protect_text, restore_text, split_protected_text, translate_protected_chunk)
+            protect_text, restore_text, split_protected_text, translate_protected_chunk,validate_glossary)
         service._require_model()
         payload,job_id = job['payload'],job['id']
         source = payload['text']
+        glossary=validate_glossary(payload.get('glossary'))
         language = payload.get('target_language','en')
         if not isinstance(source,str) or not source.strip() or len(source)>MAX_TRANSLATION_TEXT_CHARS:
             raise ValueError('翻译文本为空或超过允许长度。')
         if language not in {'zh','en'}:
             raise ValueError('当前翻译目标仅支持zh或en。')
-        protected,replacements = protect_text(source)
+        protected,replacements = protect_text(source,glossary=glossary)
         chunks = split_protected_text(protected,max_chars=4000)
         self._set_total(job_id,len(chunks))
         done = {item['segment']:item for item in job['completed_items']}
@@ -186,7 +187,7 @@ class JobStore:
                                                      check_cancel=lambda:self.check_cancel(job_id))
             item = {'segment':index,'total_segments':len(chunks),
                     'source_text':restore_text(chunk,replacements),
-                    'translated_text':restore_text(output.translated_text,replacements)}
+                    'translated_text':restore_text(output.translated_text,replacements,glossary=glossary)}
             self.save_item(job_id,f'segment:{index}',item,len(chunks))
             done[index] = item
             if len(done)<len(chunks):
@@ -198,7 +199,7 @@ class JobStore:
         if Counter(re.findall(r'\d+(?:[.,]\d+)*',source)) != Counter(re.findall(r'\d+(?:[.,]\d+)*',translated)):
             raise ModelOutputError('翻译改变了原文数字，结果已拒绝。')
         return {'status':'completed','source_text':source,'translated_text':translated,
-                'target_language':language,'segments':segments,'prompt_version':PROMPT_VERSION,
+                'target_language':language,'segments':segments,'prompt_version':PROMPT_VERSION,'glossary':glossary or {},
                 'verification':'protected_spans_and_numeric_preservation; target_language_sanity; translation_quality_not_guaranteed',
                 'trace':[service._trace('translate',f'已核验目标语言并持久保存{len(chunks)}个片段；可从已保存片段继续。')]}
 
@@ -245,13 +246,15 @@ class JobStore:
                             if not isinstance(selected,str) or not selected.strip() or len(selected)>16000 or selected not in source.text:
                                 raise ValueError('选中文字不属于该文献版本的原文文本块。')
                             translated = await service.translate_text(selected,target_language=payload.get('target_language','zh'),
-                                                                       check_cancel=lambda:self.check_cancel(job_id))
+                                                                       check_cancel=lambda:self.check_cancel(job_id),
+                                                                       **({'glossary':payload['glossary']} if payload.get('glossary') else {}))
                             translated.update({'document_id':source.document_id,'run_id':source.run_id,
                                 'block_id':source.block_id,'evidence_id':source.evidence_id,
                                 'page':source.page,'bbox':source.bbox,'source_scope':'selected_text_within_block'})
                         else:
                             translated = await service.translate_block(block,target_language=payload.get('target_language','zh'),
-                                                                        check_cancel=lambda:self.check_cancel(job_id))
+                                                                        check_cancel=lambda:self.check_cancel(job_id),
+                                                                        **({'glossary':payload['glossary']} if payload.get('glossary') else {}))
                         self.save_item(job_id,block['block_id'],translated,len(selection['blocks']))
                         done[block['block_id']] = translated
                         if len(done)<len(selection['blocks']):
@@ -260,7 +263,7 @@ class JobStore:
                         break
                 result = {key:value for key,value in selection.items() if key!='blocks'}
                 result.update({'blocks':[done[b['block_id']] for b in selection['blocks']], 'target_language':payload.get('target_language','zh'),
-                               'status':'partial' if selection.get('missing_pages') else 'completed'})
+                               'status':'partial' if selection.get('missing_pages') else 'completed','glossary':payload.get('glossary',{})})
             elif kind=='translate_text':
                 result = await self._text_step(service,job)
                 if result is None:

@@ -248,6 +248,9 @@
     form.append(scopeGroup);
     const target = select([["zh", "中文"], ["en", "学术英文"]]);
     const targetField = field("目标语言", target); form.append(targetField);
+    const glossaryInput=textarea("每行一项，例如：perplexity => 困惑度\nn-gram => n-gram",3);
+    glossaryInput.maxLength=10000;
+    const glossaryField=field("统一术语（可选，最多50项）",glossaryInput);form.append(glossaryField);
     const prompt = textarea("输入希望从原文核验的问题。", 6);
     const promptField = field("研究问题", prompt); form.append(promptField);
     const inputNote = node("p", "rs-muted rs-small"); form.append(inputNote);
@@ -326,6 +329,7 @@
       singleField.hidden = !isDocumentTranslation; scopeGroup.hidden = !isDocumentTranslation;
       pageField.hidden = scope.value !== "page"; page.required = isDocumentTranslation && scope.value === "page";
       targetField.hidden = !isDocumentTranslation && !isTextTranslation;
+      glossaryField.hidden = !isDocumentTranslation && !isTextTranslation;
       promptField.hidden = isDocumentTranslation;
       prompt.required = ["qa", "compare", "draft", "translate_text"].includes(taskKind);
       const label = taskKind === "draft" ? "研究idea与论文框架要求" : isTextTranslation ? "待翻译学术文本" : ["review", "future_work"].includes(taskKind) ? "关注方向（可选）" : "研究问题";
@@ -386,6 +390,14 @@
       state.resultStamp = signature;
       const checkpoints = job.kind === "future_work" ? new Map((job.completed_items || []).map((item) => [item.stage, item.result])) : new Map();
       const output = job.result || checkpoints.get("future_verification") || checkpoints.get("future_synthesis");
+      const addGlossary=() => {
+        const entries=Object.entries(output?.glossary || job.payload?.glossary || {});
+        if(!entries.length) return;
+        const details=node("details","rs-events"),list=node("ul","rs-event-list");
+        details.append(node("summary","",`本任务统一术语（${entries.length}项）`));
+        for(const [source,target] of entries) list.append(node("li","",`${source} → ${target}`));
+        details.append(list);resultArea.prepend(details);
+      };
       if (job.kind === "translate") {
         if (pending(job) && !output && !job.completed_items?.length) {
           state.bilingual?.destroy(); state.bilingual = null;
@@ -398,6 +410,7 @@
           target_language: job.payload?.target_language || "zh" };
         if (window.ResearchBilingual) {
           state.bilingual = window.ResearchBilingual.render(resultArea, value, { onEvidence: options.onEvidence });
+          addGlossary();
         } else {
           resultArea.replaceChildren(node("p", "rs-muted", "双语阅读组件未加载；可通过任务导出查看已保存结果。"));
         }
@@ -405,6 +418,7 @@
       }
       state.bilingual?.destroy(); state.bilingual = null;
       resultArea.replaceChildren();
+      addGlossary();
       if (!output) { resultArea.append(node("p", "rs-empty", pending(job) ? "任务正在处理，结果保存后会在这里显示。" : "此任务尚无可展示结果。")); return; }
       if (output.status === "insufficient_evidence") resultArea.append(node("p", "rs-result-note", "证据不足：本次未生成确定性结论。"));
       const isFutureWork = job.kind === "future_work" || output.kind === "future_work";
@@ -569,6 +583,12 @@
       event.preventDefault(); if (state.posting || !form.reportValidity()) return;
       if (!state.configured) { life.show("请先配置真实模型服务。", true); return; }
       const payload = { kind: kind.value };
+      if (["translate","translate_text"].includes(kind.value) && glossaryInput.value.trim()) {
+        const entries=glossaryInput.value.split(/\r?\n/).filter(line=>line.trim());
+        if(entries.length>50 || entries.some(line=>line.split("=>").length!==2 || line.split("=>").some(part=>!part.trim()))) {life.show("术语表每行使用“原文术语 => 统一译法”，最多50项。",true);return;}
+        payload.glossary=Object.fromEntries(entries.map(line=>line.split("=>").map(part=>part.trim())));
+        if(Object.keys(payload.glossary).length!==entries.length){life.show("术语表存在重复词条，请合并后提交。",true);return;}
+      }
       if (kind.value === "translate") {
         if (!single.value) { life.show("请先选择有可用文字的文献。", true); return; }
         payload.document_id = single.value; payload.target_language = target.value;

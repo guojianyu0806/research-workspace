@@ -2006,13 +2006,14 @@ class IntelligenceService:
                 block_id=row["id"], page=row["page"], bbox=json.loads(row["bbox"]), text=row["text"])
 
     async def translate_text(self, text: str, *, target_language: Literal["zh", "en"] = "en",
-                             progress: Callable[[dict], Any] | None = None, check_cancel=None) -> dict:
+                             progress: Callable[[dict], Any] | None = None, check_cancel=None, glossary=None) -> dict:
         self._require_model()
         if target_language not in {"zh", "en"}:
             raise LibraryError("当前翻译目标仅支持zh或en。")
         if not isinstance(text, str) or not text.strip() or len(text) > MAX_TRANSLATION_TEXT_CHARS:
             raise LibraryError(f"翻译文本不能为空，单次不得超过{MAX_TRANSLATION_TEXT_CHARS}个字符；请分块处理更长文本。")
-        protected, replacements = protect_text(text)
+        glossary=validate_glossary(glossary)
+        protected, replacements = protect_text(text,glossary=glossary)
         chunks = split_protected_text(protected, max_chars=4000)
         outputs = []
         segments = []
@@ -2020,7 +2021,7 @@ class IntelligenceService:
             result = await translate_protected_chunk(self.provider, chunk, target_language,
                                                      index + 1, len(chunks), check_cancel=check_cancel)
             outputs.append(result.translated_text)
-            translated = restore_text(result.translated_text, replacements)
+            translated = restore_text(result.translated_text, replacements,glossary=glossary)
             segment = {"segment": index + 1, "total_segments": len(chunks),
                        "source_text": restore_text(chunk, replacements), "translated_text": translated}
             segments.append(segment)
@@ -2028,33 +2029,33 @@ class IntelligenceService:
                 value = progress(segment)
                 if inspect.isawaitable(value):
                     await value
-        translated_text = restore_text("\n".join(outputs), replacements)
+        translated_text = restore_text("\n".join(outputs), replacements,glossary=glossary)
         if Counter(re.findall(r"\d+(?:[.,]\d+)*", text)) != Counter(re.findall(r"\d+(?:[.,]\d+)*", translated_text)):
             raise ModelOutputError("翻译改变了原文数字，结果已拒绝。")
         return {"status": "completed", "source_text": text, "translated_text": translated_text,
-                "target_language": target_language, "segments": segments, "prompt_version": PROMPT_VERSION,
+                "target_language": target_language, "segments": segments, "prompt_version": PROMPT_VERSION,"glossary":glossary,
                 "trace": [self._trace("protect", "对可识别的代码、公式、引用标记及数字进行原样保留。"),
                     self._trace("translate", f"已调用模型翻译{len(chunks)}个片段，并核验保留标记、数字及目标语言。")],
                 "verification": "protected_spans_and_numeric_preservation; target_language_sanity; translation_quality_not_guaranteed"}
 
     async def translate_block(self, block: Evidence | dict, *,
-                              target_language: Literal["zh", "en"] = "zh", check_cancel=None) -> dict:
+                              target_language: Literal["zh", "en"] = "zh", check_cancel=None, glossary=None) -> dict:
         self._require_model()
         source = self._canonical_block(block)
         translated = await self.translate_text(source.text, target_language=target_language,
-                                               check_cancel=check_cancel)
+                                               check_cancel=check_cancel,glossary=glossary)
         return {**translated, "document_id": source.document_id, "run_id": source.run_id,
                 "block_id": source.block_id, "evidence_id": source.evidence_id,
                 "page": source.page, "bbox": source.bbox}
 
     async def translate(self, document_id: str, *, run_id: str | None = None, page: int | None = None,
                         block_ids: list[str] | None = None, target_language: Literal["zh", "en"] = "zh",
-                        progress: Callable[[dict], Any] | None = None) -> dict:
+                        progress: Callable[[dict], Any] | None = None, glossary=None) -> dict:
         self._require_model()
         selection = self.list_translation_blocks(document_id, run_id=run_id, page=page, block_ids=block_ids)
         translated = []
         for block in selection["blocks"]:
-            result = await self.translate_block(block, target_language=target_language)
+            result = await self.translate_block(block, target_language=target_language,glossary=glossary)
             translated.append(result)
             if progress is not None:
                 value = progress(result)
@@ -2234,7 +2235,25 @@ _PROTECTED_SPAN = re.compile(
 )
 
 
-def protect_text(text: str) -> tuple[str, dict[str, str]]:
+def validate_glossary(glossary):
+    if glossary is None:return {}
+    if not isinstance(glossary,dict) or len(glossary)>50:raise LibraryError('术语表最多包含50项。')
+    result={}
+    for source,target in glossary.items():
+        if (not isinstance(source,str) or not isinstance(target,str) or not 1<=len(source.strip())<=80 or not 1<=len(target.strip())<=120
+                or not re.fullmatch(r'[A-Za-z0-9\u3400-\u9fff .-]+',source) or not re.search(r'[A-Za-z\u3400-\u9fff]',source)
+                or any(ord(c)<32 for c in target) or _PRESERVATION_MARKER.search(target)):
+            raise LibraryError('术语须为简短词组；不能包含公式、网址、保留标记或控制字符。')
+        source=source.strip().casefold();target=target.strip()
+        if Counter(re.findall(r'\d+(?:[.,]\d+)*',source))!=Counter(re.findall(r'\d+(?:[.,]\d+)*',target)):
+            raise LibraryError('术语映射不能新增、删除或改变数字。')
+        if source in result and result[source]!=target:raise LibraryError('同一术语不能指定多个不同译法。')
+        result[source]=target
+    return result
+
+
+def protect_text(text: str, *, glossary=None) -> tuple[str, dict[str, str]]:
+    glossary=validate_glossary(glossary)
     namespace = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
     replacements = {}
     def replace(match):
@@ -2244,17 +2263,26 @@ def protect_text(text: str) -> tuple[str, dict[str, str]]:
                 and any(len(word) > 1 for word in re.findall(r"[A-Za-z]+", span))):
             # A hyphenated term such as state-of-the-art is prose. Still
             # protect embedded values in terms such as model-12.
-            return _NON_MATH_SPAN.sub(replace, span)
+            inner=re.compile(term_pattern+'|'+_NON_MATH_SPAN.pattern) if glossary else _NON_MATH_SPAN
+            return inner.sub(replace, span)
         token = f"⟪K{namespace}_{len(replacements)}⟫"
         replacements[token] = span
         return token
     if _PRESERVATION_MARKER.search(text):
         raise LibraryError("原文包含翻译保留标记格式，请先处理该内容以避免标记冲突。")
-    return _PROTECTED_SPAN.sub(replace, text), replacements
+    pattern=_PROTECTED_SPAN
+    if glossary:
+        terms='|'.join(re.escape(term) for term in sorted(glossary,key=len,reverse=True))
+        # Earlier code/formula/URL branches retain priority; glossary never edits
+        # the contents of an already protected span.
+        term_pattern=rf'(?<![A-Za-z0-9_])(?i:{terms})(?![A-Za-z0-9_])'
+        pattern=re.compile(pattern.pattern+'|'+term_pattern,re.MULTILINE)
+    return pattern.sub(replace, text), replacements
 
 
-def restore_text(text: str, replacements: dict[str, str]) -> str:
-    return _PRESERVATION_MARKER.sub(lambda match: replacements[match.group(0)], text)
+def restore_text(text: str, replacements: dict[str, str], *, glossary=None) -> str:
+    glossary=glossary or {}
+    return _PRESERVATION_MARKER.sub(lambda match: glossary.get(replacements[match.group(0)].casefold(),replacements[match.group(0)]), text)
 
 
 def validate_preserved_tokens(source: str, translated: str) -> None:
