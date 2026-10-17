@@ -9,7 +9,7 @@ from pydantic import Field
 
 from .intelligence import StrictModel, Claim, Evidence
 
-VERSION = 'future-filter-v3'
+VERSION = 'future-filter-v4'
 MAX_DIRECTIONS = 12
 MAX_CONDITIONS = 6
 COVERAGE = Literal['fully_addressed','partially_addressed','evidence_insufficient']
@@ -37,6 +37,7 @@ class ConditionRepair(StrictModel):
 class ConditionReview(StrictModel):
     verdict: Literal['supported','unsupported','insufficient']
     finding_supported_as_written: bool
+    positive_requirement_satisfied: bool
     coverage: COVERAGE
     scope_matched: bool
     qualifiers_preserved: bool
@@ -95,6 +96,13 @@ also requires the ENTIRE finding to be supported as written, not just its topic.
 These checks are distinct from whether the requested condition is addressed.
 A literal quoted limitation can be a supported finding with insufficient
 condition coverage; explicitly_reported refers to the requested positive result.
+positive_requirement_satisfied is true ONLY if a reported method or actual result
+POSITIVELY FULFILS at least part of the ORIGINAL requested work. Merely discussing
+the requested topic, defining a dataset, reporting unsuitability, or explaining
+why the requested experiment cannot be done is false. A supported limitation is
+not a partially delivered experiment. A partly achieved method/result can be
+true even when another qualifier remains unconfirmed. When this flag is false,
+coverage must be evidence_insufficient, even if the limitation finding is true.
 fully_addressed requires an explicitly REPORTED implementation/result satisfying
 the whole condition. A suggestion, future work, topic similarity or missing
 evidence cannot establish it. If part is supported use partially_addressed; when
@@ -179,9 +187,10 @@ def _checked_finding(service, proposed, evidence):
 
 def condition_decision(proposed, review, finding):
     accepted=bool(finding and review and review['verdict']=='supported' and review['finding_supported_as_written'])
-    full=bool(accepted and proposed=='fully_addressed' and review['coverage']=='fully_addressed'
+    positive=bool(accepted and review.get('positive_requirement_satisfied') is True)
+    full=bool(positive and proposed=='fully_addressed' and review['coverage']=='fully_addressed'
         and all(review[k] for k in ('scope_matched','qualifiers_preserved','explicitly_reported')))
-    partial=bool(accepted and proposed in {'fully_addressed','partially_addressed'}
+    partial=bool(positive and proposed in {'fully_addressed','partially_addressed'}
         and review['coverage'] in {'fully_addressed','partially_addressed'})
     return 'fully_addressed' if full else 'partially_addressed' if partial else 'evidence_insufficient'
 
@@ -189,7 +198,8 @@ def condition_decision(proposed, review, finding):
 def exclusion_allowed(conditions, joint, review, documents):
     if not conditions or not all(c['status']=='fully_addressed' for c in conditions):return False
     if not all(c.get('finding') and (c.get('review') or {}).get('verdict')=='supported'
-               and (c.get('review') or {}).get('finding_supported_as_written') is True for c in conditions):return False
+               and (c.get('review') or {}).get('finding_supported_as_written') is True
+               and (c.get('review') or {}).get('positive_requirement_satisfied') is True for c in conditions):return False
     if not joint or not review or review['verdict']!='supported':return False
     if not all(review[k] for k in ('fully_covers_proposal','jointly_satisfied','explicitly_reported')):return False
     cited={q['document_id'] for q in joint['identity']['citations']}
@@ -199,7 +209,7 @@ def exclusion_allowed(conditions, joint, review, documents):
 
 
 async def filter_step(store,service,job,result):
-    """One paid response per durable step; all uncertain results retain the input."""
+    """One logical generation per step; provider attempts stay in the usage ledger."""
     jid=job['id'];saved={i.get('stage'):i for i in job.get('completed_items',[])}
     if 'future_filter_result' in saved:return saved['future_filter_result']['result']
     start=saved.get('future_filter_start',{}).get('result')
@@ -316,7 +326,7 @@ async def filter_step(store,service,job,result):
             stage='repair_finding:'+condition['condition_id']
             if key(stage) not in saved:
                 repair={'status':'not_required','finding':None}
-                if usable and evidence and initial['status']!='fully_addressed':
+                if usable and evidence and not initial.get('finding'):
                     raw=await generate(FINDINGS_PROMPT+'\nThis is the only correction attempt for ONE condition. Repair missing original quotations, not the original requirement. Keep unsupported qualifiers and report uncertainty. Include every needed method sentence as well as table/caption. Do not shorten the finding to make an unsupported full-coverage classification pass.',
                         {'proposal':d['proposed_work'],'condition':condition,'evidence':evidence_input,
                          'previous_attempt':initial},ConditionRepair)

@@ -30,7 +30,7 @@ def digest(value):
     return hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
 
 
-def seed(reuse_evidence_from=None):
+def seed(reuse_evidence_from=None,reuse_findings=False):
     library=Library(ROOT/'data');store=JobStore(library)
     doc=library.get_document('99cdc2449b9844bb9873ca3658d90fd9')
     run=doc['available_run'];assert run['status']=='completed' and run['pages_done']==run['total_pages']==6
@@ -49,29 +49,32 @@ def seed(reuse_evidence_from=None):
     source=store.create('future_work',{'controlled_classifier_input':True,'document_ids':[doc['id']]})
     store.finish(source['id'],'completed',result=result)
     # Explicit acceptance-only reuse of actual immutable planning/retrieval
-    # checkpoints. No findings or support/joint reviews are reused or simulated.
+    # checkpoints. Candidate findings may be explicitly reused as unreviewed
+    # input. No support or joint reviews are reused or simulated.
     if reuse_evidence_from:
         prior=store.get(reuse_evidence_from)
         assert prior['status']=='completed'
         old=next(i['result'] for i in prior['completed_items'] if i['stage']=='future_filter_start')
         assert [d['proposed_work'] for d in old['directions']]==[p for _,p in PROPOSALS]
         assert all(d['documents']==documents for d in old['directions'])
-        selected=[i for i in prior['completed_items'] if i['stage'].endswith(':plan') or i['stage'].endswith(':evidence')]
-        assert len(selected)==6
+        selected=[i for i in prior['completed_items'] if i['stage'].endswith(':plan') or i['stage'].endswith(':evidence')
+                  or (reuse_findings and i['stage'].endswith(':findings'))]
+        assert len(selected)==(9 if reuse_findings else 6)
         total=2+sum(6+3*len(i['result']['conditions']) for i in selected if i['stage'].endswith(':plan'))
         # A short transaction prevents the worker seeing half-seeded checkpoints.
         with library._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             from uuid import uuid4
             jid=uuid4().hex;now=datetime.now(timezone.utc).isoformat()
-            payload={'source_task_id':source['id'],'acceptance_reuses_actual_evidence_from':reuse_evidence_from}
+            payload={'source_task_id':source['id'],'acceptance_reuses_actual_evidence_from':reuse_evidence_from,
+                     'acceptance_reuses_unreviewed_findings':reuse_findings}
             db.execute('INSERT INTO research_jobs VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-                (jid,'future_filter','queued',json.dumps(payload),None,None,7,total,0,now,now))
+                (jid,'future_filter','queued',json.dumps(payload),None,None,1+len(selected),total,0,now,now))
             start={'stage':'future_filter_start','result':{'directions':old['directions'],'base_count':0,'started_at':now,
                 'acceptance_reuses_actual_evidence_from':reuse_evidence_from}}
             for item in [start,*selected]:
                 db.execute('INSERT INTO research_job_items VALUES(?,?,?)',(jid,item['stage'],json.dumps(item,ensure_ascii=False)))
-        store.event(jid,'queued','受控复测复用既有真实固定条件与检索；全部结论、支持度审核和联合审核重新调用 Pro。')
+        store.event(jid,'queued','受控复测复用既有真实固定条件与检索；可显式复用未审核结论候选，全部支持度审核和联合审核重新调用 Pro。')
         job=store.get(jid)
     else:
         with httpx.Client(base_url='http://127.0.0.1:8765',trust_env=False,timeout=30) as client:
@@ -102,6 +105,7 @@ def verify(job_id,source_commit=None):
         check('three_expected_classifications',[r['status'] for r in rows]==['fully_addressed','partially_addressed','evidence_insufficient'])
         check('only_positive_excluded',[r['direction_id'] for r in result['excluded_directions']]==['direction-1'])
         check('uncertain_and_partial_retained',[r['direction_id'] for r in result['retained_directions']]==['direction-2','direction-3'])
+        check('condition_review_v4',result['future_direction_filter']['version']=='future-filter-v4')
         export=client.get('/api/research/tasks/'+job_id+'/export').text
         (output/'export.md').write_text(export,encoding='utf-8')
         originals={};allowed=set();pdf_hashes={}
@@ -129,15 +133,22 @@ def verify(job_id,source_commit=None):
         for row in rows:
             did=row['direction_id'];conditions=row['conditions'];proposal=row['proposed_work'];cursor=0
             check(did+'_original_proposal',proposal==source['future_fulltext']['directions'][row['section_index']]['proposed_work'])
+            stages={i['stage']:i['result'] for i in job['completed_items'] if i['stage'].startswith('future_filter:'+did+':')}
+            retrieval=stages['future_filter:'+did+':evidence']
+            check(did+'_actual_frozen_retrieval',retrieval['status']=='retrieved' and bool(retrieval['evidence']) and
+                all((e['document_id'],e['run_id']) in allowed for e in retrieval['evidence']))
+            check(did+'_export_has_own_retrieval','future_filter:'+did+':evidence' in export)
             for c in conditions:
                 start,end=c['start'],c['end']
                 check(did+c['condition_id']+'_literal_partition',not proposal[cursor:start].strip() and proposal[start:end]==c['source_text'] and start>=cursor)
                 cursor=end
+                checkpoint=stages['future_filter:'+did+':repair_review:'+c['condition_id']]
+                check(did+c['condition_id']+'_final_checkpoint',checkpoint==c)
                 if c['finding']:
                     finding_checks(did+c['condition_id'],c['finding'],c['review'])
                     check(did+c['condition_id']+'_condition_binding',c['review']['condition_id']==c['condition_id'] and c['review']['index_space']=='this condition finding only')
                 if c['status']=='fully_addressed':
-                    check(did+c['condition_id']+'_full_guards',bool(c['finding']) and all(c['review'][k] for k in ('scope_matched','qualifiers_preserved','explicitly_reported')) and c['review']['coverage']=='fully_addressed')
+                    check(did+c['condition_id']+'_full_guards',bool(c['finding']) and all(c['review'][k] for k in ('scope_matched','qualifiers_preserved','explicitly_reported','positive_requirement_satisfied')) and c['review']['coverage']=='fully_addressed')
             check(did+'_all_characters_covered',not proposal[cursor:].strip())
             check(did+'_decision_identity',row['decision_id']=='F_'+digest({k:v for k,v in row.items() if k not in {'decision_id','checked_at'}}) and row['decision_id'] in export)
             if row['excluded']:
@@ -145,6 +156,16 @@ def verify(job_id,source_commit=None):
                 check(did+'_joint_guards',all(c['status']=='fully_addressed' for c in conditions) and all(review[k] for k in ('fully_covers_proposal','jointly_satisfied','explicitly_reported')) and review['index_space']=='joint finding only')
                 docs={q['document_id'] for q in joint['identity']['citations']}
                 check(did+'_single_complete_pdf',len(docs)==1 and all(d['parse_status']=='completed' and d['pages_done']==d['total_pages']>0 for d in row['documents'] if d['document_id'] in docs))
+                quotes=[norm(q['quote']) for q in joint['claim']['citations']]
+                check(did+'_method_result_and_benchmark_together',
+                    any('linearly interpolating together probabilities from all models.' in q for q in quotes)
+                    and any('All models 46.8' in q for q in quotes)
+                    and any('Model combination on the 1B Word Benchmark test set.' in q for q in quotes))
+        negative=[c for c in rows[2]['conditions'] if c['finding']]
+        check('negative_limitation_has_own_reviewed_body_quote',bool(negative) and any(
+            'the benchmark is not useful' in norm(q['quote']) and s['page']==2
+            for c in negative for q in c['finding']['claim']['citations']
+            for s in c['finding']['sources'] if s['evidence_id']==q['evidence_id']))
         calls=job['model_calls'];success=[c for c in calls if c['http_status']==200];usage=job['usage']
         check('real_pro_only',bool(calls) and len(success)==len(calls) and all(c['model']=='deepseek-v4-pro' and c['state']=='response_received' for c in calls))
         check('usage_receipts',usage['calls']==usage['usage_reported_calls']==len(calls))
@@ -157,7 +178,7 @@ def verify(job_id,source_commit=None):
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('job_id',nargs='?');parser.add_argument('--seed-controlled',action='store_true');parser.add_argument('--reuse-evidence-from');parser.add_argument('--source-commit');args=parser.parse_args()
-    if args.seed_controlled:seed(args.reuse_evidence_from)
+    parser=argparse.ArgumentParser();parser.add_argument('job_id',nargs='?');parser.add_argument('--seed-controlled',action='store_true');parser.add_argument('--reuse-evidence-from');parser.add_argument('--reuse-findings',action='store_true');parser.add_argument('--source-commit');args=parser.parse_args()
+    if args.seed_controlled:seed(args.reuse_evidence_from,args.reuse_findings)
     elif args.job_id:verify(args.job_id,args.source_commit)
     else:parser.error('Specify job ID or --seed-controlled.')

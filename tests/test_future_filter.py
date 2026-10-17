@@ -48,7 +48,7 @@ def setup(tmp_path,*,proposals=None,joint_pass=True,bad_quote=False,bad_plan=Fal
                     'finding':finding if '46.8' in c['source_text'] else None} for c in payload['conditions']]}
             if schema.__name__=='ConditionReview':
                 if cancel_review:store.cancel(job['id'])
-                return {'verdict':'supported','finding_supported_as_written':True,'coverage':'fully_addressed','scope_matched':True,
+                return {'verdict':'supported','finding_supported_as_written':True,'positive_requirement_satisfied':True,'coverage':'fully_addressed','scope_matched':True,
                     'qualifiers_preserved':True,'explicitly_reported':True,'reason':'Fixture own quotation supports the complete condition.'}
             if schema.__name__=='ConditionRepair':return {'coverage':'evidence_insufficient','finding':None}
             if schema.__name__=='JointReview':return {'verdict':'supported','fully_covers_proposal':True,
@@ -131,7 +131,7 @@ def test_partition_preserves_qualifiers_numbers_order_and_scope():
 
 def test_joint_proof_cannot_mix_papers_or_partial_parses():
     conditions=[{'status':'fully_addressed','finding':{'claim':'fixture'},
-                 'review':{'verdict':'supported','finding_supported_as_written':True}}]
+                 'review':{'verdict':'supported','finding_supported_as_written':True,'positive_requirement_satisfied':True}}]
     finding={'identity':{'citations':[{'document_id':'a'},{'document_id':'b'}]}}
     review={'verdict':'supported','fully_covers_proposal':True,'jointly_satisfied':True,'explicitly_reported':True}
     docs=[{'document_id':d,'parse_status':'completed','pages_done':2,'total_pages':2} for d in ('a','b')]
@@ -231,3 +231,11 @@ def test_inconsistent_supported_verdict_cannot_promote_unproven_finding():
     review={'verdict':'supported','finding_supported_as_written':False,'coverage':'fully_addressed',
             'scope_matched':True,'qualifiers_preserved':True,'explicitly_reported':True}
     assert condition_decision('fully_addressed',review,{'claim':'fixture'})=='evidence_insufficient'
+
+
+def test_supported_limitations_do_not_count_as_partial_positive_results():
+    review={'verdict':'supported','finding_supported_as_written':True,'coverage':'partially_addressed',
+            'positive_requirement_satisfied':False,'scope_matched':True,'qualifiers_preserved':True,'explicitly_reported':False}
+    assert condition_decision('partially_addressed',review,{'claim':'quoted limitation'})=='evidence_insufficient'
+    review['positive_requirement_satisfied']=True
+    assert condition_decision('partially_addressed',review,{'claim':'actual partial result'})=='partially_addressed'
