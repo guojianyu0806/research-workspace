@@ -27,7 +27,7 @@ from .structure import extract_structure
 # PyMuPDF objects must never be used concurrently by API threads. The parser runs
 # in a separate process; its lock therefore does not block API rendering.
 MUPDF_LOCK = threading.RLock()
-PARSER_VERSION = f"pymupdf-{pymupdf.VersionBind}/text-blocks-v3-column-order"
+PARSER_VERSION = f"pymupdf-{pymupdf.VersionBind}/text-blocks-v4-supported-gutter"
 
 
 class LibraryError(ValueError):
