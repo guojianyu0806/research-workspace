@@ -97,11 +97,16 @@ def verify(job_id,require_training_table=False,allow_auth_recovery=False,source_
             grounding=answer['grounding'];catalog=grounding['claim_catalog'];reviews=grounding['claim_reviews']
             check(did+'_one_to_one_lengths',len(answer['claims'])==len(catalog)==len(reviews)>0)
             check(did+'_complete_answer',not grounding['response_coverage'][-1]['missing_aspects'] and not grounding['response_coverage'][-1]['unverified_statements'])
+            check(did+'_coverage_index_space',grounding['response_coverage'][-1]['claim_ids']==[c['claim_id'] for c in catalog])
             allowed={source_docs[sid] for sid in direction['source_ids'] if sid in source_docs}
             sources={s['evidence_id']:s for s in answer['sources']}
             check(did+'_body_evidence_beyond_abstract_page',any(s['page']>1 for s in sources.values()))
             for ci,claim in enumerate(answer['claims']):
                 entry=catalog[ci];own=[r for r in reviews if r['claim_id']==entry['claim_id']]
+                expected={'text':claim['text'],'citations':[{'citation_id':f'R{qi+1}',**cite,
+                    **{k:sources[cite['evidence_id']][k] for k in ('document_id','run_id','block_id','page','bbox')}}
+                    for qi,cite in enumerate(claim['citations'])]}
+                check(f'{did}_claim_{ci}_content_digest',entry['claim_id']=='C_'+hashlib.sha256(json.dumps(expected,ensure_ascii=False,sort_keys=True).encode()).hexdigest())
                 check(f'{did}_claim_{ci}_identity',len(own)==1 and own[0]['claim_index']==entry['claim_index']==ci and entry['text']==claim['text'] and own[0]['verdict']=='supported')
                 check(f'{did}_claim_{ci}_owns_quotes',bool(claim['citations']) and len(claim['citations'])==len(entry['citations']))
                 for qi,(cite,record) in enumerate(zip(claim['citations'],entry['citations'])):
