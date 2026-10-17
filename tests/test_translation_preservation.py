@@ -159,11 +159,29 @@ def test_repeated_wrong_language_is_rejected_not_completed(tmp_path, source, lan
     assert len(provider.requests) == 2
 
 
-def test_preservation_corruption_is_not_bypassed_by_language_retry(tmp_path):
+def test_repeated_preservation_corruption_is_rejected_after_one_correction(tmp_path):
     provider = FixtureProvider(lambda req, count: "The equation is preserved.")
     with pytest.raises(ModelOutputError, match="受保护"):
         asyncio.run(IntelligenceService(Library(tmp_path), provider).translate_text(SOURCE_WITH_FORMULA))
-    assert len(provider.requests) == 1
+    assert len(provider.requests) == 2
+
+
+def test_source_only_preservation_correction_saves_complete_valid_translation(tmp_path):
+    provider=FixtureProvider(lambda request,count:'Invalid response without the protected values.' if count==1 else translate_formula_fixture(request,count))
+    result=asyncio.run(IntelligenceService(Library(tmp_path),provider).translate_text(SOURCE_WITH_FORMULA))
+    assert 'E = mc^2' in result['translated_text'] and '[1]' in result['translated_text'] and '2 datasets' in result['translated_text']
+    assert len(provider.requests)==2 and provider.requests[0]['text']==provider.requests[1]['text']
+    assert 'Invalid response' not in str(provider.requests[1]) and 'translation_feedback' in provider.requests[1]
+
+
+def test_cancellation_prevents_preservation_correction_purchase(tmp_path):
+    library=Library(tmp_path);store=JobStore(library)
+    job=store.create('translate_text',{'text':SOURCE_WITH_FORMULA,'target_language':'en'})
+    def cancelled(request,count):store.cancel(job['id']);return 'Missing protected markers.'
+    provider=FixtureProvider(cancelled)
+    asyncio.run(store.process_next(IntelligenceService(library,provider)))
+    saved=store.get(job['id'])
+    assert saved['status']=='cancelled' and not saved['completed_items'] and len(provider.requests)==1
 
 
 def test_queued_text_translation_uses_same_language_repair(tmp_path):
@@ -190,7 +208,7 @@ def test_queued_translation_rejects_invalid_results(tmp_path, wrong_result):
     saved = store.get(job["id"])
     assert saved["status"] == "failed"
     assert saved["result"] is None and saved["completed_items"] == []
-    assert len(provider.requests) == (2 if wrong_result == "wrong_language" else 1)
+    assert len(provider.requests) == 2
 
 
 def test_queued_cancellation_prevents_buying_language_repair(tmp_path):

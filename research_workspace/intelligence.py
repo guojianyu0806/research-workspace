@@ -2266,7 +2266,7 @@ def validate_preserved_tokens(source: str, translated: str) -> None:
 
 async def translate_protected_chunk(provider, chunk: str, target_language: str,
                                     segment: int, total_segments: int, check_cancel=None) -> TranslationPayload:
-    """Shared direct/queued translation protocol with one bounded language repair."""
+    """One bounded source-only correction; every accepted result passes all guards."""
     request = {"target_language": target_language, "text": chunk,
                "segment": segment, "total_segments": total_segments}
     for attempt in range(2):
@@ -2275,17 +2275,19 @@ async def translate_protected_chunk(provider, chunk: str, target_language: str,
             if inspect.isawaitable(value):
                 await value
         result = await provider.generate(_prompt("translation_v1"), request, TranslationPayload)
-        # Corrupt markers must fail immediately, never be silently repaired.
-        validate_preserved_tokens(chunk, result.translated_text)
         try:
+            validate_preserved_tokens(chunk, result.translated_text)
             validate_translation_language(chunk, result.translated_text, target_language)
         except ModelOutputError:
             if attempt:
                 raise
             request["translation_feedback"] = (
-                "The previous response left source-language prose untranslated. Translate all prose "
-                "into the requested target language, retaining every opaque marker unchanged. "
-                "Do not add explanations or facts."
+                "The previous response failed preservation or target-language validation and was rejected. "
+                "Generate a fresh complete translation using ONLY the original text above. "
+                "Copy EVERY opaque marker exactly once, including all its Unicode brackets, letters, digits and underscore. "
+                "Do not omit or invent markers or place Arabic digits outside them. "
+                "Translate all prose into the requested language. Do not add facts or explanations. "
+                "An invalid response will not be saved; do not skip any source content."
             )
         else:
             return result

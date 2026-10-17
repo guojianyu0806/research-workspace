@@ -173,7 +173,7 @@
   moduleReturnButton?.addEventListener('click',returnToPrevious);
   document.getElementById('modelSettingsButton').addEventListener('click',()=>window.ResearchModelSettings.open({api:bridge.api}));
   window.ResearchExamples?.mount({api:bridge.api, activate, onEvidence:bridge.onEvidence});
-  window.addEventListener('research:model-configured',()=>{if(activeModule==='research') activate('research');});
+  window.addEventListener('research:model-configured',()=>{if(activeModule==='research') void controller?.refresh?.();});
   const dialog = document.getElementById('accountDialog');
   const form = document.getElementById('accountForm');
   const status = document.getElementById('accountStatus');
