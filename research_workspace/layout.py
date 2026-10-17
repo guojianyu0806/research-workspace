@@ -1,6 +1,7 @@
-"""Native PDF layout observations with conservative, version-bound candidates.
+"""Local PDF layout observations with conservative, version-bound candidates.
 
-No OCR, model calls, downloads, PDF rewrites, or metadata edits are performed.
+Scan tables may invoke project-local OCR. No model calls, downloads, PDF
+rewrites or metadata edits are performed.
 Evidence IDs here identify this layout view; only verified saved-text matches
 receive a Library block_id. Formula/author/reading-order labels are hypotheses.
 """
@@ -16,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'native-layout-v2-title-direction'
+LAYOUT_VERSION = 'local-layout-v3-scan-tables'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -144,7 +145,7 @@ class LayoutService:
             sizes = [span['size'] for span in spans_by_id.values() if span['text'].strip()]
             body_size = median(sizes) if sizes else 0
             notes = ['标题、作者机构、栏序、图注和公式均为规则候选，需核对原页。',
-                     '仅分析PDF原生文字与几何信息；扫描文字、矢量图语义和复杂公式的LaTeX恢复不受支持。',
+                     '原生字形与扫描表格使用独立本地通道；不支持通用OCR版面、矢量图语义或任意图片公式还原。',
                      '图像区域不代表已经识别出图中内容；表格使用线框检测，可能漏检无边框表或误检装饰线。']
             tables,table_raw_boxes = [],[]
             table_status = 'detected_or_none'
@@ -176,6 +177,37 @@ class LayoutService:
                 notes.append('当前页表格检测未成功，未输出猜测的单元格。')
             finally:
                 source.set_rotation(rotation)
+
+            scan_audit={'status':'not_needed'}
+            images=source.get_image_info(hashes=False,xrefs=False)
+            scan_like=(persisted.get('extraction_method')=='ocr' or any(
+                pymupdf.Rect(i['bbox']).get_area()>.2*source.cropbox.get_area() for i in images))
+            if scan_like:
+                try:
+                    from .raster_tables import extract_scan_tables
+                    source.set_rotation(0)
+                    observed,scan_audit=extract_scan_tables(source,self.library._ocr_configuration())
+                    for extracted in observed:
+                        box=bbox(extracted['raw_bbox'])
+                        if any(_coverage(box,t['bbox'])>.8 and _coverage(t['bbox'],box)>.8 for t in tables):continue
+                        cells=[]
+                        for cell in extracted['cells']:
+                            cell_box=bbox(cell['raw_bbox']) if cell['raw_bbox'] else None
+                            evidence=anchor(cell['text'],cell_box,'ocr_table_cell') if cell_box else None
+                            if evidence:evidence['source']='immutable_pdf_raster_local_ocr'
+                            cells.append({k:v for k,v in cell.items() if k not in {'raw_bbox','word_boxes'}} | {
+                                'bbox':cell_box,'evidence':evidence,'needs_review':True,
+                                'word_evidence':[{'text':w['text'],'bbox':bbox(w['bbox'])} for w in cell['word_boxes']]})
+                        text='\n'.join(' | '.join(c['text'] for c in cells if c['row']==r) for r in range(extracted['row_count']))
+                        evidence=anchor(text,box,'ocr_table_region');evidence['source']='immutable_pdf_raster_local_ocr'
+                        tables.append({k:v for k,v in extracted.items() if k not in {'raw_bbox','cells'}} | {
+                            'id':f'table-{len(tables)+1}','bbox':box,'cells':cells,'text':text,
+                            'text_method':'ocr_cells_joined_by_row','evidence':evidence})
+                    if observed:table_status='native_and_or_scan_extracted_needs_review'
+                except (ImportError,RuntimeError,ValueError) as error:
+                    scan_audit={'status':'unsupported_or_failed','reason':type(error).__name__}
+                    notes.append('扫描表格解析未成功；未将缺失单元格补写为推测值。')
+                finally:source.set_rotation(rotation)
 
             figures = []
             try:
@@ -262,13 +294,13 @@ class LayoutService:
             return {'document_id':document_id,'run_id':run['id'],'page':page,
                     'width':width,'height':height,'rotation':rotation,
                     'coordinate_system':'normalized_rendered_page','version':LAYOUT_VERSION,
-                    'method':'native_pdf_with_heuristic_candidates','status':'analyzed' if regions else 'no_native_text',
+                    'method':'local_pdf_with_heuristic_candidates','status':'analyzed' if regions else 'ocr_layout_analyzed' if tables else 'no_native_text',
                     'processing_status':run['status'],'parsed_page_status':persisted['status'],
                     'source_sha256':document['sha256'],'text_regions':regions,'truncated':truncated,
                     'metadata_candidates':candidates,'heading_candidates':headings,'reading_order':reading,
-                    'tables':tables,'table_status':table_status,'figures':figures,'captions':captions,
+                    'tables':tables,'table_status':table_status,'scan_table_audit':scan_audit,'figures':figures,'captions':captions,
                     'formulas':formulas,'appendix_markers':appendices,'limitations':notes,
-                    'unsupported':['OCR_layout','vector_figure_semantics','general_formula_to_latex','verified_author_affiliations']}
+                    'unsupported':['general_OCR_layout','vector_figure_semantics','general_formula_to_latex','verified_author_affiliations']}
 
     @staticmethod
     def _candidate(region,method):

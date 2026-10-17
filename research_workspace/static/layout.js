@@ -24,7 +24,7 @@
     const run = source?.available_run || source?.current_run;
     const root = element("section", "rm-layout-inspector");
     const form = element("form", "rm-card rm-form");
-    form.append(element("h3", "", "逐页版面结构"), element("p", "rm-muted", "分析PDF中的真实文字、表格与图像区域；候选标签需结合原页复核。"));
+    form.append(element("h3", "", "逐页版面结构"), element("p", "rm-muted", "分析原生公式与表格；扫描表格使用本地OCR，结果和位置均需核对原页。"));
     const page = element("input", "rm-input");
     page.type = "number"; page.min = "1"; page.step = "1"; page.value = "1";
     page.max = String(source?.page_count || 1); page.required = true;
@@ -86,16 +86,19 @@
       }
       output.append(metadata);
 
-      const tables = panel("表格与单元格", "来自实际表格线和单元格提取；无边框、跨页与合并单元格仍可能不完整。");
+      const tables = panel("表格与单元格", "原生表格来自文字与线条；扫描表格按可见网格和本地OCR恢复。数值、数学表头与空格均需复核。");
       if (!data.tables?.length) tables.append(element("p", "rm-muted", data.table_status === "unsupported_or_failed"
         ? "本页表格检测未成功，没有输出猜测的单元格。" : "本页未检测到可提取的线框表格。"));
       for (const [index, table] of (data.tables || []).entries()) {
         const section = element("section", "rm-text-block");
         section.append(element("h4", "", `表格区域 ${index + 1} · ${table.row_count} 行 × ${table.column_count} 列`), evidenceControl(table.evidence, "定位表格区域 →"));
+        if (table.text_method === 'ocr_cells_joined_by_row') section.append(element('p','rm-warning','扫描表格 · 本地OCR候选，尚未人工确认数值；空白可能是未识别。'));
+        if (table.truncated_cells) section.append(element('p','rm-warning','已达到本页200个单元格的OCR上限，其余格保留为未处理。'));
         const scroll = element("div", "rs-table-scroll");
         const grid = element("table", "rs-table");
         const body = element("tbody"); grid.append(body); scroll.append(grid); section.append(scroll);
         const cells = new Map((table.cells || []).map(cell => [`${cell.row}:${cell.column}`, cell]));
+        const covered = new Set();
         let displayed = 0;
         const more = button("显示更多表格行", appendRows, "rm-small-button");
         function appendRows() {
@@ -103,9 +106,16 @@
           for (; displayed < end; displayed++) {
             const row = element("tr");
             for (let column = 0; column < table.column_count; column++) {
+              if (covered.has(`${displayed}:${column}`)) continue;
               const cell = cells.get(`${displayed}:${column}`);
               const td = element("td");
+              if (cell?.row_span || cell?.column_span) {
+                td.rowSpan=cell.row_span || 1;td.colSpan=cell.column_span || 1;
+                for(let r=displayed;r<displayed+td.rowSpan;r++)for(let c=column;c<column+td.colSpan;c++)if(r!==displayed || c!==column)covered.add(`${r}:${c}`);
+              }
               td.append(element("span", "rm-original-text", cell?.text ?? "合并或缺失单元格"));
+              if (cell?.status === 'empty_or_ocr_missed') td.append(element('small','rm-muted','空白或OCR未识别'));
+              if (cell?.status === 'not_processed_budget') td.append(element('small','rm-muted','未处理：达到OCR上限'));
               if (cell?.evidence) td.append(evidenceControl(cell.evidence, "定位"));
               row.append(td);
             }
