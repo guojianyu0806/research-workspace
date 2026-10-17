@@ -79,7 +79,7 @@
 
 已授权的 `ell.traineddata` 仅在数学单字符核对时作为可选希腊文通道，整页仍使用原配置语言；缺少该文件时跳过该通道，不静默下载。扫描数值的多分辨率复核与数学表头分区记录可在版面结构中展开查看。原生复杂公式与扫描表头的本轮范围见 [本地解析扩展](docs/development/082-native-complex-formulas-20261017.md)。
 
-扫描公式/矩阵通道仅对缺少原生文字的扫描页按需执行，采用现有本地英文OCR；与扫描表格互相排除区域，不下载新模型。原生矩阵使用已核实的括号字形与基线；扫描矩阵使用像素括号、行列及逐项OCR。低分辨率文字可能无法完成：不补零、不借用同篇原生文本。分式识别结果明确标为子表达式，不冒充整条等式。范围与验收见 [扫描公式与矩阵](docs/development/085-raster-math-matrices-20261017.md)，可运行 `scripts/verify_raster_math.py` 复现。
+扫描公式/矩阵通道仅对缺少原生文字的扫描页按需执行，使用现有本地OCR；求和符号可利用已授权的希腊文数据，与整页语言配置独立。支持有限分式、单字符上下标、可见根号范围及求和上下限片段，并分别提供操作数与运算符原图。扫描矩阵保留像素分区及逐项OCR，低清数字可进行局部复核；缺失元素不补零、不借用同篇原生文本。片段明确标记未恢复整条公式。最新范围见 [扫描运算符](docs/development/087-scanned-operators-20261017.md)及[低清矩阵复核](docs/development/088-low-resolution-matrix-rechecks-20261017.md)，可运行 `scripts/verify_raster_math.py` 复现；旧版[范围记录](docs/development/085-raster-math-matrices-20261017.md)保留。
 
 原始PDF保存到各空间的 `originals/`；SQLite存储文献、解析结果、任务、CSV和图表规范。账号空间位于 `data/spaces/`，账号库和会话在 `accounts.sqlite3`；发现数据在各空间 `discovery.sqlite3`，本地向量缓存分别存于各空间 `semantic.sqlite3`。模型切换及任务状态不改变历史PDF与原文证据。
 

@@ -39,6 +39,7 @@ def test_erased_upper_limit_is_not_completed_from_the_other_sum(configuration):
     assert len(sums)==2
     first=min(sums,key=lambda v:v['raw_bbox'][1]);assert first['latex'] is None
     assert first['operands'][0]['latex'] is None and first['conversion']=='unresolved_sum_limits'
+    assert first['operands'][0]['raw_bbox'][3]<first['operator_audit']['raw_bbox'][1]
 
 
 @pytest.mark.parametrize('rotation',[0,90])

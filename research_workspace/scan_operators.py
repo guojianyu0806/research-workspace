@@ -121,7 +121,9 @@ def extract_scan_operators(page,pixels,configuration,excluded=(),hint_boxes=None
             lower=[c['box'] for c in cc if b[0]-2<=c['box'][0] and c['box'][2]<=b[2]+2 and b[3]+1<c['box'][1]<b[3]+h*.7]
             operands=[];values=[]
             for role,parts in [('upper_limit',upper),('lower_limit',lower)]:
-                rb=raw(union(parts)) if parts else box
+                search=([b[0]-2,b[1]-h*.85,b[2]+2,b[1]-1] if role=='upper_limit'
+                    else [b[0]-2,b[3]+1,b[2]+2,b[3]+h*.7])
+                rb=raw(union(parts)) if parts else raw(search)
                 text,audit=observe(page,rb,configuration,budget,pattern=r'[A-Za-z0-9=+\-]{1,16}',relation=role=='lower_limit',upper=role=='upper_limit') if parts else (None,{'status':'not_observed','views':[]})
                 operands.append({'role':role,'original_text':text or '', 'latex':text,'raw_bbox':rb,'ocr_audit':audit});values.append(text)
             latex=r'\sum_{'+values[1]+'}^{'+values[0]+'}' if all(values) else None

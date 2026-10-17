@@ -156,9 +156,11 @@
         else card.append(element('p','rm-warning',`未输出完整LaTeX：${matrix.conversion || '识别依据不足'}`));
         const audit = element('details'); audit.append(element('summary','','查看矩阵审核记录'));
         audit.append(element('p','rm-muted',matrix.method === 'raster-math-v1' ? '来自原图像素的括号与行列观察；每个元素保留两次OCR结果。' : `方法：${matrix.method}；已核实括号字形 ${matrix.bracket_audit?.length || 0} 个。`));
+        if (matrix.segmentation_audit) audit.append(element('p','rm-muted',`分区阈值 ${matrix.segmentation_audit.threshold}；原始墨迹片段 ${matrix.segmentation_audit.initial_component_count} 个，位置相接的分组 ${matrix.segmentation_audit.joined_component_count} 个。`));
         for (const cell of matrix.cells || []) {
           const row=element('p');row.append(element('span','',`第 ${cell.row+1} 行，第 ${cell.column+1} 列：${cell.latex || cell.text || '未确认'} `),evidenceControl(cell.evidence,'核对元素 →'));audit.append(row);
           for (const view of cell.ocr_audit?.views || []) audit.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}：${view.text || '未识别'}`));
+          for (const view of cell.ocr_audit?.recheck_views || []) audit.append(element('p','rm-muted',`局部复核 ${view.dpi} DPI，阈值 ${view.threshold}：${view.text || '未识别'}`));
         }
         card.append(audit);matrices.append(card);
       }
@@ -180,7 +182,7 @@
       }
       output.append(figures);
 
-      const formulas = panel("公式候选", "原文始终保留。原生公式按字形与几何位置转写；扫描公式仅支持有限分式子表达式和显式标量赋值，多次识别一致仍需核对。任意扫描公式和嵌套矩阵尚不支持。");
+      const formulas = panel("公式候选", "原文始终保留。扫描公式支持有限分式、分离的单字符上下标、具有可见覆盖线的根号，以及求和符号与上下限片段。片段不代表整条公式已恢复，多次OCR一致仍需核对。任意扫描公式和嵌套矩阵尚不支持。");
       if (data.formula_audit?.truncated || ['glyph_budget_exceeded','vector_budget_exceeded'].includes(data.formula_audit?.status))
         formulas.append(element('p','rm-warning','本页公式或字形超过本地分析上限；此处不是完整公式清单，请核对原页。'));
       if (!data.formulas?.length) formulas.append(element("p", "rm-muted", "本页未检测到受支持的公式候选；未知图片符号不会被猜测转写。"));

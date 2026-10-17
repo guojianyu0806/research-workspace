@@ -65,6 +65,29 @@ def _pixel_crop(page,box,dpi=288):
     return pixels,image
 
 
+def recheck_numeric_entry(page,box,configuration,budget,audit):
+    """Re-read actual pixels, requiring agreement and an initial numeric view.
+
+    Matrix patterns and adjacent cells never supply a missing value. Preserve
+    the failed first readings as well as every supplemental observation.
+    """
+    original={v['text'] for v in audit['views'] if re.fullmatch(r'[+-]?\d+(?:\.\d+)?',v['text'])}
+    if not original:return None
+    audit['recheck_views']=[]
+    for profile in [[(288,170),(432,190)],[(432,210),(576,210)]]:
+        if budget['remaining']<2:break
+        found=[]
+        for dpi,threshold in profile:
+            gray,_=_pixel_crop(page,pymupdf.Rect(box)+(-.75,-.75,.75,.75),dpi=dpi)
+            text=_read_mask(gray<threshold,configuration,mode=7);budget['remaining']-=1
+            audit['recheck_views'].append({'text':text,'dpi':dpi,'threshold':threshold,'mode':7})
+            found.append(text)
+        if found[0]==found[1] and found[0] in original:
+            audit['initial_status']=audit['status'];audit['status']='pixel_rechecked_candidate'
+            return found[0]
+    return None
+
+
 def scan_matrices(page,pixels,scale,configuration,budget,excluded):
     results=[]
     for left,right in bracket_regions(pixels<170,scale)[:12]:
@@ -72,7 +95,10 @@ def scan_matrices(page,pixels,scale,configuration,budget,excluded):
         if any((pymupdf.Rect(box)&pymupdf.Rect(b)).get_area()>.5*pymupdf.Rect(box).get_area() for b in excluded):continue
         crop=[left['x']/scale+2,left['y0']/scale+1,right['x']/scale-1,left['y1']/scale-1]
         if pymupdf.Rect(crop).get_area()*16>200_000:continue
-        gray,image=_pixel_crop(page,crop); cc=components(gray<170)
+        gray,image=_pixel_crop(page,crop)
+        from .scan_operators import join_ink_parts
+        initial_components=components(gray<210)
+        cc=join_ink_parts(initial_components)
         cells=[];error=None;rows=[];columns=[]
         try:
             if not cc:raise ValueError('empty_matrix')
@@ -98,8 +124,12 @@ def scan_matrices(page,pixels,scale,configuration,budget,excluded):
                     y0=min(n['box'][1] for n in parts);y1=max(n['box'][3] for n in parts)
                     value,audit=consensus(gray[max(0,y0-1):y1+1,max(0,x0-1):x1+1],configuration,budget)
                     valid=bool(value and re.fullmatch(r'[+-]?\d+(?:\.\d+)?|[A-Za-z]',value))
+                    region=[(image.x+x0)/4,(image.y+y0)/4,(image.x+x1)/4,(image.y+y1)/4]
+                    if not valid:
+                        revised=recheck_numeric_entry(page,region,configuration,budget,audit)
+                        if revised is not None:value=revised;valid=True
                     cells.append({'row':r,'column':c,'text':value,'latex':value if valid else None,
-                        'raw_bbox':[(image.x+x0)/4,(image.y+y0)/4,(image.x+x1)/4,(image.y+y1)/4],
+                        'raw_bbox':region,
                         'ocr_audit':audit,'needs_review':True})
             if any(c['latex'] is None for c in cells):raise ValueError('unresolved_matrix_entry')
             latex=r'\begin{bmatrix}'+r' \\ '.join(' & '.join(c['latex'] for c in cells if c['row']==r) for r in range(len(rows)))+r'\end{bmatrix}'
@@ -107,7 +137,9 @@ def scan_matrices(page,pixels,scale,configuration,budget,excluded):
         results.append({'raw_bbox':box,'cells':cells,'row_count':len(rows),'column_count':len(columns[0]) if columns else 0,
             'latex':latex,'original_text':'\n'.join(' '.join(c['text'] or '?' for c in cells if c['row']==r) for r in range(len(rows))),
             'method':VERSION,'needs_review':True,'status':'transcribed_needs_review' if latex else 'unsupported_geometry',
-            'conversion':error or 'rectangular_pixel_entries_two_view_ocr','bracket_audit':[{'raw_bbox':box,'method':'observed_square_arms_and_vertical_stems'}]})
+            'conversion':error or 'rectangular_pixel_entries_two_view_ocr','bracket_audit':[{'raw_bbox':box,'method':'observed_square_arms_and_vertical_stems'}],
+            'segmentation_audit':{'threshold':210,'initial_component_count':len(initial_components),'joined_component_count':len(cc),
+                'method':'join_touching_or_overlapping_ink_bounds_without_filling_missing_pixels'}})
     return results
 
 
