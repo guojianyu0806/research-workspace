@@ -1,6 +1,6 @@
 "use strict";
 
-/* Native layout is requested only by the explicit analyze action. */
+/* Local layout / OCR is requested only by the explicit analyze action. */
 (() => {
   const instances = new WeakMap();
   const element = (tag, className = "", text) => {
@@ -144,14 +144,27 @@
       }
       output.append(figures);
 
-      const formulas = panel("公式候选", "原文始终保留；LaTeX仅为受支持线性符号的有限转写，数学含义仍需核验。");
+      const formulas = panel("公式候选", "原文始终保留；原生公式按字形、分数线、根号线和上下标位置生成有限LaTeX。扫描图片公式与任意矩阵仍不支持。");
+      if (data.formula_audit?.truncated || ['glyph_budget_exceeded','vector_budget_exceeded'].includes(data.formula_audit?.status))
+        formulas.append(element('p','rm-warning','本页公式或字形超过本地分析上限；此处不是完整公式清单，请核对原页。'));
       if (!data.formulas?.length) formulas.append(element("p", "rm-muted", "本页未检测到原生文字中的公式候选；图片公式不会被猜测转写。"));
       for (const formula of data.formulas || []) {
         const item = element("article", "rm-text-block");
         item.append(element("span", "rm-badge", "需复核"), element("p", "rm-original-text", formula.original_text || formula.text), evidenceControl(formula.evidence));
         if (formula.latex) {
-          item.append(element("p", "rm-field-title", "有限LaTeX转写"), element("pre", "rm-original-text", formula.latex));
+          item.append(element("p", "rm-field-title", "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
         } else item.append(element("p", "rm-muted", "该公式不在可靠转写子集中，仅保留原文。"));
+        if (formula.method === 'native-math-geometry-v1') {
+          const audit = element('details'); audit.append(element('summary', '', '查看转写依据'));
+          audit.append(element('p', 'rm-muted', `原生字形 ${formula.glyph_count} 个 · 水平线段 ${formula.rule_evidence?.length || 0} 条。全部位置随结构JSON导出。`));
+          const reasons = {unmapped_native_glyph:'存在未映射字形', unassigned_glyph_inside_formula_region:'区域内有未归属字形',
+            radical_extent_not_observed:'未找到明确的根号覆盖线', multiple_unresolved_math_rows:'多行结构尚未可靠分解',
+            unattached_math_script:'上下标归属不明确', unbalanced_math_delimiters:'括号结构不完整',
+            formula_complexity_limit:'超过有限解析的复杂度上限', prose_mixed_with_math:'公式与说明文字混排',
+            large_operator_limits_require_review:'求和、积分的上下限尚需人工核对', multiline_continuation_requires_review:'多行等式尚未完整恢复'};
+          if (!formula.latex) audit.append(element('p','rm-warning', reasons[formula.conversion] || '结构超出当前支持范围，保留原文供核对。'));
+          item.append(audit);
+        }
         formulas.append(item);
       }
       output.append(formulas);
@@ -195,7 +208,7 @@
       if (!Number.isInteger(number) || number < 1 || number > source.page_count) { show(`请输入1至${source.page_count}之间的页码。`, true); return; }
       const current = ++generation;
       requestAbort?.abort(); requestAbort = new AbortController();
-      analyze.disabled = true; download.hidden = true; show("正在分析本页原生版面……");
+      analyze.disabled = true; download.hidden = true; show("正在分析本页结构；扫描表格将使用本地OCR……");
       const query = run?.id ? `?run_id=${encodeURIComponent(run.id)}` : "";
       const path = `/api/documents/${encodeURIComponent(source.id)}/layout/pages/${number}`;
       try {

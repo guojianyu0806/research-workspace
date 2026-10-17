@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v3-scan-tables'
+LAYOUT_VERSION = 'local-layout-v4-math-geometry'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -145,6 +145,7 @@ class LayoutService:
             sizes = [span['size'] for span in spans_by_id.values() if span['text'].strip()]
             body_size = median(sizes) if sizes else 0
             notes = ['标题、作者机构、栏序、图注和公式均为规则候选，需核对原页。',
+                     '原生分式、根号与上下标按实际字形及线条转写；候选均需原页复核，不保证通用公式识别。',
                      '原生字形与扫描表格使用独立本地通道；不支持通用OCR版面、矢量图语义或任意图片公式还原。',
                      '图像区域不代表已经识别出图中内容；表格使用线框检测，可能漏检无边框表或误检装饰线。']
             tables,table_raw_boxes = [],[]
@@ -288,6 +289,23 @@ class LayoutService:
                         'id':f'formula-{len(formulas)+1}','original_text':text,'latex':latex,
                         'conversion':conversion,'status':'candidate','needs_review':True})
 
+            try:
+                from .formula_geometry import extract_display_formulas
+                source.set_rotation(0)
+                native_formulas,math_audit=extract_display_formulas(source)
+                for formula_index,formula in enumerate(native_formulas):
+                    box=bbox(formula['raw_bbox'])
+                    # Replace only overlapping line candidates with the complete
+                    # native equation region; other candidates remain untouched.
+                    formulas=[f for f in formulas if not (_coverage(f['bbox'],box)>.65)]
+                    evidence=anchor(formula['original_text'],box,'native_formula_geometry')
+                    formulas.append({k:v for k,v in formula.items() if k not in {'raw_bbox','glyphs','rules'}} | {
+                        'id':f'formula-geometry-{formula_index+1}','bbox':box,'evidence':evidence,
+                        'glyph_evidence':[{**g,'bbox':bbox(g['bbox'])} for g in formula['glyphs']],
+                        'rule_evidence':[{'bbox':bbox([r[0],r[1]-.15,r[2],r[1]+.15]),'kind':'observed_horizontal_rule'} for r in formula['rules']]})
+            finally:source.set_rotation(rotation)
+            formulas.sort(key=lambda f:(f['bbox'][1],f['bbox'][0]))
+
             reading = self._reading_order(regions,raw_boxes,source.cropbox.width,table_raw_boxes)
             if truncated:
                 notes.append('本页文字行超过10000行上限，结果已明确截断。')
@@ -299,7 +317,7 @@ class LayoutService:
                     'source_sha256':document['sha256'],'text_regions':regions,'truncated':truncated,
                     'metadata_candidates':candidates,'heading_candidates':headings,'reading_order':reading,
                     'tables':tables,'table_status':table_status,'scan_table_audit':scan_audit,'figures':figures,'captions':captions,
-                    'formulas':formulas,'appendix_markers':appendices,'limitations':notes,
+                    'formulas':formulas,'formula_audit':math_audit,'appendix_markers':appendices,'limitations':notes,
                     'unsupported':['general_OCR_layout','vector_figure_semantics','general_formula_to_latex','verified_author_affiliations']}
 
     @staticmethod

@@ -1,0 +1,187 @@
+"""Finite native-glyph math transcription; never completes missing symbols.
+
+Fractions and radicals require actual vector rules. Scripts require explicit
+font size/baseline displacement. Every non-space input glyph must be consumed.
+"""
+from __future__ import annotations
+import re
+from statistics import median
+
+VERSION='native-math-geometry-v1'
+SYMBOLS=dict(zip('αβγδεζηθικλμνξοπρστυφχψω',
+    ['\\'+s for s in ['alpha','beta','gamma','delta','epsilon','zeta','eta','theta','iota','kappa','lambda','mu','nu','xi','omicron','pi','rho','sigma','tau','upsilon','phi','chi','psi','omega']]))
+SYMBOLS.update({'∈':r'\in','∉':r'\notin','≤':r'\leq','≥':r'\geq','≠':r'\neq','≈':r'\approx',
+    '×':r'\times','·':r'\cdot','−':'-','∂':r'\partial','∞':r'\infty','∇':r'\nabla',
+    '∑':r'\sum','∏':r'\prod','∫':r'\int','±':r'\pm','…':r'\ldots','ϵ':r'\epsilon',
+    'ο':'o','Σ':r'\Sigma','Π':r'\Pi','Δ':r'\Delta','Ω':r'\Omega','ϕ':r'\varphi','ℝ':r'\mathbb{R}',
+    '{':r'\{','}':r'\}','|':r'\vert','_':r'\_','^':r'\char94{}'})
+
+
+class Unsupported(ValueError):pass
+
+
+def union(nodes):
+    return [min(n['box'][0] for n in nodes),min(n['box'][1] for n in nodes),
+            max(n['box'][2] for n in nodes),max(n['box'][3] for n in nodes)]
+
+
+def composite(nodes,latex,y,size):
+    return {'box':union(nodes),'latex':latex,'y':y,'size':size,'ids':set().union(*(n['ids'] for n in nodes)),
+        'font':'','flags':0,'char':None}
+
+
+def _atom(g):
+    c=g['char']
+    if g['font'].startswith('CMEX') and c.isascii() and c.isalpha():raise Unsupported('unmapped_native_glyph')
+    if c in SYMBOLS:return SYMBOLS[c]
+    if re.fullmatch(r'[A-Za-z0-9=+*/(),.\[\]:;<>!\-^_]',c):return c
+    raise Unsupported('unmapped_native_glyph')
+
+
+def _parse(glyphs,rules,depth=0):
+    if depth>8 or len(glyphs)>400:raise Unsupported('formula_complexity_limit')
+    if not glyphs:raise Unsupported('empty_math_operand')
+    size=max(g['size'] for g in glyphs);nodes=list(glyphs);used_rules=[]
+    # Wider rules first: the denominator may itself contain a radical or fraction.
+    for rule in sorted(rules,key=lambda r:r[2]-r[0],reverse=True):
+        x0,y,x1=rule
+        if any(n['char']=='√' and 0<=x0-n['box'][2]<size*.5 and n['box'][1]-1<=y<=n['box'][3]+1 for n in nodes):continue
+        inside=[n for n in nodes if x0-.7<=(n['box'][0]+n['box'][2])/2<=x1+.7 and abs(n['y']-y)<size*2.2]
+        above=[n for n in inside if n['y']<y-.8];below=[n for n in inside if n['y']>y+.8]
+        if not above or not below:continue
+        if len(above)+len(below)!=len(inside):continue
+        a=_parse(above,[r for r in rules if r!=rule and r[1]<y],depth+1)
+        b=_parse(below,[r for r in rules if r!=rule and r[1]>y],depth+1)
+        node=composite(inside,r'\frac{'+a['latex']+'}{'+b['latex']+'}',y+size*.25,max(n['size'] for n in inside))
+        ids=node['ids'];nodes=[n for n in nodes if not n['ids']&ids]+[node];used_rules.append(rule)
+    for root in [n for n in nodes if n['char']=='√']:
+        candidates=[r for r in rules if r not in used_rules and abs(r[0]-root['box'][2])<size*.5
+            and root['box'][1]-2<=r[1]<=root['box'][3]+2]
+        if not candidates:raise Unsupported('radical_extent_not_observed')
+        bar=min(candidates,key=lambda r:abs(r[0]-root['box'][2]));x0,y,x1=bar
+        children=[n for n in nodes if n is not root and x0-.7<=(n['box'][0]+n['box'][2])/2<=x1+.7
+            and y+.7<n['y']<y+size*2]
+        child=_parse(children,[r for r in rules if r!=bar and r[1]>y],depth+1)
+        node=composite([root,*children],r'\sqrt{'+child['latex']+'}',child['y'],child['size'])
+        nodes=[n for n in nodes if not n['ids']&node['ids']]+[node]
+    # Assign directly on a copy; original glyph observations remain immutable.
+    nodes=[dict(n,ids=set(n['ids']),box=list(n['box']),latex=_atom(n)) if n['char'] is not None else dict(n,ids=set(n['ids']),box=list(n['box'])) for n in nodes]
+    size=max(n['size'] for n in nodes)
+    candidates=[n for n in nodes if n['size']>=size*.88]
+    clusters={}
+    for n in candidates:clusters.setdefault(round(n['y']/(size*.2)),[]).append(n)
+    baseline=median(n['y'] for n in max(clusters.values(),key=lambda ns:sum(len(n['ids']) for n in ns)))
+    base=[n for n in nodes if abs(n['y']-baseline)<size*.3 and n['size']>=size*.88]
+    scripts=[n for n in nodes if n not in base]
+    if not base:raise Unsupported('no_stable_math_baseline')
+    if any(n['size']>=size*.88 and abs(n['y']-baseline)>size*.45 for n in scripts):raise Unsupported('multiple_unresolved_math_rows')
+    base.sort(key=lambda n:n['box'][0]);merged=[]
+    for n in base:
+        previous=merged[-1] if merged else None
+        roman=bool(n['char'] and n['char'].isalpha() and not(n['flags']&2))
+        number=bool(n['char'] and re.fullmatch(r'[0-9.]',n['char']))
+        if (previous and n['char'] and previous.get('merge_kind')==('roman' if roman else 'number' if number else None) and (roman or number)
+            and n['font']==previous['font'] and n['box'][0]-previous['box'][2]<size*.25):
+            previous['literal']+=n['char'];previous['box']=union([previous,n]);previous['ids']|=n['ids']
+        else:merged.append({**n,'ids':set(n['ids']),'box':list(n['box']),'merge_kind':'roman' if roman else 'number' if number else None,'literal':n['char'] or ''})
+    attached={i:{'sub':[],'sup':[]} for i in range(len(merged))}
+    centre=median((n['box'][1]+n['box'][3])/2 for n in base)
+    for n in sorted(scripts,key=lambda n:n['box'][0]):
+        eligible=[i for i,b in enumerate(merged) if b['box'][0]<=n['box'][0]+1 and -.5*size<=n['box'][0]-b['box'][2]<=size]
+        side='sup' if (n['box'][1]+n['box'][3])/2<centre else 'sub'
+        if not eligible:
+            eligible=[i for i,a in attached.items() if a[side] and -size*.25<=n['box'][0]-max(g['box'][2] for g in a[side])<size]
+        if not eligible:raise Unsupported('unattached_math_script')
+        i=min(eligible,key=lambda i:abs(n['box'][0]-merged[i]['box'][2]))
+        attached[i][side].append(n)
+    rendered=[]
+    for i,n in enumerate(merged):
+        latex=n['latex']
+        if n['merge_kind']=='roman' and len(n['literal'])>1:
+            following=merged[i+1]['char'] if i+1<len(merged) else None
+            latex=(r'\operatorname{' if following=='(' else r'\text{' if n['literal'] in {'where','and','for'} else r'\mathrm{')+n['literal']+'}'
+        elif n['merge_kind']=='number':latex=n['literal']
+        for side,mark in (('sub','_'),('sup','^')):
+            children=attached[i][side]
+            if children:latex+=mark+'{'+_parse(children,[],depth+1)['latex']+'}'
+        rendered.append(latex)
+    value=' '.join(rendered)
+    if value.count('(')!=value.count(')') or value.count('[')!=value.count(']'):raise Unsupported('unbalanced_math_delimiters')
+    result=composite(nodes,value,baseline,size)
+    if result['ids']!=set().union(*(g['ids'] for g in glyphs)):raise Unsupported('unconsumed_math_glyph')
+    return result
+
+
+def extract_display_formulas(page):
+    raw=page.get_text('rawdict',flags=pymupdf_flags());lines=[];glyphs=[]
+    for block in raw.get('blocks',[]):
+        if block.get('type')!=0:continue
+        for line in block.get('lines',[]):
+            if line.get('dir',(1,0))[0]<.9:continue
+            own=[]
+            for span in line.get('spans',[]):
+                for char in span.get('chars',[]):
+                    if not char['c'].strip():continue
+                    g={'char':char['c'],'box':list(char['bbox']),'y':char['origin'][1],
+                        'size':span['size'],'font':span['font'],'flags':span['flags'],'ids':{len(glyphs)}}
+                    glyphs.append(g);own.append(g)
+            if own:lines.append(own)
+    if len(glyphs)>15000:return [],{'version':VERSION,'status':'glyph_budget_exceeded','model_calls':0}
+    seeds=[ln for ln in lines if any(g['char'] in '=≤≥' for g in ln)
+        and sum(bool(re.match(r'CM|MS[AB]',g['font'])) or bool(g['flags']&2) for g in ln)>.45*len(ln)]
+    context=[g for ln in lines if (sum(bool(re.match(r'CM|MS[AB]',g['font'])) or bool(g['flags']&2) for g in ln)>.45*len(ln)
+        or len(ln)<=4 and all(g['char'] in '()[]0123456789=+-,.' for g in ln)) for g in ln]
+    rules=[]
+    drawings=page.get_drawings()
+    if len(drawings)>5000:return [],{'version':VERSION,'status':'vector_budget_exceeded','model_calls':0}
+    for path in drawings:
+        for item in path['items']:
+            if item[0]=='l' and abs(item[1].y-item[2].y)<.2 and 3<abs(item[1].x-item[2].x)<page.rect.width*.7:
+                rules.append((min(item[1].x,item[2].x),item[1].y,max(item[1].x,item[2].x)))
+    formulas=[];seen=set()
+    for seed in seeds[:40]:
+        baseline=median(g['y'] for g in seed if g['size']>=max(x['size'] for x in seed)*.88);size=max(g['size'] for g in seed)
+        own=list(seed);box=union(own)
+        other_baselines=[median(g['y'] for g in s) for s in seeds if s is not seed]
+        top=baseline-size*2;bottom=baseline+size*2
+        for y in other_baselines:
+            if y<baseline-2:top=max(top,(baseline+y)/2)
+            elif y>baseline+2:bottom=min(bottom,(baseline+y)/2)
+        for _ in range(12):
+            extra=[g for g in context if top<=g['y']<=bottom and g not in own
+                and box[0]-size*2<=g['box'][0]<=box[2]+size*2]
+            if not extra:break
+            own.extend(extra);box=union(own)
+        ids=set().union(*(g['ids'] for g in own))
+        if ids&seen:continue
+        seen|=ids;local=[r for r in rules if box[0]-size*.7<=r[0] and r[2]<=box[2]+size*.7 and box[1]-1<=r[1]<=box[3]+1]
+        if local:
+            box=union([{'box':box}]+[{'box':[r[0],r[1]-.15,r[2],r[1]+.15]} for r in local])
+        try:
+            if seed[0]['char'] in '=≤≥':raise Unsupported('multiline_continuation_requires_review')
+            prose=[]
+            for i,g in enumerate(seed):
+                if i and g['box'][0]-seed[i-1]['box'][2]>size*.15:prose.append(' ')
+                prose.append(g['char'] if not (re.match(r'CM|MS[AB]',g['font']) or g['flags']&2) else ' ')
+            words=re.findall(r'[A-Za-z]{3,}', ''.join(prose))
+            if len(words)>=3:raise Unsupported('prose_mixed_with_math')
+            if any((g['char'] in '∑∏∫' or g['font'].startswith('CMEX') and g['char'].isascii() and g['char'].isalpha()) and abs(g['box'][0]-box[0])<size*2 and abs(g['y']-baseline)<max(g['size'],size)*3 for g in glyphs):
+                raise Unsupported('large_operator_limits_require_review')
+            if any(s[0]['char']=='=' and 0<median(g['y'] for g in s)-baseline<size*1.8 and abs(s[0]['box'][0]-box[0])<size*2 for s in seeds if s is not seed):
+                raise Unsupported('multiline_continuation_requires_review')
+            missing=[g for g in glyphs if g not in own and box[0]<(g['box'][0]+g['box'][2])/2<box[2] and box[1]<(g['box'][1]+g['box'][3])/2<box[3]]
+            if missing:raise Unsupported('unassigned_glyph_inside_formula_region')
+            parsed=_parse(own,local);latex=parsed['latex'];status='transcribed_needs_review';reason='native_geometry_complete_glyph_coverage'
+        except Unsupported as error:latex=None;status='unsupported_geometry';reason=str(error)
+        formulas.append({'raw_bbox':box,'latex':latex,'status':status,'conversion':reason,'method':VERSION,
+            'original_text':page.get_text('text',clip=box).strip(),'needs_review':True,
+            'glyphs':[{'text':g['char'],'bbox':g['box'],'origin_y_unrotated_points':g['y'],'size':g['size'],'font':g['font']} for g in own],
+            'rules':[list(r) for r in local],'glyph_count':len(own)})
+    return formulas,{'version':VERSION,'status':'analyzed','formula_count':len(formulas),'seed_count':len(seeds),'truncated':len(seeds)>40,'seed_budget':40,'model_calls':0,
+        'supported':['native_scripts','vector_rule_fractions','vector_rule_radicals','nested_operators'],
+        'unsupported':['scanned_math','arbitrary_matrices','missing_font_maps','unbounded_multiline_derivations']}
+
+
+def pymupdf_flags():
+    import pymupdf
+    return pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES
