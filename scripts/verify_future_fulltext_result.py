@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 import httpx
@@ -55,9 +56,17 @@ def seed(recent=False):
     print('REAL_PRO_FULLTEXT_JOB',job['id'])
 
 
-def verify(job_id,require_training_table=False):
+def verify(job_id,require_training_table=False,allow_auth_recovery=False,source_commit=None):
     output=ROOT/'artifacts/future-fulltext'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     output.mkdir(parents=True,exist_ok=False);checks=[];library=Library(ROOT/'data')
+    source_commit=subprocess.check_output(['git','rev-parse',source_commit or 'HEAD'],cwd=ROOT,text=True).strip()
+    (output/'manifest.json').write_text(json.dumps({'job_id':job_id,
+        'software_commit':source_commit,
+        'scope':'controlled public-PDF fulltext stage; not a live exhaustive novelty search',
+        'require_training_table':require_training_table,'allow_auth_recovery':allow_auth_recovery,
+        'source_hashes':{name:hashlib.sha256(subprocess.check_output(['git','show',source_commit+':'+name],cwd=ROOT)).hexdigest() for name in (
+            'research_workspace/future_fulltext.py','research_workspace/fulltext_context.py',
+            'research_workspace/intelligence.py','research_workspace/jobs.py')}},ensure_ascii=False,indent=2),encoding='utf-8')
     def check(name,value):
         checks.append({'name':name,'passed':bool(value)})
         (output/'checks.json').write_text(json.dumps(checks,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -100,8 +109,11 @@ def verify(job_id,require_training_table=False):
                     check(f'{did}_{ci}_{qi}_source',all(record[k]==evidence[k]==block[k] for k in ('document_id','run_id','block_id','page','bbox')) and (evidence['document_id'],evidence['run_id']) in allowed)
                     check(f'{did}_{ci}_{qi}_quote',cite['evidence_id']==record['evidence_id'] and cite['quote']==record['quote'] and norm(cite['quote']) in norm(block['text']))
         calls=job['model_calls'];usage=job['usage']
-        check('actual_pro_receipts',bool(calls) and all(c['model']=='deepseek-v4-pro' and c['state']=='response_received' and c['http_status']==200 for c in calls) and usage['calls']==usage['usage_reported_calls']==len(calls))
-        check('usage_totals',all(usage[k]==sum(c['usage'][k] for c in calls) for k in ('prompt_tokens','completion_tokens','total_tokens')))
+        successful=[c for c in calls if c['http_status']==200]
+        allowed_statuses={200,401} if allow_auth_recovery else {200}
+        check('actual_pro_responses_and_known_failures',bool(successful) and all(c['model']=='deepseek-v4-pro' and c['state']=='response_received' and c['http_status'] in allowed_statuses for c in calls) and usage['calls']==len(calls))
+        check('successful_calls_have_reported_receipts',usage['usage_reported_calls']==len(successful))
+        check('reported_usage_totals_exclude_unreported_failures',all(usage[k]==sum(c['usage'][k] for c in successful) for k in ('prompt_tokens','completion_tokens','total_tokens')))
         export=client.get('/api/research/tasks/'+job_id+'/export').text
         check('export_claim_ids_and_run_ids',all(c['claim_id'] in export for d in full['directions'] for c in d['answer']['grounding']['claim_catalog']) and all(run in export for _,run in source_docs.values()))
         if require_training_table:
@@ -114,7 +126,7 @@ def verify(job_id,require_training_table=False):
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('job_id',nargs='?');parser.add_argument('--seed-controlled',action='store_true');parser.add_argument('--recent',action='store_true');parser.add_argument('--require-training-table',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('job_id',nargs='?');parser.add_argument('--seed-controlled',action='store_true');parser.add_argument('--recent',action='store_true');parser.add_argument('--require-training-table',action='store_true');parser.add_argument('--allow-auth-recovery',action='store_true');parser.add_argument('--source-commit');args=parser.parse_args()
     if args.seed_controlled:seed(args.recent)
-    elif args.job_id:verify(args.job_id,args.require_training_table)
+    elif args.job_id:verify(args.job_id,args.require_training_table,args.allow_auth_recovery,args.source_commit)
     else:parser.error('Specify a job ID or --seed-controlled.')

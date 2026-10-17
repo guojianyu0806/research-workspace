@@ -24,11 +24,17 @@ def supplement_fulltext_context(service, snapshot, evidence, question, document_
             for block in candidates[:4]:additions.append(block);table_ids.append(block.evidence_id)
         for index,block in enumerate(own):
             heading=' '.join(block.text.split())
-            if not re.fullmatch(r'(?:\d+(?:\.\d+)*\s*[.)]?\s*)?(?:limitations?|threats? to validity|研究限制|局限性)',heading,re.I):continue
-            for candidate in own[index:index+4]:
+            if not re.match(r'^(?:\d+(?:\.\d+)*\s*[.)]?\s*)?(?:limitations?|threats? to validity|研究限制|局限性)(?:\b|$)',heading,re.I):continue
+            count=0
+            for candidate in own[index:index+10]:
                 if candidate.page>block.page+1:break
+                text=' '.join(candidate.text.split())
+                if len(text)<140 and (re.match(r'^Manuscript submitted',text,re.I) or
+                    re.fullmatch(r'\d+\s+.*\bet al\.?',text,re.I)):continue
                 if candidate is not block and re.match(r'^\d+(?:\.\d+)*\s+[A-Z]',candidate.text.strip()):break
                 additions.append(candidate);limitation_ids.append(candidate.evidence_id)
+                count+=1
+                if count>=6:break
     selected=service._fair_blocks(additions,document_ids,16)
     known={b.evidence_id for b in evidence}
     added=service._excerpts([b for b in selected if b.evidence_id not in known])
