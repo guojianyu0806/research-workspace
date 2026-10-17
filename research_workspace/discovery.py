@@ -133,6 +133,10 @@ class DiscoveryService:
                     checked_at TEXT NOT NULL, status TEXT NOT NULL, new_count INTEGER NOT NULL,
                     cached INTEGER NOT NULL, error TEXT
                 );
+                CREATE TABLE IF NOT EXISTS paper_code_checks (
+                    id TEXT PRIMARY KEY,paper_id TEXT NOT NULL,url TEXT NOT NULL,checked_at TEXT NOT NULL,record TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS code_checks_paper ON paper_code_checks(paper_id,checked_at);
             """)
 
     @contextmanager
@@ -264,6 +268,26 @@ class DiscoveryService:
 
     def _with_import(self, record: dict, db: sqlite3.Connection) -> dict:
         result = dict(record)
+        from .code_verification import paper_signature,local_code_hints
+        hints=list(record.get('code_links',[]))
+        source_import=db.execute('SELECT document_id FROM imports WHERE paper_id=?',(record['id'],)).fetchone()
+        if source_import:
+            try:
+                doc=self.library.get_document(source_import['document_id'])
+            except KeyError:doc=None
+            if doc:
+                for hint in local_code_hints(self.library,doc):
+                    if hint['url'].casefold() not in {x['url'].casefold() for x in hints}:hints.append({**hint,'source_url':record.get('source_url')})
+        latest={}
+        for row in db.execute('SELECT url,record FROM paper_code_checks WHERE paper_id=? ORDER BY checked_at DESC',(record['id'],)):
+            if row['url'] not in latest:latest[row['url']]=json.loads(row['record'])
+        result['code_links']=[]
+        for link in hints[:8]:
+            check=latest.get(link['url'])
+            fresh=bool(check and check.get('paper_signature')==paper_signature(record,link['url']) and
+                datetime.fromisoformat(check['checked_at'])+timedelta(hours=24)>datetime.now(timezone.utc))
+            result['code_links'].append({**link,**({'check':check,'verification':check['verification'] if fresh else 'stale_check'} if check else {})})
+        result['verified_code']=any(x.get('verification')=='verified_open_source_association' for x in result['code_links'])
         preference = db.execute('SELECT value FROM preferences WHERE paper_id=?',(record['id'],)).fetchone()
         result['feedback'] = preference[0] if preference else 0
         imported = db.execute("SELECT * FROM imports WHERE paper_id=?", (record["id"],)).fetchone()
@@ -471,6 +495,18 @@ class DiscoveryService:
             db.execute("INSERT INTO preferences VALUES(?,?,?) ON CONFLICT(paper_id) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", (paper_id, value, updated))
         return {"paper_id": paper_id, "value": value, "updated_at": updated}
 
+    def verify_code(self,paper_id):
+        from .code_verification import verify_repository
+        paper=self.get_paper(paper_id)
+        for link in paper.get('code_links',[])[:2]:
+            check=link.get('check',{})
+            if link.get('verification') not in {'stale_check','unverified'} and check and datetime.fromisoformat(check['checked_at'])+timedelta(hours=24)>datetime.now(timezone.utc):continue
+            result=verify_repository(paper,link['url'],self.client)
+            with self._db() as db:
+                db.execute('INSERT INTO paper_code_checks VALUES(?,?,?,?,?)',
+                    (uuid4().hex,paper_id,link['url'],result['checked_at'],json.dumps(result,ensure_ascii=False)))
+        return self.get_paper(paper_id)
+
     def recommendations(self, keywords: str = "", document_ids: list[str] | None = None, limit: int = 20) -> dict:
         _bounded_int(limit, 1, 100, "推荐数量")
         if not isinstance(keywords, str) or len(keywords) > 500:
@@ -507,6 +543,9 @@ class DiscoveryService:
             if preference:
                 reasons.append("已根据你对这篇论文的喜欢反馈提高排序。" if preference > 0 else "已根据你对这篇论文的负反馈降低排序。")
             score += sum(value * len(words & title_words) / max(1, len(words | title_words)) * .5 for words, value in profiles)
+            if paper.get('verified_code') and (matched or related):
+                score+=.4
+                reasons.append('论文与公开GitHub仓库已双向核对，发现许可证及源码，适度优先；尚未执行复现实验。')
             if not reasons:
                 reasons.append("已检索到的公开元数据，当前没有足够的个人相关性依据。")
             ranked.append({**paper, "score": round(score, 6), "feedback": preference, "reasons": reasons,
@@ -519,5 +558,5 @@ class DiscoveryService:
                 latest[paper["canonical_id"]] = paper
         items = sorted(latest.values(), key=lambda item: (-item["score"], item["id"]))[:limit]
         return {"items": items, "source": "local_metadata_cache", "network_used": False,
-                "method": "关键词与本地文献标题重合度，加持久化喜欢/踩反馈；不是全文语义判定。",
-                "code_policy": "仅出现GitHub链接的元数据不计为已核验代码，也不宣称复现成功。"}
+                "method": "关键词与本地文献标题重合度、持久化反馈及已核验开源关联的适度加分；不是全文语义判定。",
+                "code_policy": "仅出现链接不加分；公开仓库、README回指、许可证和源码核验有效期24小时，未执行复现实验。"}

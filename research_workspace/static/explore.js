@@ -229,11 +229,25 @@
       }
       if (paper.code_links?.length) {
         const code = node("div", "ex-code-hints");
-        code.append(node("span", "", "代码线索 · 尚未核验关联或复现"));
+        code.append(node("span", "", paper.verified_code ? "开源代码关联已核对 · 未执行复现实验" : "代码线索 · 未确认关联或核验已过期"));
         paper.code_links.forEach((item) => {
-          const link = safeLink(item.url, "查看元数据所列仓库 ↗");
+          const link = safeLink(item.url, item.source_type ? "查看原文所列仓库 ↗" : "查看元数据所列仓库 ↗");
           if (link) code.append(link);
+          if (item.source_evidence && typeof onEvidence === "function") code.append(button("核对原文代码链接", () => onEvidence(item.source_evidence), "ex-text-button"));
+          if (item.check) code.append(node("p", "ex-muted", `${item.check.reason} 核验于 ${date(item.check.checked_at)}`));
         });
+        const verify = button("核验代码关联", async () => {
+          verify.disabled = true;
+          try {
+            const result = await api(`/api/discover/code/${encodeURIComponent(paper.id)}`, json("POST", {}));
+            if (!alive) return;
+            [searchItems, recommendedItems].flat().filter(item => item.id === paper.id).forEach(item => Object.assign(item, result.paper));
+            if (activeView === "recommendations") await loadRecommendations(); else renderResults();
+            notice.show(result.paper.verified_code ? "开源关联已核对，尚未执行复现实验。" : "核验已记录，请查看仓库关联说明。");
+          } catch (error) { if (alive) notice.show(error.message, true); }
+          finally { if (alive) verify.disabled = false; }
+        }, "ex-button ex-small");
+        code.append(verify, node("p", "ex-muted", "仅访问公开GitHub接口，最多检查两个仓库；不会下载或运行仓库代码。"));
         card.append(code);
       }
       const provenance = node("div", "ex-paper-provenance");

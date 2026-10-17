@@ -380,6 +380,11 @@ def build_router():
         from .discovery import DiscoveryService
         return {'subscriptions':DiscoveryService(library).list_subscriptions()}
 
+    @router.post('/discover/code/{paper_id:path}')
+    def verify_paper_code(paper_id:str,library:Library=Depends(library_for)):
+        from .discovery import DiscoveryService
+        return {'paper':DiscoveryService(library).verify_code(paper_id)}
+
     @router.post('/subscriptions')
     def subscribe(body:SubscriptionInput,library:Library=Depends(library_for)):
         from .discovery import DiscoveryService

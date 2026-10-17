@@ -37,7 +37,7 @@
         .map(element => ({element, top:element.scrollTop, left:element.scrollLeft})),
       returnLabel:activeModule === 'manage'
         ? (root.querySelector('[role="tab"][aria-selected="true"]')?.textContent === '本页文字' ? '返回文字核对' : '返回文献管理')
-        : (controller?.getReturnLabel?.() || (activeModule === 'graph' ? '返回引用图谱' : '返回任务结果')),
+        : (controller?.getReturnLabel?.() || (activeModule === 'graph' ? '返回引用图谱' : activeModule === 'discovery' ? '返回发现与追踪' : '返回任务结果')),
     };
     controller?.suspend?.();
     while (root.firstChild) state.nodes.append(root.firstChild);
@@ -84,7 +84,7 @@
   }
   async function activate(name, intent) {
     const restoring = intent?.restorePrevious && returnHistory.at(-1)?.module === name;
-    const retaining = intent?.retainCurrent && ['manage','research','graph'].includes(activeModule) && controller;
+    const retaining = intent?.retainCurrent && ['manage','research','graph','discovery'].includes(activeModule) && controller;
     bridge.invalidateEvidenceNavigation?.();
     evidenceOrigin = null;
     if (retaining) retainModule();
@@ -120,7 +120,7 @@
         if (originRevision === revision && controller === mountedController) throw problem;
       }
     }};
-    if (['manage','research','graph'].includes(name)) options.onEvidence = async evidence => {
+    if (['manage','research','graph','discovery'].includes(name)) options.onEvidence = async evidence => {
       if (activeModule !== name || controller !== mountedController) return;
       const origin = {controller:mountedController, request:revision};
       evidenceOrigin = origin;
@@ -159,7 +159,7 @@
     }
   }));
   window.addEventListener('research:reader',()=>activate('reader', {
-    retainCurrent:['manage','research','graph'].includes(activeModule) && evidenceOrigin?.controller === controller && evidenceOrigin?.request === revision,
+    retainCurrent:['manage','research','graph','discovery'].includes(activeModule) && evidenceOrigin?.controller === controller && evidenceOrigin?.request === revision,
   }));
   function returnToPrevious() {
     const previous = returnHistory.at(-1);
