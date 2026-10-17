@@ -213,7 +213,12 @@ def extract_raster_math(page,configuration,excluded=()):
     matrices=scan_matrices(page,pixels,2,configuration,budget,excluded)
     forbidden=[*excluded,*(m['raw_bbox'] for m in matrices)]
     formulas=scan_fractions(page,pixels,configuration,budget,forbidden)
-    formulas+=scan_linear(page,image,configuration,budget,forbidden)
+    linear=scan_linear(page,image,configuration,budget,forbidden)
+    formulas+=linear
+    from .scan_operators import extract_scan_operators
+    hints=[f['raw_bbox'] for f in linear if len(re.findall(r'[A-Za-z]{4,}',f['original_text']))<=2]
+    extended,operator_audit=extract_scan_operators(page,pixels,configuration,forbidden,hints)
+    formulas+=extended
     return formulas,matrices,{'status':'analyzed','version':VERSION,'model_calls':0,'ocr_calls':129-budget['remaining'],
-        'ocr_budget':128,'needs_review':True,'supported':['rectangular_simple_entries','explicit_scalar_assignments','observed_fraction_subexpressions'],
-        'unsupported':['general_scan_formula_latex','nested_matrices','unobserved_scripts','unknown_glyphs']}
+        'ocr_budget':128,'operator_audit':operator_audit,'needs_review':True,'supported':['rectangular_simple_entries','explicit_scalar_assignments','observed_fraction_subexpressions','finite_scripts_radicals_summations'],
+        'unsupported':['general_scan_formula_latex','nested_matrices','ambiguous_scripts','unknown_glyphs']}

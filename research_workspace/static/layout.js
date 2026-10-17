@@ -188,7 +188,7 @@
         const item = element("article", "rm-text-block");
         item.append(element("span", "rm-badge", "需复核"), element("p", "rm-original-text", formula.original_text || formula.text), evidenceControl(formula.evidence));
         if (formula.latex) {
-          item.append(element("p", "rm-field-title", formula.scope === 'subexpression' ? '分式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
+          item.append(element("p", "rm-field-title", formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
         } else item.append(element("p", "rm-muted", "该公式不在可靠转写子集中，仅保留原文。"));
         if (formula.method?.startsWith('native-math-geometry-')) {
           const audit = element('details'); audit.append(element('summary', '', '查看转写依据'));
@@ -208,12 +208,17 @@
           }
           item.append(audit);
         }
-        if (formula.method === 'raster-math-v1') {
+        if (formula.method?.startsWith('raster-')) {
           const audit=element('details');audit.append(element('summary','','查看扫描公式审核记录'));
           audit.append(element('p','rm-muted',formula.latex ? '多次OCR观察一致仍可能出错，请核对原图。' : `未输出完整结果：${formula.conversion}；保留原图与不同识别观察。`));
+          if (formula.operator_audit) {
+            audit.append(evidenceControl(formula.operator_audit.evidence,'核对运算符原图 →'));
+            for (const view of formula.operator_audit.views || []) audit.append(element('p','rm-muted',`语言 ${view.language}，${view.dpi} DPI：${view.text || '未识别'}`));
+          }
+          const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限'};
           for (const value of [formula,...(formula.operands || [])]) {
             for (const view of value.ocr_audit?.views || []) audit.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}：${view.text || '未识别'}`));
-            if (value !== formula) audit.append(evidenceControl(value.evidence,'核对分子或分母 →'));
+            if (value !== formula) audit.append(evidenceControl(value.evidence,`核对${roles[value.role] || '分子或分母'} →`));
           }
           item.append(audit);
         }
