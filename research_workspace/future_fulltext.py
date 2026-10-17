@@ -30,6 +30,7 @@ def plan_sources(result):
                 selected.append(ids[offset])
     return {'papers': [deepcopy(sources[s]) for s in selected],
             'directions': deepcopy(directions), 'queries': deepcopy(list(queries.values())),
+            'live_search_required':audit.get('live_refresh_requested',False),'date_filter':audit.get('date_filter'),
             'created_at': _now(), 'paper_limit': MAX_PAPERS}
 
 
@@ -106,6 +107,14 @@ async def fulltext_step(store, service, job, abstract_result):
                   'source_ids': [s['source_id'] for s in selected], 'documents': ready,
                   'excluded': False, 'status': 'evidence_insufficient', 'full_text_reviewed': False,
                   'coverage': 'not_assessed', 'checked_at': _now()}
+        own_queries=[q for q in plan['queries'] if q['query_id'] in direction.get('query_ids',[])]
+        live_required=plan.get('live_search_required',False)
+        fresh=bool(own_queries) and all(q.get('status')=='completed' and q.get('cached') is False
+            and (q.get('receipt') or {}).get('id') for q in own_queries)
+        covered=not (set(direction.get('required_queries',[]))-{q.get('query','') for q in own_queries})
+        record['search_audit']={'live_required':live_required,'verified':bool(fresh and covered),
+            'date_filter':plan.get('date_filter'),'queries':deepcopy(own_queries),
+            'note':'实时查询不完整、命中缓存或缺少回执时禁止自动筛除。'}
         store.check_cancel(jid)
         if ready:
             docs = list(dict.fromkeys(r['document_id'] for r in ready))

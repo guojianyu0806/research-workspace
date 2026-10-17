@@ -9,7 +9,7 @@ from pydantic import Field
 
 from .intelligence import StrictModel, Claim, Evidence
 
-VERSION = 'future-filter-v4'
+VERSION = 'future-filter-v5'
 MAX_DIRECTIONS = 12
 MAX_CONDITIONS = 6
 COVERAGE = Literal['fully_addressed','partially_addressed','evidence_insufficient']
@@ -226,6 +226,7 @@ async def filter_step(store,service,job,result):
     directions=start['directions']
     prefix=lambda d,stage:f"future_filter:{d['direction_id']}:{stage}"
     def eligible(d):
+        if d.get('search_audit',{}).get('live_required') and not d['search_audit'].get('verified'):return []
         return [x for x in d.get('documents',[]) if x.get('parse_status')=='completed'
                 and x.get('pages_done')==x.get('total_pages') and x.get('total_pages',0)>0]
     async def generate(prompt,payload,schema):
@@ -394,6 +395,7 @@ async def filter_step(store,service,job,result):
         status='fully_addressed' if excluded else 'partially_addressed' if any(
             c['status'] in {'fully_addressed','partially_addressed'} for c in checked) else 'evidence_insufficient'
         record={k:d.get(k) for k in ('direction_id','section_index','heading','proposed_work')}
+        if d.get('search_audit'):record['search_audit']=deepcopy(d['search_audit'])
         record.update(status=status,excluded=excluded,conditions=checked,joint_finding=joint,joint_review=review,
             documents=documents,source_ids=d.get('source_ids',[]),checked_at=_now(),
             reason='同一论文的原文及联合审核充分覆盖全部原设想条件，已移出重点候选；原始记录保留。' if excluded else

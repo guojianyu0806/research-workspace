@@ -94,6 +94,7 @@
     panel.append(node("h4", "", "公开研究摘要核验"),
       node("p", "rs-future-status", `${futureStatusLabels[audit.status] || "核验状态未知"}（${audit.status || "unknown"}）`));
     if (audit.notice) panel.append(node("p", "rs-result-note", audit.notice));
+    if(audit.date_filter)panel.append(node('p','rs-muted',`提交时间范围：${audit.date_filter.from} 至 ${audit.date_filter.to}；${audit.live_refresh_requested?'本次强制实时检索':'允许使用明确标记的缓存'}。`));
     panel.append(node("p", "rs-muted", "仅对本次返回的公开摘要进行有限判定；暂移出的方向仍需全文确认，保留方向也不构成研究空白或新颖性证明。"));
     const sources = new Map((Array.isArray(audit.sources) ? audit.sources : []).map((source) => [source.source_id, source]));
     const queries = node("section", "rs-future-queries"); queries.append(node("h5", "", "实际查询与检索记录"));
@@ -104,6 +105,7 @@
         node("p", "rs-prose rs-query-text", query.query || "未记录查询词"),
         node("p", "rs-muted rs-small", `检索记录时间：${query.retrieved_at || "未取得返回记录"} · ${query.cached === true ? "使用缓存" : query.cached === false ? "非缓存返回" : "缓存状态未记录"}`));
       if (query.attempted_at) item.append(node("p", "rs-muted rs-small", `本次尝试时间：${query.attempted_at}`));
+      if(query.receipt)item.append(node('p','rs-muted rs-small',`真实检索回执：${query.receipt.id} · SHA-256 ${query.receipt.sha256}`));
       item.append(node("p", "rs-muted rs-small", `字段：${query.field || "未记录"} · 排序：${query.sort_by || "未记录"} · 返回上限：${query.limit ?? "未记录"}`));
       if (query.strategy === "topic_only") item.append(node("p", "rs-muted rs-small", "本条只使用文献题名中的主题词，尚未覆盖方向的全部表达。"));
       if (query.reason || query.error) item.append(node("p", "rs-muted rs-small", query.reason || "本次查询失败，未形成可靠证据。"));
@@ -255,6 +257,12 @@
     const glossaryField=field("统一术语（可选，最多50项）",glossaryInput);form.append(glossaryField);
     const prompt = textarea("输入希望从原文核验的问题。", 6);
     const promptField = field("研究问题", prompt); form.append(promptField);
+    const futureSearchOptions=node('fieldset','rs-fieldset');
+    futureSearchOptions.append(node('legend','rs-label','最新研究检索范围'));
+    const liveSearch=input('checkbox');liveSearch.checked=true;
+    const liveLabel=node('label','rs-check-label');liveLabel.append(liveSearch,node('span','','本次强制实时检索，不复用缓存'));
+    const researchDays=select([['30','最近30天'],['90','最近90天'],['365','最近一年']]);researchDays.value='90';
+    futureSearchOptions.append(liveLabel,field('论文提交时间',researchDays));form.append(futureSearchOptions);
     const inputNote = node("p", "rs-muted rs-small"); form.append(inputNote);
     const submit = button("创建研究任务", true); submit.type = "submit"; submit.disabled = true;
     form.append(submit, node("p", "rs-muted rs-small", "执行任务时，所选原文或输入文本将发送到你配置的模型服务。"));
@@ -342,13 +350,14 @@
       pageField.hidden = scope.value !== "page"; page.required = isDocumentTranslation && scope.value === "page";
       targetField.hidden = !isDocumentTranslation && !isTextTranslation;
       glossaryField.hidden = !isDocumentTranslation && !isTextTranslation;
+      futureSearchOptions.hidden=taskKind!=='future_work';
       promptField.hidden = isDocumentTranslation;
       prompt.required = ["qa", "compare", "draft", "translate_text"].includes(taskKind);
       const label = taskKind === "draft" ? "研究idea与论文框架要求" : isTextTranslation ? "待翻译学术文本" : ["review", "future_work"].includes(taskKind) ? "关注方向（可选）" : "研究问题";
       promptField.firstChild.textContent = label;
       prompt.maxLength = isTextTranslation ? 60000 : ["qa", "compare"].includes(taskKind) ? 4000 : 10000;
       prompt.placeholder = isTextTranslation ? "粘贴需要翻译的摘要或正文。" : taskKind === "draft" ? "描述研究目标、已有工作与准备验证的想法。" : "说明希望核验的问题或关注的研究方向。";
-      inputNote.textContent = taskKind === "future_work" ? "生成候选后检索arXiv及最多3篇公开PDF，逐条件审核全文。仅同一论文充分、共同覆盖全部条件且联合审核通过时移出候选；部分覆盖和证据不足保留，原始记录不删除。"
+      inputNote.textContent = taskKind === "future_work" ? "按所选提交时间范围检索arXiv，保存真实检索回执，获取最多3篇公开PDF并逐条件审核。仅同一论文充分、共同覆盖全部条件且联合审核通过时移出候选；部分覆盖和证据不足保留，原始记录不删除。"
         : isDocumentTranslation ? "整篇翻译覆盖全部可用文本块；扫描或失败页面会单独标注，不会假装完成。"
         : taskKind === "draft" ? "生成的是待验证研究框架，不会把计划中的实验当成已完成结果。" : "";
     }
@@ -666,6 +675,7 @@
       event.preventDefault(); if (state.posting || !form.reportValidity()) return;
       if (!state.configured) { life.show("请先配置真实模型服务。", true); return; }
       const payload = { kind: kind.value };
+      if(kind.value==='future_work'){payload.refresh_search=liveSearch.checked;payload.research_days=Number(researchDays.value);}
       if (["translate","translate_text"].includes(kind.value) && glossaryInput.value.trim()) {
         const entries=glossaryInput.value.split(/\r?\n/).filter(line=>line.trim());
         if(entries.length>50 || entries.some(line=>line.split("=>").length!==2 || line.split("=>").some(part=>!part.trim()))) {life.show("术语表每行使用“原文术语 => 统一译法”，最多50项。",true);return;}

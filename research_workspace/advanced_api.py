@@ -70,6 +70,8 @@ class ResearchTask(StrictInput):
     glossary: dict[str,str] | None = Field(default=None,max_length=50)
     full_text_verify: bool = True
     assess_solved: bool = True
+    refresh_search: bool = True
+    research_days: int = Field(default=90,ge=1,le=3650)
 
 
 class SubscriptionInput(StrictInput):
@@ -172,6 +174,8 @@ def task_markdown(job):
                       '### 实际查询与检索记录'])
         if not audit.get('queries'):
             lines.append('本次没有可展示的外部查询记录。')
+        if audit.get('date_filter'):
+            lines.append('论文提交时间范围：'+plain(audit['date_filter']['from'])+' 至 '+plain(audit['date_filter']['to'])+'；'+('强制实时检索。' if audit.get('live_refresh_requested') else '允许使用明确标记的缓存。'))
         for query in audit.get('queries',[]):
             cache = '使用缓存' if query.get('cached') is True else '非缓存返回' if query.get('cached') is False else '缓存状态未记录'
             lines.extend([f'#### {plain(query.get("query_id") or "查询")} · {query_labels.get(query.get("status"),"状态未知")}',
@@ -179,6 +183,9 @@ def task_markdown(job):
                           '检索记录时间：'+plain(query.get('retrieved_at') or '未取得返回记录')+'；'+cache])
             if query.get('attempted_at'):
                 lines.append('本次尝试时间：'+plain(query['attempted_at']))
+            if query.get('receipt'):
+                lines.extend(['真实检索回执：'+plain(query['receipt']['id']),
+                    '检索响应SHA-256：'+plain(query['receipt']['sha256'])])
             lines.append('字段：'+plain(query.get('field') or '未记录')+'；排序：'+plain(query.get('sort_by') or '未记录')
                          +'；返回上限：'+plain(query.get('limit','未记录')))
             if query.get('strategy')=='topic_only':

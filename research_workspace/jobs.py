@@ -290,7 +290,9 @@ class JobStore:
                     result = saved['future_verification']
                 else:
                     result = await verify_future_work(self.library,service.provider,saved['future_synthesis'],
-                                                     check_cancel=lambda:self.check_cancel(job_id))
+                        check_cancel=lambda:self.check_cancel(job_id),
+                        **({'force_refresh':payload['refresh_search'],'lookback_days':payload.get('research_days',90)}
+                           if 'refresh_search' in payload else {}))
                     self.save_item(job_id,'future_verification',{'stage':'future_verification','result':result},initial_total)
                 if payload.get('full_text_verify', False):
                     from .future_fulltext import fulltext_step

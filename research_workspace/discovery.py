@@ -319,15 +319,29 @@ class DiscoveryService:
                 "SELECT record FROM papers ORDER BY retrieved_at DESC LIMIT ?", (limit,))]
 
     def search(self, query: str, *, field: str = "all", limit: int = 10,
-               sort_by: str = "relevance") -> dict:
+               sort_by: str = "relevance", force_refresh: bool = False,
+               published_from: str | None = None, published_to: str | None = None) -> dict:
         query = _query(query)
+        if not isinstance(force_refresh,bool):raise DiscoveryError('实时检索标记必须为布尔值。')
+        bounds=[]
+        for value in (published_from,published_to):
+            try:
+                parsed=datetime.fromisoformat(value.replace('Z','+00:00')) if value else None
+                if parsed and parsed.tzinfo is None:raise ValueError()
+                bounds.append(parsed.astimezone(timezone.utc) if parsed else None)
+            except (ValueError,AttributeError,TypeError):raise DiscoveryError('发表时间范围必须为带时区的ISO时间。') from None
+        if bool(bounds[0])!=bool(bounds[1]) or (bounds[0] and bounds[0]>bounds[1]):
+            raise DiscoveryError('请提供有效且完整的发表时间起止范围。')
+        published_from,published_to=[v.isoformat() if v else None for v in bounds]
         _bounded_int(limit, 1, 50, "检索条数")
         if field not in {"all", "title"} or sort_by not in {"relevance", "submittedDate", "lastUpdatedDate"}:
             raise DiscoveryError("不支持该检索字段或排序方式。")
-        key = hashlib.sha256(json.dumps([query.casefold(), field, limit, sort_by]).encode()).hexdigest()
+        cache_parts=[query.casefold(),field,limit,sort_by]
+        if bounds[0]:cache_parts += [published_from,published_to]
+        key = hashlib.sha256(json.dumps(cache_parts).encode()).hexdigest()
         with self._db() as db:
             cache = db.execute("SELECT response,retrieved_at FROM searches WHERE cache_key=?", (key,)).fetchone()
-        if cache and datetime.fromisoformat(cache[1]) + timedelta(hours=24) > datetime.now(timezone.utc):
+        if not force_refresh and cache and datetime.fromisoformat(cache[1]) + timedelta(hours=24) > datetime.now(timezone.utc):
             result = json.loads(cache[0])
             result["cached"] = True
             result["items"] = [self.get_paper(item["id"]) for item in result["items"]]
@@ -343,12 +357,34 @@ class DiscoveryService:
                 raise DiscoveryError("请输入可检索的论文标题或关键词。")
             prefix = "ti" if field == "title" else "all"
             params["search_query"] = " AND ".join(f'{prefix}:"{term}"' for term in terms)
-        content, _ = self._request(ARXIV_API, params=params, max_bytes=4 * 1024 * 1024)
+        if bounds[0]:
+            if identifier:raise DiscoveryError('指定文献编号的精确查询不适用发表时间过滤。')
+            params['search_query'] += ' AND submittedDate:['+bounds[0].strftime('%Y%m%d%H%M')+' TO '+bounds[1].strftime('%Y%m%d%H%M')+']'
+        request_started=now_utc()
+        content, request_url = self._request(ARXIV_API, params=params, max_bytes=4 * 1024 * 1024)
         retrieved = now_utc()
         papers, total = self._parse_feed(content, retrieved)
+        excluded_by_date=0
+        if bounds[0]:
+            eligible=[]
+            for paper in papers:
+                try:published=datetime.fromisoformat(paper['published'].replace('Z','+00:00'))
+                except (ValueError,AttributeError,TypeError):published=None
+                if published and published.tzinfo and bounds[0]<=published<=bounds[1]:eligible.append(paper)
+                else:excluded_by_date+=1
+            papers=eligible
+        receipt_id=uuid4().hex
+        receipt_dir=self.library.data_dir/'discovery-responses';receipt_dir.mkdir(exist_ok=True)
+        with (receipt_dir/(receipt_id+'.xml')).open('xb') as output:output.write(content)
         response = {"query": query, "field": field, "source": "arxiv", "source_url": ARXIV_API,
                     "retrieved_at": retrieved, "items": papers[:limit], "total_results": total,
                     "metadata_only": True, "cached": False,
+                    'force_refresh':force_refresh,'sort_by':sort_by,
+                    'published_from':published_from,'published_to':published_to,
+                    'excluded_by_date':excluded_by_date,
+                    'receipt':{'id':receipt_id,'path':'discovery-responses/'+receipt_id+'.xml',
+                        'sha256':hashlib.sha256(content).hexdigest(),'bytes':len(content),
+                        'request_started_at':request_started,'received_at':retrieved,'request_url':request_url},
                     "next_network_refresh_at": (datetime.fromisoformat(retrieved) + timedelta(hours=24)).isoformat()}
         with self._db() as db:
             for paper in papers[:limit]:

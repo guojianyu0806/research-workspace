@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import inspect
 from pathlib import Path
 import re
@@ -348,7 +348,7 @@ async def _check_cancel(callback) -> None:
 
 
 async def verify_future_work(library, provider, synthesis: dict, *, discovery=None,
-                             check_cancel=None) -> dict:
+                             check_cancel=None,force_refresh=False,lookback_days=None) -> dict:
     """Return a copy of a Future Work synthesis with auditable abstract screening.
 
     At most three distinct arXiv queries run, five results each, newest submission
@@ -366,6 +366,14 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
         raise ValueError("公开研究核验仅适用于Future Work结果。")
     candidates = _candidates(result)
     started_at = _now()
+    if not isinstance(force_refresh,bool):raise ValueError('Invalid live search option')
+    window=None
+    if lookback_days is not None:
+        if isinstance(lookback_days,bool) or not isinstance(lookback_days,int) or not 1<=lookback_days<=3650:
+            raise ValueError('Invalid research lookback')
+        end=datetime.fromisoformat(started_at)
+        window={'from':(end-timedelta(days=lookback_days)).isoformat(),'to':end.isoformat(),
+                'field':'submittedDate','lookback_days':lookback_days}
     translated, planning = await _translate_query_conditions(provider, candidates, check_cancel)
     plans = _query_plan(candidates, result, translated)
     sources: dict[str, dict] = {}
@@ -385,7 +393,9 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
             plan["attempted_at"] = _now()
             try:
                 response = await asyncio.to_thread(discovery.search, plan["query"], field="all",
-                                                   limit=RESULTS_PER_QUERY, sort_by="submittedDate")
+                    limit=RESULTS_PER_QUERY, sort_by="submittedDate",
+                    **({'force_refresh':force_refresh,'published_from':window['from'] if window else None,
+                        'published_to':window['to'] if window else None} if force_refresh or window else {}))
                 if inspect.isawaitable(response):
                     response = await response
                 if not isinstance(response, dict) or not isinstance(response.get("items"), list):
@@ -395,17 +405,34 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
                     raise ValueError("Missing retrieval timestamp")
                 if response.get("query") != plan["query"]:
                     raise ValueError("Discovery query mismatch")
+                if force_refresh:
+                    receipt=response.get('receipt') or {}
+                    if (response.get('cached') is not False or not re.fullmatch(r'[a-f0-9]{32}',str(receipt.get('id','')))
+                        or not re.fullmatch(r'[a-f0-9]{64}',str(receipt.get('sha256','')))
+                        or datetime.fromisoformat(receipt['request_started_at'])<datetime.fromisoformat(started_at)):
+                        raise ValueError('Live search did not return a fresh receipt')
                 plan.update(status="completed", retrieved_at=retrieved_at,
                             cached=bool(response.get("cached", False)),
                             total_results=response.get("total_results"),
                             next_network_refresh_at=response.get("next_network_refresh_at"))
+                plan.update(receipt=response.get('receipt'),force_refresh=force_refresh,
+                    published_from=response.get('published_from'),published_to=response.get('published_to'),
+                    excluded_by_date=response.get('excluded_by_date',0))
                 for record in response["items"][:RESULTS_PER_QUERY]:
                     source = _source(record, retrieved_at)
+                    if source and window:
+                        try:
+                            published=datetime.fromisoformat(source['published'].replace('Z','+00:00'))
+                            if not datetime.fromisoformat(window['from'])<=published<=datetime.fromisoformat(window['to']):source=None
+                        except (ValueError,TypeError,AttributeError):source=None
                     if source is None:
                         plan["invalid_source_count"] = plan.get("invalid_source_count", 0) + 1
                         continue
                     source_id = source["source_id"]
                     sources.setdefault(source_id, source)
+                    if response.get('receipt'):
+                        ids=sources[source_id].setdefault('discovery_receipt_ids',[])
+                        if response['receipt']['id'] not in ids:ids.append(response['receipt']['id'])
                     if source_id not in plan["source_ids"]:
                         plan["source_ids"].append(source_id)
             except Exception:
@@ -472,11 +499,12 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
     reviewed = sum(item["status"] != "evidence_insufficient" for item in ordered)
     status = "completed" if ordered and reviewed == len(ordered) else "partial" if reviewed else "evidence_insufficient"
     audit = {"status": status, "prompt_version": PROMPT_VERSION, "started_at": started_at,
+             'workflow_version':'future-live-v1' if force_refresh or window else 'future-abstract-legacy',
              "completed_at": _now(), "scope": "bounded_arxiv_abstracts_only",
              "query_limit": MAX_QUERIES, "results_per_query": RESULTS_PER_QUERY,
              "query_generation": "bounded_translated_conditions_with_explicit_keyword_fallback",
              "query_planning": planning,
-             "sort_by": "submittedDate", "date_filter": None,
+             "sort_by": "submittedDate", "date_filter": window,'live_refresh_requested':force_refresh,
              "queries": plans, "sources": list(sources.values()), "directions": ordered,
              "errors": errors, "model_called": model_called or planning["model_called"],
              "assessment_model_called": model_called, "generation_call_limit": 2,
@@ -488,9 +516,9 @@ async def verify_future_work(library, provider, synthesis: dict, *, discovery=No
     result["future_work_verification"] = "bounded_abstract_review" if reviewed else "evidence_insufficient"
     result["retained_directions"] = [item for item in ordered if not item["excluded"]]
     result["excluded_directions"] = [item for item in ordered if item["excluded"]]
-    result["search_time_range"] = {"from": None, "to": None, "date_filter": None,
+    result["search_time_range"] = {"from": window['from'] if window else None, "to": window['to'] if window else None, "date_filter": window,
                                    "checked_at": audit["completed_at"],
-                                   "note": "未设置发表日期区间；真实检索/缓存时间见每条query.retrieved_at。"}
+                                   "note": "限定提交时间范围，按新到旧查询；实时回执和缓存状态见每条查询。" if window else "未设置发表日期区间；真实检索/缓存时间见每条query.retrieved_at。"}
     # Preserve the initial synthesis trace and sections, while retiring the old
     # blanket claim that no external search has happened after an actual attempt.
     limitations = list(result.get("limitations", []))
