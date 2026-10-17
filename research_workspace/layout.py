@@ -346,6 +346,7 @@ class LayoutService:
                     for index,formula in enumerate(scan_formulas):
                         raster_record(formula,'ocr_formula_region');formula['id']=f'scan-formula-{index+1}'
                         for operand in formula.get('operands',[]):raster_record(operand,'ocr_fraction_operand')
+                        for observation in formula.get('associated_line_observations',[]):raster_record(observation,'ocr_operator_limit_line')
                         if formula.get('operator_audit',{}).get('raw_bbox'):
                             raster_record(formula['operator_audit'],'ocr_operator_region')
                         if formula.get('geometry_audit'):

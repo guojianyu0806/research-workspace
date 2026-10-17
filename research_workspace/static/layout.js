@@ -222,6 +222,9 @@
             for (const view of value.ocr_audit?.views || []) audit.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}：${view.text || '未识别'}`));
             if (value !== formula) audit.append(evidenceControl(value.evidence,`核对${roles[value.role] || '分子或分母'} →`));
           }
+          for (const line of formula.associated_line_observations || []) {
+            audit.append(element('p','rm-muted',`归属本求和片段的行观察：${line.original_text}`),evidenceControl(line.evidence,'核对限值行观察 →'));
+          }
           item.append(audit);
         }
         formulas.append(item);

@@ -246,10 +246,22 @@ def extract_raster_math(page,configuration,excluded=()):
     forbidden=[*excluded,*(m['raw_bbox'] for m in matrices)]
     formulas=scan_fractions(page,pixels,configuration,budget,forbidden)
     linear=scan_linear(page,image,configuration,budget,forbidden)
-    formulas+=linear
     from .scan_operators import extract_scan_operators
     hints=[f['raw_bbox'] for f in linear if len(re.findall(r'[A-Za-z]{4,}',f['original_text']))<=2]
     extended,operator_audit=extract_scan_operators(page,pixels,configuration,forbidden,hints)
+    for line in linear:
+        owner=None
+        if line['latex']:
+            for operator in extended:
+                if operator.get('observed_operator')!=r'\sum':continue
+                for operand in operator['operands']:
+                    if (operand['latex'] and re.sub(r'\s+','',line['latex'])==re.sub(r'\s+','',operand['latex'])
+                        and (pymupdf.Rect(line['raw_bbox'])&pymupdf.Rect(operand['raw_bbox'])).get_area()>0):
+                        owner=operator;break
+                if owner:break
+        if owner:
+            owner.setdefault('associated_line_observations',[]).append(line)
+        else:formulas.append(line)
     formulas+=extended
     return formulas,matrices,{'status':'analyzed','version':VERSION,'model_calls':0,'ocr_calls':129-budget['remaining'],
         'ocr_budget':128,'operator_audit':operator_audit,'needs_review':True,'supported':['rectangular_simple_entries','explicit_scalar_assignments','observed_fraction_subexpressions','finite_scripts_radicals_summations'],

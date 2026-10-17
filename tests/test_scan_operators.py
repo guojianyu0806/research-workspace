@@ -24,6 +24,8 @@ def test_existing_scanned_sums_require_operator_and_each_limit(configuration):
         values,_,_=extract_raster_math(pdf[0],configuration)
     sums=[v for v in values if v.get('observed_operator')==r'\sum']
     assert len(sums)==2 and all(v['latex']==r'\sum_{i=1}^{I}' for v in sums)
+    assert not any(v['latex']=='i=1' for v in values)
+    assert all(s.get('associated_line_observations') for s in sums)
     for value in sums:
         assert value['scope']=='operator_with_limits' and value['status']=='partial_formula_needs_review'
         assert value['operator_audit']['status']=='two_view_candidate'

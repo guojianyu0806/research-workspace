@@ -75,6 +75,10 @@ def main():
                 check('missing_upper_anchor_is_in_blank_search_region',first['operands'][0]['bbox'][3]<first['operator_audit']['bbox'][1])
             check(name+'_operator_and_observations_versioned',all(f['operator_audit']['evidence']['run_id']==run
                 and all(o['ocr_audit'].get('status')=='not_observed' or o['ocr_audit']['evidence']['run_id']==run for o in f['operands']) for f in sums))
+            if name=='scan-sums-288':
+                check('limit_lines_are_not_independent_equations',not any(f['latex']=='i=1' for f in result['formulas']))
+                check('limit_line_observations_preserved_with_owner',all(f.get('associated_line_observations')
+                    and all(o['evidence']['run_id']==run for o in f['associated_line_observations']) for f in sums))
         with pymupdf.open(lib._source_path(doc['id'])) as pdf:
             for kind,items in [('matrix',result['matrices']),('formula',[f for f in result['formulas'] if f['latex']])]:
                 for i,item in enumerate(items):
