@@ -155,6 +155,10 @@ def task_markdown(job):
     all_directions = audit.get('directions',[]) if isinstance(audit,dict) else []
     retained = result.get('retained_directions',[item for item in all_directions if not item.get('excluded')])
     excluded = result.get('excluded_directions',[item for item in all_directions if item.get('excluded')])
+    awaiting_fulltext=bool(job['kind']=='future_work' and job.get('payload',{}).get('full_text_verify') and not result.get('future_direction_filter'))
+    if awaiting_fulltext:
+        retained=[{**item,'excluded':False} for item in all_directions];excluded=[]
+        lines.append(f'全文核验或最终筛选尚未完成，全部原始方向继续保留（{len(retained)}项）；摘要初筛仅作为历史记录。')
     excluded_sections = {section_index(item) for item in excluded}
     if job['kind']=='future_work' and not job['result'] and result:
         lines.append('以下展示已保存的阶段结果；任务的完成或中断状态以上方记录为准。')
@@ -195,11 +199,12 @@ def task_markdown(job):
             for source_id in query.get('source_ids',[]):
                 source = sources.get(source_id)
                 lines.append('- '+(official_source(source) if source else plain(source_id)+' · 来源记录缺失'))
-        if result.get('future_fulltext'):
+        if result.get('future_fulltext') or awaiting_fulltext:
             lines.append('以下为摘要初筛历史；当前保留与筛选结果以全文条件覆盖审核为准。' if result.get('future_direction_filter') else '以下保留摘要初筛历史；正文阶段保留全部原始设想，未自动排除方向。')
-        preliminary_retained=[d for d in all_directions if not d.get('excluded')] if result.get('future_fulltext') else retained
-        preliminary_excluded=[d for d in all_directions if d.get('excluded')] if result.get('future_fulltext') else excluded
+        preliminary_retained=[d for d in all_directions if not d.get('excluded')] if result.get('future_fulltext') or awaiting_fulltext else retained
+        preliminary_excluded=[d for d in all_directions if d.get('excluded')] if result.get('future_fulltext') or awaiting_fulltext else excluded
         for title,directions in [('保留为待验证方向',preliminary_retained),('暂移出重点候选（需全文确认）',preliminary_excluded)]:
+            if result.get('future_fulltext') or awaiting_fulltext:title='摘要历史：曾提示可能覆盖（非当前排除结果）' if title.startswith('暂移出') else '摘要历史：未确认覆盖'
             lines.append(f'### {title} · {len(directions)}')
             if not directions:
                 lines.append('本次没有列入此组的方向；这不构成已解决或研究空白的证明。')

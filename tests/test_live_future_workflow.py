@@ -240,3 +240,18 @@ def test_fulltext_export_matches_duplicate_claim_hashes_by_position_too():
             'claim_reviews':[{'claim_index':i,'claim_id':'C_same','verdict':'supported','reason':f'own-position-{i}'} for i in range(2)]}}}]}}
     text=task_markdown({'id':'fixture','kind':'future_work','status':'completed','result':result}).split('## 来源与任务记录')[0]
     assert text.count('own-position-0')==text.count('own-position-1')==1
+
+
+def test_interrupted_fulltext_export_never_reuses_abstract_exclusion_as_final():
+    from copy import deepcopy
+    from research_workspace.advanced_api import task_markdown
+    directions=[{'direction_id':f'direction-{i+1}','section_index':i,'heading':f'Heading{i}',
+        'proposed_work':f'Original proposal {i}.','excluded':i==0,'status':'potentially_addressed' if i==0 else 'evidence_insufficient'} for i in range(2)]
+    result={'future_verification':{'status':'completed','directions':directions,'queries':[],'sources':[]},
+        'retained_directions':[directions[1]],'excluded_directions':[directions[0]],
+        'sections':[{'heading':d['heading'],'proposed_work':d['proposed_work'],'claims':[]} for d in directions]}
+    job={'id':'fixture','kind':'future_work','status':'failed','payload':{'full_text_verify':True},'result':None,
+        'completed_items':[{'stage':'future_verification','result':result}]}
+    original=deepcopy(job);text=task_markdown(job)
+    assert '全部原始方向继续保留（2项）' in text and '摘要历史：曾提示可能覆盖（非当前排除结果）' in text
+    assert '**此方向暂移出重点候选' not in text and job==original

@@ -67,6 +67,7 @@
   }
   function futureDirections(output) {
     const all = Array.isArray(output.future_verification?.directions) ? output.future_verification.directions : [];
+    if (output.future_fulltext_pending) return { retained: all.map(d => ({...d, excluded:false})), excluded: [] };
     return {
       retained: Array.isArray(output.retained_directions) ? output.retained_directions : all.filter((direction) => !direction.excluded),
       excluded: Array.isArray(output.excluded_directions) ? output.excluded_directions : all.filter((direction) => direction.excluded),
@@ -118,11 +119,12 @@
       queries.append(item);
     }
     panel.append(queries);
-    const groups = output.future_fulltext ? {retained: (audit.directions || []).filter(d => !d.excluded),
+    const historical = Boolean(output.future_fulltext || output.future_fulltext_pending);
+    const groups = historical ? {retained: (audit.directions || []).filter(d => !d.excluded),
       excluded: (audit.directions || []).filter(d => d.excluded)} : futureDirections(output);
-    if (output.future_fulltext) panel.append(node("p", "rs-muted", output.future_direction_filter ? "以下为摘要初筛历史；当前保留与筛选结果以全文条件覆盖审核为准。" : "以下保留摘要初筛历史；正文核验阶段保留全部原始设想，未自动排除方向。"));
+    if (historical) panel.append(node("p", "rs-muted", output.future_direction_filter ? "以下为摘要初筛历史；当前保留与筛选结果以全文条件覆盖审核为准。" : "以下保留摘要初筛历史；正文核验阶段保留全部原始设想，未自动排除方向。"));
     for (const [key, title] of [["retained", "保留为待验证方向"], ["excluded", "暂移出重点候选（需全文确认）"]]) {
-      const group = node("section", "rs-future-directions"); group.append(node("h5", "", `${title} · ${groups[key].length}`));
+      const group = node("section", "rs-future-directions"); group.append(node("h5", "", `${historical ? (key === 'excluded' ? '摘要历史：曾提示可能覆盖（非当前排除结果）' : '摘要历史：未确认覆盖') : title} · ${groups[key].length}`));
       if (!groups[key].length) group.append(node("p", "rs-muted", key === "retained" ? "本次没有列入此组的方向；这不代表其余方向已被证明解决。" : "本次没有暂移出的方向。"));
       for (const direction of groups[key]) {
         const item = node("article", `rs-future-direction${key === "excluded" ? " is-excluded" : ""}`);
@@ -412,7 +414,8 @@
       if (state.resultStamp === signature) return;
       state.resultStamp = signature;
       const checkpoints = ['future_work','future_filter'].includes(job.kind) ? new Map((job.completed_items || []).map((item) => [item.stage, item.result])) : new Map();
-      const output = job.result || checkpoints.get("future_filter_result") || checkpoints.get("future_fulltext") || checkpoints.get("future_verification") || checkpoints.get("future_synthesis");
+      let output = job.result || checkpoints.get("future_filter_result") || checkpoints.get("future_fulltext") || checkpoints.get("future_verification") || checkpoints.get("future_synthesis");
+      if (output && job.kind === 'future_work' && job.payload?.full_text_verify && !output.future_direction_filter) output = {...output, future_fulltext_pending:true};
       const addGlossary=() => {
         const entries=Object.entries(output?.glossary || job.payload?.glossary || {});
         if(!entries.length) return;
@@ -443,6 +446,7 @@
       resultArea.replaceChildren();
       addGlossary();
       if (!output) { resultArea.append(node("p", "rs-empty", pending(job) ? "任务正在处理，结果保存后会在这里显示。" : "此任务尚无可展示结果。")); return; }
+      if (output.future_fulltext_pending) resultArea.append(node('p','rs-result-note',`全文核验或最终筛选尚未完成，全部原始方向继续保留（${futureDirections(output).retained.length} 项）；摘要初筛仅作为历史记录。`));
       if (output.status === "insufficient_evidence") resultArea.append(node("p", "rs-result-note", "证据不足：本次未生成确定性结论。"));
       const isFutureWork = job.kind === "future_work" || output.kind === "future_work";
       if (isFutureWork && !job.result) resultArea.append(node("p", "rs-muted", "以下展示已保存的阶段结果；任务的完成或中断状态以上方记录为准。"));
