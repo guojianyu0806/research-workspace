@@ -1781,7 +1781,7 @@ class IntelligenceService:
                         else "not_run_no_asserted_claims" if not claims else "exact_quote_only_no_outside_text")
                 return result, used, audit
             if attempt == 1:
-                if payload.get("allow_isolated_claim_repair") and len(reviews)==len(claims):
+                if payload.get("task")!='future_work' and payload.get("allow_isolated_claim_repair") and len(reviews)==len(claims):
                     from .response_subset import complete_supported_subset
                     complete = await complete_supported_subset(self,result,reviews,evidence,payload,audit,
                         required_documents=required_documents,check_cancel=check_cancel)
@@ -2146,7 +2146,7 @@ class IntelligenceService:
                 _prompt("review_synthesis_v1" if kind == "review" else "synthesis_v5"), {
                 "task": kind, "instruction": instruction, "evidence": [block.model_dump() for block in evidence],
                 "require_request_coverage": kind == "draft",
-                "allow_isolated_claim_repair":kind == "draft",
+                "allow_isolated_claim_repair":kind in {"draft","future_work"},
                 "external_freshness_verified": False,
                 **({"dimension_reading_sets": reading_sets,
                     "required_training_tasks": review_state.get("training_requirements", {})} if kind == "review" else {}),

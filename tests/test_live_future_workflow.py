@@ -114,3 +114,40 @@ def test_unverified_live_search_cannot_filter_even_with_a_complete_pdf(tmp_path)
     assert result and not result['excluded_directions']
     assert result['retained_directions'][0]['status']=='evidence_insufficient'
     assert result['retained_directions'][0]['search_audit']['verified'] is False
+
+
+def test_future_candidate_repair_preserves_good_claims_and_both_proposals(tmp_path):
+    import pymupdf
+    from research_workspace.intelligence import IntelligenceService,SynthesisPayload,ClaimSupportPayload,ClaimRepairPayload,CoveragePayload
+    library=Library(tmp_path)
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((30,70),'ORION models use attention. ORION predicts removed words.')
+        doc=library.import_document(pdf.tobytes(),'orion.pdf')['document']
+    library.process_next_job();calls=[];plans=['Test random projection.','Test a formal privacy guarantee.']
+    class Provider:
+        configured=True
+        async def generate(self,prompt,payload,schema):
+            calls.append(schema.__name__)
+            if schema is SynthesisPayload:
+                assert payload['allow_isolated_claim_repair'] is True
+                eid=payload['evidence'][0]['evidence_id']
+                return SynthesisPayload(status='generated',sections=[{'heading':str(i),'proposed_work':p,
+                    'claims':[{'text':'ORION uses attention.' if i==0 else 'ORION predicts 99 words.',
+                        'citations':[{'evidence_id':eid,'quote_id':'Q1' if i==0 else 'Q2'}]}]} for i,p in enumerate(plans)])
+            if schema is ClaimSupportPayload:return ClaimSupportPayload(
+                verdict='unsupported' if '99' in payload['claim']['text'] else 'supported',reason='Fixture own quote check.')
+            if schema is ClaimRepairPayload:
+                return ClaimRepairPayload(claim={'text':'ORION predicts removed words.',
+                    'citations':[{'evidence_id':payload['evidence'][0]['evidence_id'],'quote_id':'Q2'}]})
+            if schema is CoveragePayload:return CoveragePayload(unverified_statements=[],missing_aspects=[])
+            raise AssertionError(schema)
+    service=IntelligenceService(library,Provider())
+    async def retrieve(*a,**kw):
+        blocks=service._blocks([doc['id']]);return {'evidence':blocks,'trace':[],'queries':[],'_snapshot_blocks':blocks}
+    service.retrieve_for_question=retrieve
+    result=asyncio.run(service.synthesize('future_work',[doc['id']],instruction='Two directions.'))
+    assert [s['proposed_work'] for s in result['sections']]==plans
+    assert result['sections'][0]['claims'][0]['text']=='ORION uses attention.'
+    assert result['sections'][1]['claims'][0]['text']=='ORION predicts removed words.'
+    assert calls.count('SynthesisPayload')==1 and calls.count('ClaimRepairPayload')==1
+    assert 'optional_prune' not in result['grounding']
