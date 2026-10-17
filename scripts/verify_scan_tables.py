@@ -46,6 +46,10 @@ def main():
                     'ocr_numbers':re.findall(r'(?<![A-Za-z])[-+]?\d+(?:\.\d+)?',c['text'])})
             scanned[8].get_pixmap(dpi=180,clip=rect).save(str(output/f'table{i+1}-source.png'))
     check('source_unchanged',before==hashlib.sha256(library._source_path(doc['id']).read_bytes()).hexdigest())
+    check('all_body_cells_exact',all(c['exact'] for c in cells if c['row']>0))
+    check('all_body_numeric_sequences_match',all(c['native_numbers']==c['ocr_numbers'] for c in cells if c['row']>0))
+    check('numeric_recheck_audit_retained',any(a['status']=='two_view_candidate' and a['original_text']!=a['text']
+        and len(a['views'])==2 for t in observed['tables'] for c in t['cells'] for a in c.get('ocr_audit',[])))
     report={'scope':'developer rasterization of existing public arXiv PDF, not official scanned test set',
         'status':'structure_verified_text_requires_review',
         'source_sha256':before,'run_id':run,'page':9,'seconds':round(time.perf_counter()-start,3),'checks':checks,

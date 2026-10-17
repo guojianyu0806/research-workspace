@@ -198,6 +198,11 @@ class LayoutService:
                             if evidence:evidence['source']='immutable_pdf_raster_local_ocr'
                             cells.append({k:v for k,v in cell.items() if k not in {'raw_bbox','word_boxes'}} | {
                                 'bbox':cell_box,'evidence':evidence,'needs_review':True,
+                                'ocr_audit':[{**a,'bbox':bbox(a['bbox']) if a.get('bbox') else None,
+                                    'crop_bbox':bbox(a['crop_bbox']) if a.get('crop_bbox') else None,
+                                    'coordinate_system':'normalized_rendered_page',
+                                    'evidence':anchor(a.get('original_text',''),bbox(a['bbox']),'ocr_recheck_region') | {
+                                        'source':'immutable_pdf_raster_local_ocr'}} for a in cell.get('ocr_audit',[])],
                                 'word_evidence':[{'text':w['text'],'bbox':bbox(w['bbox'])} for w in cell['word_boxes']]})
                         text='\n'.join(' | '.join(c['text'] for c in cells if c['row']==r) for r in range(extracted['row_count']))
                         evidence=anchor(text,box,'ocr_table_region');evidence['source']='immutable_pdf_raster_local_ocr'

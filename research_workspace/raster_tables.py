@@ -7,7 +7,7 @@ from statistics import median
 import pymupdf
 
 
-VERSION='raster-table-v1'
+VERSION='raster-table-v2-sparse-recheck'
 MAX_PIXELS=4_000_000
 MAX_OCR_CELLS=200
 
@@ -112,12 +112,14 @@ def extract_scan_tables(page,ocr,*,dpi=144):
         half=max(1,thickness//2+1);clean[max(0,y0-1):y1+1,max(0,int(x)-half):int(x)+half+1]=255
     grids=_grids(horizontal,vertical)
     if grids:
+        from .local_ocr import words as recognize_words, numeric_rechecks, refine_numeric_cell, empty_artifact_checks
         sx,sy=page.rect.width/pix.width,page.rect.height/pix.height;tables=[];used=0
+        recheck_budget={'remaining':24}
         for grid in grids[:12]:
             cells=[]
             for r in range(grid['rows']):
                 for c in range(grid['columns']):
-                    geometry=grid['boxes'].get((r,c));words=[];text='';status='merged_or_missing_cell'
+                    geometry=grid['boxes'].get((r,c));words=[];text='';raw_text='';rechecks=[];status='merged_or_missing_cell'
                     if geometry:
                         box,rs,cs=geometry;status='not_processed_budget'
                         if used<MAX_OCR_CELLS:
@@ -134,14 +136,19 @@ def extract_scan_tables(page,ocr,*,dpi=144):
                                 padded=np.pad(rgb,((pad,pad),(pad,pad),(0,0)),constant_values=255)
                                 image=pymupdf.Pixmap(pymupdf.csRGB,padded.shape[1],padded.shape[0],padded.tobytes(),False)
                                 image.set_dpi(cell_dpi,cell_dpi);ox-=pad*72/cell_dpi;oy-=pad*72/cell_dpi
-                                with pymupdf.open(stream=image.pdfocr_tobytes(language=ocr['languages'],tessdata=ocr['path']),filetype='pdf') as doc:
-                                    words=[{'text':w[4],'bbox':[w[0]+ox,w[1]+oy,w[2]+ox,w[3]+oy]} for w in doc[0].get_text('words')]
-                                    text=_word_lines(words)
+                                words=recognize_words(image,ocr,mode=6,offset=(ox,oy))
+                                raw_text=_word_lines(words)
+                                words,empty_audit=empty_artifact_checks(page,words,pymupdf.Rect(left*sx,top*sy,right*sx,bottom*sy))
+                                words,mode_audit=refine_numeric_cell(image,words,ocr,(ox,oy))
+                                words,rechecks=numeric_rechecks(page,words,ocr,recheck_budget)
+                                rechecks=empty_audit+mode_audit+rechecks
+                                text=_word_lines(words)
                             status='ocr_extracted_needs_review' if text else 'empty_or_ocr_missed'
                         raw=[box[0]*sx,box[1]*sy,box[2]*sx,box[3]*sy]
                     else:raw=None;rs=cs=1
                     cells.append({'row':r,'column':c,'row_span':rs,'column_span':cs,'text':text,
-                        'raw_bbox':raw,'word_boxes':words,'status':status})
+                        'raw_bbox':raw,'word_boxes':words,'status':status,'raw_ocr_text':raw_text,
+                        'ocr_audit':rechecks,'segmentation_mode':6,'numeric_segmentation_mode':11})
             if sum(bool(c['text']) for c in cells)<2:continue
             tables.append({'raw_bbox':[grid['xs'][0]*sx,grid['ys'][0]*sy,grid['xs'][-1]*sx,grid['ys'][-1]*sy],
                 'row_count':grid['rows'],'column_count':grid['columns'],'cells':cells,
@@ -149,7 +156,8 @@ def extract_scan_tables(page,ocr,*,dpi=144):
                 'outer_boundaries_from_rule_endpoints':grid['open_sides'],
                 'truncated_cells':any(c['status']=='not_processed_budget' for c in cells)})
         audit.update(status='extracted_needs_review' if tables else 'no_readable_grid',table_count=len(tables),
-            ocr_cells=used,cell_budget=MAX_OCR_CELLS,language=ocr['languages'])
+            ocr_cells=used,cell_budget=MAX_OCR_CELLS,language=ocr['languages'],
+            recheck_views=24-recheck_budget['remaining'],recheck_budget=24)
         return tables,audit
 
 

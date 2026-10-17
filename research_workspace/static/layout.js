@@ -121,6 +121,17 @@
                 actions.append(evidenceControl(cell.evidence, "定位"));
                 td.append(actions);
               }
+              if (cell?.ocr_audit?.length) {
+                const audit = element('details'); audit.append(element('summary','','查看OCR复核记录'));
+                audit.append(element('p','rm-muted',`本次初始识别：${cell.raw_ocr_text || '空白'}`));
+                const labels = {sparse_mode_candidate:'稀疏文字模式候选',two_view_candidate:'两种分辨率的原图识别一致',
+                  empty_crop_artifact:'单元格内部对应裁图为空白',unresolved:'复核未取得一致结果',not_processed_budget:'达到复核上限，未处理'};
+                for (const entry of cell.ocr_audit) {
+                  audit.append(element('p','rm-muted',`${entry.original_text} → ${entry.text || (entry.text === '' ? '已排除' : entry.original_text)} · ${labels[entry.status] || '待复核'}`));
+                  if (entry.evidence) audit.append(evidenceControl(entry.evidence,'核对该处原图 →'));
+                }
+                td.append(audit);
+              }
               row.append(td);
             }
             body.append(row);

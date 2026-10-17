@@ -87,3 +87,23 @@ def test_horizontal_rules_without_column_grid_complete_fallback_without_crash(li
     assert audit['ocr_words']==6 and audit['model_calls']==0
     # Aligned words alone do not prove a reliable cell partition.
     assert all(t['needs_review'] for t in tables)
+
+
+def test_ocr_audit_has_rotated_coordinates_and_its_own_source_anchor(library,monkeypatch):
+    from research_workspace import raster_tables
+    original=raster_tables.extract_scan_tables
+    def observed(*args,**kwargs):
+        tables,audit=original(*args,**kwargs)
+        cell=tables[0]['cells'][3]
+        cell['ocr_audit']=[{'status':'two_view_candidate','original_text':'12,5','text':'12.5',
+            'bbox':cell['raw_bbox'],'crop_bbox':cell['raw_bbox'],'needs_review':True}]
+        return tables,audit
+    monkeypatch.setattr(raster_tables,'extract_scan_tables',observed)
+    doc=library.import_document(scan_fixture(rotation=90),'audit-rotation.pdf')['document']
+    cell=LayoutService(library).analyze_page(doc['id'],1)['tables'][0]['cells'][3]
+    audit=cell['ocr_audit'][0]
+    assert audit['bbox']==cell['bbox']==audit['crop_bbox']
+    assert audit['coordinate_system']=='normalized_rendered_page'
+    assert audit['evidence']['bbox']==cell['bbox']
+    assert audit['evidence']['run_id']==doc['current_run']['id']
+    assert audit['evidence']['source']=='immutable_pdf_raster_local_ocr'
