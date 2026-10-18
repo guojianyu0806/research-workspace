@@ -187,7 +187,8 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
             "frame-ancestors 'none'; base-uri 'self'"
         )
         if request.url.path.startswith("/api/"):
-            response.headers["Cache-Control"] = "no-store"
+            response.headers["Cache-Control"] = ('no-store, no-transform' if
+                response.headers.get('content-type','').startswith('text/event-stream') else 'no-store')
         return response
 
     app.add_middleware(BodyLimitMiddleware, max_bytes=max_bytes + 1024 * 1024)

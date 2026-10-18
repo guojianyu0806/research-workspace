@@ -1,5 +1,5 @@
 """Workspace-local receipts for actual model HTTP attempts; no prompts or secrets."""
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from contextvars import ContextVar
 import hashlib
 from decimal import Decimal
@@ -130,3 +130,26 @@ async def tracked_post(client,endpoint,*,headers,json,model,schema,prompt,attemp
     except ValueError:envelope=None
     store.end(job_id,call_id,'response_received',time.monotonic()-started,response.status_code,sanitized_usage(envelope))
     return response
+
+
+@asynccontextmanager
+async def tracked_stream(client,endpoint,*,headers,json,model,schema,prompt,attempt):
+    """One receipt per real streaming HTTP attempt, including partial failures."""
+    active=_active.get()
+    store,job_id=active if active else (None,None)
+    call_id=store.begin(job_id,endpoint,model,schema,prompt,attempt) if store else None
+    started=time.monotonic()
+    receipt={'call_id':call_id}
+    status=None
+    try:
+        async with client.stream('POST',endpoint,headers=headers,json=json) as response:
+            status=response.status_code
+            yield response,receipt
+    except BaseException as error:
+        if store:
+            state='not_connected' if isinstance(error,(httpx.ConnectError,httpx.ConnectTimeout)) else 'transport_unknown'
+            store.end(job_id,call_id,state,time.monotonic()-started,status,sanitized_usage(receipt))
+        raise
+    else:
+        if store:
+            store.end(job_id,call_id,'response_received',time.monotonic()-started,status,sanitized_usage(receipt))

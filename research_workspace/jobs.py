@@ -29,6 +29,8 @@ class JobStore:
                 job_id TEXT,item_key TEXT,payload TEXT,PRIMARY KEY(job_id,item_key));
               CREATE TABLE IF NOT EXISTS research_job_events(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,job_id TEXT,stage TEXT,message TEXT,created_at TEXT);
+              CREATE TABLE IF NOT EXISTS research_job_stream(
+                job_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL);
             ''')
         from .model_usage import UsageStore
         self.usage_store=UsageStore(library)
@@ -55,6 +57,7 @@ class JobStore:
             item['completed_items'] = [json.loads(r[0]) for r in db.execute('SELECT payload FROM research_job_items WHERE job_id=? ORDER BY rowid',(job_id,))] if include_items else []
             item['usage']=self.usage_store.summary(db,job_id)
             item['model_calls']=self.usage_store.calls(db,job_id)
+            item['stream']=self.stream_snapshot(db,job_id)
         return item
 
     def summary(self,job_id):
@@ -74,6 +77,25 @@ class JobStore:
         from .model_usage import UsageStore
         item['usage']=UsageStore.summary(db,item['id'])
         return item
+
+    @staticmethod
+    def stream_snapshot(db,job_id):
+        row=db.execute('SELECT revision,payload FROM research_job_stream WHERE job_id=?',(job_id,)).fetchone()
+        return {**json.loads(row['payload']),'revision':row['revision']} if row else None
+
+    def set_stream(self,job_id,payload):
+        with self.library._connection() as db:
+            self._exists(db,job_id)
+            db.execute('INSERT INTO research_job_stream VALUES(?,1,?) ON CONFLICT(job_id) DO UPDATE SET revision=revision+1,payload=excluded.payload',
+                (job_id,json.dumps(payload,ensure_ascii=False)))
+
+    def clear_stream(self,job_id):
+        self.set_stream(job_id,{'status':'cleared','text':'','verified':False})
+
+    def live_stream(self,job_id):
+        with self.library._connection() as db:
+            self._exists(db,job_id)
+            return self.stream_snapshot(db,job_id)
 
     def list(self):
         with self.library._connection() as db:
@@ -123,6 +145,7 @@ class JobStore:
                     db.execute('INSERT INTO research_job_items VALUES(?,?,?)',(job_id,key,json.dumps(record,ensure_ascii=False)))
             changed = db.execute("UPDATE research_jobs SET status='queued',cancel_requested=0,error=NULL,updated_at=? WHERE id=? AND status IN ('failed','cancelled','interrupted')",(_now(),job_id)).rowcount
         if changed:
+            self.clear_stream(job_id)
             self.event(job_id,'retry','已按用户操作重新排队；保留成功检查点。中断时未保存的调用可能已计费，重试可能产生重复费用。')
         return self.get(job_id)
 
@@ -131,6 +154,7 @@ class JobStore:
         with self.library._connection() as db:
             rows = db.execute("SELECT id,cancel_requested FROM research_jobs WHERE status='running'").fetchall()
             for row in rows:
+                db.execute('DELETE FROM research_job_stream WHERE job_id=?',(row['id'],))
                 self.usage_store.recover(row['id'],db)
                 status = 'cancelled' if row['cancel_requested'] else 'interrupted'
                 db.execute('UPDATE research_jobs SET status=?,error=?,updated_at=? WHERE id=?',(status,message,_now(),row['id']))
@@ -155,6 +179,7 @@ class JobStore:
                 status = 'cancelled'
                 error = '已停止后续调用；当前调用已经完成，返回结果已保存。'
             db.execute('UPDATE research_jobs SET status=?,result=?,error=?,updated_at=? WHERE id=?',(status,json.dumps(result,ensure_ascii=False) if result is not None else None,error,_now(),job_id))
+            db.execute('DELETE FROM research_job_stream WHERE job_id=?',(job_id,))
         self.event(job_id,status,'任务完成。' if status=='completed' else error or '任务已取消。')
 
     def _set_total(self,job_id,total):
@@ -213,10 +238,11 @@ class JobStore:
 
     async def process_next(self, service=None):
         from .model_usage import record_model_calls
+        from .model_stream import stream_job
         # ContextVars keep concurrent accounts and reused providers independent.
         job=self.claim()
         if job is None:return False
-        with record_model_calls(self.usage_store,job['id']):
+        with record_model_calls(self.usage_store,job['id']), stream_job(self,job['id']):
             return await self._process_next_recorded(service,job)
 
     async def _process_next_recorded(self, service,job):

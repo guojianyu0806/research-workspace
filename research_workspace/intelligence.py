@@ -336,10 +336,15 @@ class ChatCompletionProvider:
                 issue = "response_envelope"
                 try:
                     from .model_usage import tracked_post
-                    response = await tracked_post(client,
+                    from .model_stream import enabled, receive, StreamProtocolError
+                    request_call = receive if enabled(output_model) else tracked_post
+                    response = await request_call(client,
                         endpoint, headers={"Authorization": f"Bearer {self.config.api_key}"},
-                        json=request_body,model=self.config.model,schema=output_model.__name__,prompt=prompt,attempt=attempt+1,
+                        **({'body':request_body} if request_call is receive else {'json':request_body}),
+                        model=self.config.model,schema=output_model.__name__,prompt=prompt,attempt=attempt+1,
                     )
+                except StreamProtocolError:
+                    raise ModelOutputError('模型流式输出中断或协议不完整；草稿已丢弃，未自动重试。') from None
                 except (httpx.ConnectTimeout, httpx.ConnectError):
                     if attempt + 1 == attempts:
                         raise ModelProviderError("模型连接失败；未生成回答。", retryable=True) from None

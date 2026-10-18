@@ -484,15 +484,26 @@ def build_router():
         await run_in_threadpool(store.summary,job_id)
         async def stream():
             previous = None
+            revision = None
+            heartbeat = 0
             while not await request.is_disconnected():
                 job = await run_in_threadpool(store.summary,job_id)
+                preview = await run_in_threadpool(store.live_stream,job_id)
+                stamp = preview.get('revision') if preview else None
+                if stamp != revision:
+                    yield 'event: model_stream\ndata: '+json.dumps({'job_id':job_id,'preview':preview},ensure_ascii=False)+'\n\n'
+                    revision = stamp
                 if job['updated_at'] != previous:
                     yield 'data: '+json.dumps(job,ensure_ascii=False)+'\n\n'
                     previous = job['updated_at']
                 if job['status'] not in {'queued','running'}:
                     break
-                await asyncio.sleep(.75)
-        return StreamingResponse(stream(),media_type='text/event-stream',headers={'X-Accel-Buffering':'no'})
+                heartbeat += 1
+                if heartbeat % 150 == 0:
+                    yield ': keepalive\n\n'
+                await asyncio.sleep(.1)
+        return StreamingResponse(stream(),media_type='text/event-stream',headers={
+            'X-Accel-Buffering':'no','Cache-Control':'no-cache, no-transform'})
 
     @router.get('/research/tasks/{job_id}/export')
     def export_task(job_id:str,library:Library=Depends(library_for)):

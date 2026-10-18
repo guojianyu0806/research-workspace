@@ -215,7 +215,8 @@
     const state = { documents: [], jobs: [], selectedDocuments: new Set(), configured: false,
       selectedJob: null, refreshGeneration: 0, readGeneration: 0, pollTimer: null, resultStamp: "", bilingual: null, posting: false,
       suspended: false, refreshing: false, selectingJobId: null, refreshOnResume: false, readOnResume: null, deferredJob: null,
-      initialJobId: typeof options.initialJobId === "string" && options.initialJobId ? options.initialJobId : null };
+      initialJobId: typeof options.initialJobId === "string" && options.initialJobId ? options.initialJobId : null,
+      streamSource: null, streamJobId: null, streamRevision: 0 };
     const heading = node("header", "rs-heading");
     const headingText = node("div", "");
     headingText.append(node("span", "rs-eyebrow", "RESEARCH TASKS"), node("h2", "", "研究任务"),
@@ -298,11 +299,16 @@
       finally{if(life.alive)recheckDirections.disabled=!state.configured;}
     });
     const resultArea = node("div", "rs-result");
+    const streamPanel = node('section', 'rs-stream-preview'); streamPanel.hidden = true;
+    const streamTitle = node('h4', '', '正在生成 · 待审核草稿');
+    const streamNote = node('p', 'rs-muted rs-small', '文字随模型实时返回；尚未完成事实、原文引用和完整性校验，请以最终结果为准。');
+    const streamText = node('pre', 'rs-stream-text');
+    streamPanel.append(streamTitle, streamNote, streamText);
     resultArea.append(node("p", "rs-empty", "这里将显示实际任务结果。模型未配置时不会生成示例答案。"));
     const eventDetails = node("details", "rs-events");
     eventDetails.append(node("summary", "", "执行记录"));
     const eventList = node("ol", "rs-event-list"); eventDetails.append(eventList); eventDetails.hidden = true;
-    detail.append(shortcuts, detailHeading, meta, status, usage, progress, actions, resultArea, eventDetails);
+    detail.append(shortcuts, detailHeading, meta, status, usage, progress, actions, streamPanel, resultArea, eventDetails);
     layout.append(sidebar, detail); life.shell.append(layout);
 
     function revealSection(section) {
@@ -576,8 +582,10 @@
     function displayJob(job) {
       if (!life.alive) return;
       if (state.suspended) { state.deferredJob = job; return; }
-      if (state.selectedJob?.id !== job.id) { state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = ""; }
+      if (state.selectedJob?.id !== job.id) { state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = ""; stopStream(); state.streamRevision = 0; }
       state.selectedJob = job;
+      showStream(job.stream, job.id);
+      if (!pending(job)) stopStream();
       layout.classList.add("rs-has-task"); detail.hidden = false;
       state.jobs = [job, ...state.jobs.filter((item) => item.id !== job.id)].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       detailHeading.textContent = kindLabels[job.kind] || "研究任务";
@@ -607,7 +615,49 @@
       eventDetails.hidden = !job.events?.length;
       renderResult(job); renderHistory();
     }
+    function stopStream() {
+      state.streamSource?.close(); state.streamSource = null; state.streamJobId = null;
+    }
+    life.own(stopStream);
+    function showStream(preview, jobId) {
+      if (!life.alive || state.suspended || state.selectedJob?.id !== jobId) return;
+      if (preview && preview.revision < state.streamRevision) return;
+      if (preview) state.streamRevision = preview.revision;
+      const visible = pending(state.selectedJob) && preview?.text && ['receiving', 'reviewing'].includes(preview.status);
+      streamPanel.hidden = !visible;
+      // textContent prevents generated HTML from becoming active page content.
+      streamText.textContent = visible ? preview.text : '';
+      streamTitle.textContent = preview?.status === 'reviewing' ? '生成已返回 · 正在审核草稿' : '正在生成 · 待审核草稿';
+      streamNote.textContent = '文字随模型实时返回；尚未完成事实、原文引用和完整性校验，请以最终结果为准。' + (preview?.truncated ? ' 本区仅预览前 24000 字符，最终结果不受此预览上限影响。' : '');
+    }
+    function watchStream() {
+      const job = state.selectedJob;
+      if (!life.alive || state.suspended || !pending(job)) { stopStream(); streamPanel.hidden = true; streamText.textContent = ''; return; }
+      if (state.streamJobId === job.id && state.streamSource) return;
+      stopStream(); state.streamJobId = job.id;
+      const source = new EventSource(`/api/research/tasks/${encodeURIComponent(job.id)}/events`);
+      state.streamSource = source;
+      const current = () => life.alive && !state.suspended && state.selectedJob?.id === job.id && state.streamSource === source;
+      source.addEventListener('model_stream', event => {
+        if (!current()) return;
+        try { const item = JSON.parse(event.data); if (item.job_id === job.id) showStream(item.preview, job.id); } catch { /* Polling remains available. */ }
+      });
+      source.onmessage = event => {
+        if (!current()) return;
+        try {
+          const summary = JSON.parse(event.data);
+          if (summary.id === job.id && !pending(summary)) { stopStream(); void selectJob(job.id); }
+        } catch { /* Never turn an incomplete event into an answer. */ }
+      };
+      source.onerror = () => {
+        if (!current()) return;
+        // EventSource reconnects; the endpoint replays its latest bounded
+        // snapshot rather than appending duplicate deltas. Polling is fallback.
+        streamTitle.textContent = '流式连接恢复中 · 待审核草稿';
+      };
+    }
     function schedulePoll() {
+      watchStream();
       life.stopTimer(state.pollTimer);
       state.pollTimer = null;
       if (!life.alive || state.suspended || !pending(state.selectedJob)) return;
@@ -627,12 +677,14 @@
       const generation = ++state.readGeneration;
       life.stopTimer(state.pollTimer);
       state.pollTimer = null;
+      if (state.selectedJob?.id !== id) { stopStream(); state.streamRevision = 0; streamPanel.hidden = true; streamText.textContent = ''; }
       state.selectingJobId = id;
       state.selectedJob = state.jobs.find((item) => item.id === id) || (state.selectedJob?.id === id ? state.selectedJob : { id });
       try {
         const response = await life.api(`/api/research/tasks/${encodeURIComponent(id)}`);
         if (state.selectedJob?.id !== id || !life.alive || state.suspended || generation !== state.readGeneration) return;
         displayJob(response.job); schedulePoll();
+        showStream(response.job.stream, id);
         if (reveal) revealTaskResult();
       } catch (error) { if (life.alive && !state.suspended && generation === state.readGeneration) life.show(error.message, true); }
       finally { if (generation === state.readGeneration) state.selectingJobId = null; }
@@ -746,6 +798,7 @@
         state.refreshOnResume = state.refreshOnResume || state.refreshing;
         state.readOnResume = state.selectingJobId || state.readOnResume;
         state.suspended = true;
+        stopStream();
         ++state.refreshGeneration; ++state.readGeneration;
         state.refreshing = false; state.selectingJobId = null;
         refreshButton.disabled = false;

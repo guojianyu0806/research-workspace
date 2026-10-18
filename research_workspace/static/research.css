@@ -3,6 +3,9 @@
 .rs-shell{font-size:16px;line-height:1.7;overflow-wrap:anywhere}
 .rs-shell *{box-sizing:border-box}
 .rs-shell [hidden]{display:none!important}
+.rs-stream-preview{margin:12px 0;padding:16px;border:1px solid var(--line,#cbd7de);border-left:3px solid var(--primary,#165f63);border-radius:8px;background:var(--paper,#fff);min-width:0}
+.rs-stream-preview h4{margin:0 0 8px;font-size:16px;line-height:1.5}
+.rs-stream-text{margin:12px 0 0;max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.8;tab-size:2}
 
 .rs-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:20px}
 .rs-heading h2{margin:3px 0 7px;font-size:25px;font-weight:600;letter-spacing:.4px}
