@@ -16,6 +16,10 @@ def aligned_row_fences(pixels,excluded=()):
         for b in bars:
             if (1<=b[1]-a[3]<=6 and abs(a[0]-b[0])<=1 and abs(a[2]-b[2])<=1):
                 box=[v/2 for v in union([a,b])]
+                centre=round((a[1]+b[3])/2)
+                # A continuation starts with a bare equality. The small i=1
+                # limits of separate sums must not become a derivation group.
+                if mask[max(0,centre-6):centre+7,max(0,a[0]-20):a[0]-1].any():continue
                 if not any(pymupdf.Rect(box).intersects(pymupdf.Rect(e)) for e in excluded):signs.append(box)
     groups=[]
     for sign in sorted(signs,key=lambda b:b[1]):

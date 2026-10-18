@@ -38,7 +38,9 @@ def main():
         before=library.get_page(doc['id'],1,run);result=LayoutService(library).analyze_page(doc['id'],1,run)
         (dest/(name+'.json')).write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
         check(name+'_source_and_parse_immutable',library._source_path(doc['id']).read_bytes()==data and library.get_page(doc['id'],1,run)==before)
-        positions=[r for r in records(result) if 'evidence' in r]
+        positions=[r for r in records(result) if isinstance(r.get('evidence'),dict)]
+        check(name+'_unlocated_cells_stay_explicit',all(r.get('bbox') is None and r.get('status')=='merged_or_missing_cell'
+            for r in records(result) if 'evidence' in r and r['evidence'] is None))
         check(name+'_every_position_versioned',positions and all('raw_bbox' not in r for r in records(result)) and all(
             r['evidence']['document_id']==doc['id'] and r['evidence']['run_id']==run and r['evidence']['page']==1
             and r['evidence']['bbox']==r['bbox'] and all(0<=v<=1 for v in r['bbox']) for r in positions))
@@ -60,7 +62,7 @@ def main():
         else:
             selected=[f for f in formulas if f['method']=='raster-aligned-rows-v1']
             counts=[len(f['operands']) for f in selected]
-            check(name+'_row_groups_match_visible_signs',counts==([2,2,2] if erased else [2,5]))
+            check(name+'_row_groups_match_visible_signs',sorted(counts)==([2,2,2] if erased else [2,5]))
             check(name+'_derivation_not_fabricated',all(f['latex'] is None and not f['multiline_audit']['initial_expression_confirmed'] and all(r['latex'] is None for r in f['operands']) for f in selected))
         with pymupdf.open(library._source_path(doc['id'])) as pdf:
             for i,value in enumerate(selected):

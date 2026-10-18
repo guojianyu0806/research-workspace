@@ -39,6 +39,13 @@ def test_crossing_observation_is_retained_as_rejected_not_assigned_to_adjacent_r
     assert all(not r['operands'] and r['rejected_regions'][0]['reason']=='crosses_observed_row_fence' for r in result['operands'])
 
 
+def test_repeated_sum_limit_equalities_cannot_be_grouped_as_derivation_rows():
+    with raster_page('UnderstandingDeepLearning_02_09_26_C.pdf',33,288) as pdf:
+        groups=aligned_row_fences(pixels(pdf[0]))
+    assert len(groups)==1
+    assert all(r['equality_box'][0]<250 for r in groups[0])
+
+
 def test_glyph_references_greek_rechecks_and_aligned_rows_have_rotated_versioned_sources(tmp_path,configuration):
     from research_workspace.library import Library
     from research_workspace.layout import LayoutService
