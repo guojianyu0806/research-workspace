@@ -9,14 +9,14 @@
     "readerTitle", "readerSubtitle", "reparseButton", "readerToolbar", "readerMessage", "readerViewport",
     "readerEmpty", "pageLoading", "pageError", "pageErrorText", "retryPageButton", "paperPage", "pageImage",
     "evidenceHighlight", "readerFooterText", "pageForm", "pageNumber", "pageTotal", "firstPage", "previousPage", "nextPage", "lastPage",
-    "searchForm", "searchQuery", "searchScope", "currentScopeOption", "searchButton", "searchExplanation",
+    "searchForm", "searchQuery", "searchScope", "searchMode", "searchEnglish", "searchEnglishDetails", "exportSearchButton", "currentScopeOption", "searchButton", "searchExplanation",
     "resultsHeading", "resultsTitle", "clearSearchButton", "searchResults",
   ].map((id) => [id, byId(id)]));
 
   const state = {
     documents: [], capabilities: null, selectedId: null, selectedRunId: null, pinnedRun: false,
     page: 1, highlight: null, selectedHit: null, query: "", hits: [], uploading: false,
-    searching: false, reparsing: false, connected: false, pageHasText: null,
+    searching: false, reparsing: false, connected: false, pageHasText: null, searchRecord: null,
   };
   let listRequest = 0;
   let pageRequest = 0;
@@ -286,6 +286,7 @@
     const doc = state.documents.find((item) => item.id === id);
     if (!doc) return;
     const changed = state.selectedId !== id;
+    const previousRun = state.selectedRunId;
     state.selectedId = id;
     state.selectedRunId = options.runId || readableRun(doc)?.id || null;
     state.pinnedRun = Boolean(options.runId);
@@ -294,7 +295,7 @@
     state.highlight = normalizeBox(options.bbox);
     state.selectedHit = options.hitKey || null;
     state.pageHasText = null;
-    if (changed && ui.searchScope.value === "current" && !options.fromSearch) clearSearch(false);
+    if ((changed || previousRun !== state.selectedRunId) && ui.searchScope.value === "current" && !options.fromSearch) clearSearch(false);
     renderLibrary();
     renderReaderHeading();
     renderHitSelection();
@@ -467,6 +468,8 @@
     state.searching = false;
     state.query = "";
     state.hits = [];
+    state.searchRecord = null;
+    ui.exportSearchButton.hidden = true;
     state.selectedHit = null;
     state.highlight = null;
     ui.searchButton.disabled = false;
@@ -475,7 +478,7 @@
     if (clearInput) ui.searchQuery.value = "";
     renderHighlight();
     renderReaderHeading();
-    searchEmpty("让每个发现，都有出处", "输入论文中出现的关键词。点击匹配片段，回到对应原文。", "想找具体细节？试试方法名称、参数或一句原文。");
+    searchEmpty("让每个发现，都有出处", "输入问题或关键词。点击候选片段，核对固定版本的原文。", "语义检索可以查找近义表达；相似度只用于排序，不代表结论已被原文证明。");
   }
 
   function hitKey(hit, index) { return `${hit.document_id}:${hit.run_id}:${hit.page}:${hit.block_id || index}`; }
@@ -505,6 +508,17 @@
 
   function renderHits() {
     ui.searchResults.replaceChildren();
+    const record = state.searchRecord;
+    if (record?.method) {
+      const meta = element("div", "search-audit");
+      const labels = {searched:"本地语义检索",lexical_fallback:"已降级为关键词检索",semantic_unavailable:"语义检索未完成",busy:"本地检索繁忙",source_budget_exceeded:"超出检索范围",no_readable_text:"没有可读正文"};
+      meta.append(element("p", "", `${labels[record.status] || "本地检索"} · ${record.source_snapshots?.length || 0} 份固定来源`));
+      (record.warnings || []).forEach(text => meta.append(element("p", "", text)));
+      const explanation = element("details", "search-audit-details");
+      explanation.append(element("summary", "", "范围与核对说明"), element("p", "", "候选片段按相关性排序，请结合上下文核对；不是自动生成的回答。"));
+      meta.append(explanation);
+      ui.searchResults.append(meta);
+    }
     state.hits.forEach((hit, index) => {
       const key = hitKey(hit, index);
       const button = element("button", "hit-card");
@@ -513,10 +527,12 @@
       button.setAttribute("aria-label", `${hit.document_title || hit.filename || "文献"}，查看第 ${hit.page} 页原文`);
       const heading = element("span", "hit-heading");
       heading.append(icon("file"), element("span", "hit-title", hit.document_title || hit.filename || "文献"));
+      if (hit.channels) heading.append(element("span", "hit-channel", hit.channels.includes("semantic") ? "语义候选" : "关键词"));
       const text = element("p", "hit-text");
       appendHighlightedText(text, hit.text, state.query);
       const location = element("span", "hit-location");
-      location.append(element("span", "hit-page", `P. ${hit.page}`), element("span", "", normalizeBox(hit.bbox) ? "定位原文区域" : "定位到这一页"), icon("arrow"));
+      const source = record?.source_snapshots?.find(s => s.document_id === hit.document_id && s.run_id === hit.run_id);
+      location.append(element("span", "hit-page", `P. ${hit.page}`), element("span", "", `${source ? `解析${source.parse_version} · ` : ""}${normalizeBox(hit.bbox) ? "定位原文区域" : "定位到这一页"}`), icon("arrow"));
       button.append(heading, text, location);
       button.addEventListener("click", async () => {
         const navigation = ++navigationRequest;
@@ -544,6 +560,9 @@
     const request = ++searchRequest;
     state.searching = true;
     state.query = query;
+    state.hits = [];
+    state.searchRecord = null;
+    ui.exportSearchButton.hidden = true;
     state.selectedHit = null;
     state.highlight = null;
     renderHighlight();
@@ -553,16 +572,27 @@
     const loading = element("div", "search-loading");
     loading.append(element("span", "spinner"), element("span", "", "正在查找原文片段"));
     ui.searchResults.replaceChildren(loading);
-    const params = new URLSearchParams({ q: query });
-    if (ui.searchScope.value === "current" && state.selectedId) params.set("document_id", state.selectedId);
+    const mode = ui.searchMode.value;
+    const params = new URLSearchParams({ q: query, mode });
+    if (mode !== "literal" && ui.searchEnglish.value.trim()) params.set("english_query", ui.searchEnglish.value.trim());
+    if (ui.searchScope.value === "current" && state.selectedId) {
+      params.set("document_id", state.selectedId);
+      if (state.selectedRunId) params.set("run_id", state.selectedRunId);
+    }
     try {
       const result = await api(`/api/search?${params}`);
       if (request !== searchRequest) return;
       state.hits = Array.isArray(result.hits) ? result.hits : [];
+      state.searchRecord = result;
+      ui.exportSearchButton.hidden = !result.search_id;
       ui.resultsHeading.hidden = false;
-      ui.resultsTitle.textContent = `${state.hits.length} 条匹配片段`;
+      ui.resultsTitle.textContent = `${state.hits.length} 条${mode === "literal" ? "匹配" : "候选"}片段`;
       if (state.hits.length) renderHits();
-      else searchEmpty("未找到匹配片段", `没有找到与“${query}”匹配的已提取原文。`, "试试更短的关键词，或检查文献是否已完成文字提取。关键词检索不会自动改写或推测原文。");
+      else if (mode === "literal") searchEmpty("未找到匹配片段", `没有找到与“${query}”匹配的已提取原文。`, "可改用混合检索查找近义表达，或检查文献是否已完成文字提取。");
+      else {
+        renderHits();
+        ui.searchResults.append(element("p", "search-no-hits", result.complete ? "未返回达到当前筛选条件的候选片段。可调整检索词；这不代表全文不存在相关内容。" : "本次检索未完整完成，请查看状态提示后重试或改用字面检索。"));
+      }
     } catch (error) {
       if (request !== searchRequest) return;
       searchEmpty("检索暂时未完成", error.message, "保留了输入内容，可以再次点击“查找证据”。");
@@ -603,7 +633,7 @@
     const capabilities = api("/api/capabilities").then((result) => {
       state.capabilities = result;
       if (Number(result.max_upload_mb) > 0) ui.uploadLimit.textContent = `每个文件不超过 ${result.max_upload_mb} MB`;
-      ui.searchExplanation.textContent = "按关键词查找原文片段，点击结果核对出处。文献问答可在“问答与写作”中创建。";
+      updateSearchMode();
       if (state.connected) setConnection(true);
       renderReaderHeading();
     }).catch(() => { ui.uploadLimit.textContent = "或点击选择文件"; });
@@ -624,8 +654,22 @@
   ui.searchForm.addEventListener("submit", (event) => { event.preventDefault(); search(); });
   ui.clearSearchButton.addEventListener("click", () => clearSearch());
   ui.searchScope.addEventListener("change", () => clearSearch(false));
+  function updateSearchMode() {
+    const literal = ui.searchMode.value === "literal";
+    ui.searchEnglishDetails.hidden = literal;
+    ui.searchExplanation.textContent = literal ? "按连续原文查找，点击结果核对出处。" : "本地检索，无付费调用。主要面向英文；首次索引较慢，后续复用缓存。";
+  }
+  ui.searchMode.addEventListener("change", () => { clearSearch(false); updateSearchMode(); });
+  ui.searchEnglish.addEventListener("input", () => { if (state.searching || state.searchRecord) clearSearch(false); });
+  ui.exportSearchButton.addEventListener("click", () => {
+    if (!state.searchRecord?.search_id) return;
+    const blob = new Blob([JSON.stringify(state.searchRecord,null,2)], {type:"application/json;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = `${state.searchRecord.search_id.slice(0,18)}.json`; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url),1000);
+  });
   ui.searchQuery.addEventListener("input", () => {
-    if (state.searching) clearSearch(false);
+    if (state.searching || state.searchRecord) clearSearch(false);
     else if (!ui.searchQuery.value.trim() && state.query) clearSearch(false);
   });
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));

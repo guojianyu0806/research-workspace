@@ -141,6 +141,17 @@ h1,h2,h3,p{margin:0}
 .search-options .button{min-height:40px;padding:7px 10px;font-size:14px;gap:5px}
 .search-options .icon{width:14px;height:14px}
 .search-explanation{font-size:14px;line-height:1.9;color:var(--muted);margin-top:14px}
+.search-english{margin-top:10px;font-size:14px;color:var(--muted)}
+.search-english summary{cursor:pointer;line-height:1.8}
+.search-english input{width:100%;min-width:0;margin-top:8px;padding:9px;border:1px solid var(--line);border-radius:6px;font-size:14px;background:#fff;color:var(--ink)}
+.search-english p{margin-top:7px;line-height:1.7}
+.search-audit{padding:10px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface,#f5f7fc);font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+.search-audit p+p{margin-top:6px}
+.search-audit-details summary{cursor:pointer;color:var(--muted);margin-top:5px}
+.search-results .hit-text{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.hit-channel{margin-left:auto;flex-shrink:0;border-radius:4px;padding:2px 5px;background:#eef1ff;color:#3153b7;font-size:12px}
+.search-no-hits{padding:12px;font-size:14px;line-height:1.8;color:var(--muted)}
+.results-heading{flex-wrap:wrap;gap:8px}
 .results-heading{display:flex;align-items:center;justify-content:space-between;padding:15px 22px 7px;gap:8px;font-size:14px;color:var(--muted);flex-shrink:0}
 .text-button{border:0;background:transparent;color:var(--primary);font-size:14px;padding:4px 0;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:3px}
 .text-button:hover{text-decoration-color:currentColor}

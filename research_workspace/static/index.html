@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#315ce6">
   <title>研序 · Research Workspace</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/styles.css?v=20261013-floating-notice1">
+  <link rel="stylesheet" href="/static/styles.css?v=20261018-reader-search1">
   <link rel="stylesheet" href="/static/shell.css?v=20261013-floating-notice1">
   <link rel="stylesheet" href="/static/manage.css?v=20261018-version-diff1">
   <link rel="stylesheet" href="/static/bilingual.css">
@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="/static/modern-theme.css?v=20261014-modern1">
   <script defer src="/static/notices.js?v=20261013-shared-notices1"></script>
   <script defer src="/static/navigation-motion.js?v=20261013-navigation-motion1"></script>
-  <script defer src="/static/app.js?v=20261013-shared-notices1"></script>
+  <script defer src="/static/app.js?v=20261018-reader-search1"></script>
   <script defer src="/static/reader-controls.js?v=20261009-sizing3"></script>
   <script defer src="/static/reader-layout.js?v=20261009-sizing3"></script>
   <script defer src="/static/bilingual.js?v=20261013-shared-notices1"></script>
@@ -155,13 +155,15 @@
       <div class="panel-heading"><div><span class="eyebrow">EVIDENCE</span><h2>查找原文证据</h2></div><button id="closeEvidence" class="icon-button" type="button" aria-label="收起证据栏"><svg class="icon"><use href="#i-close"></use></svg></button></div>
       <form class="evidence-form" id="searchForm">
         <label class="field-label" for="searchQuery">你想在论文中找到什么？</label>
-        <div class="query-input"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input id="searchQuery" type="search" placeholder="输入术语、作者或原文片段" autocomplete="off" required></div>
-        <div class="search-options"><label for="searchScope" class="visually-hidden">检索范围</label><select id="searchScope"><option value="all">全部已导入文献</option><option value="current" id="currentScopeOption" disabled>当前文献</option></select><button class="button button-primary" id="searchButton" type="submit">查找证据<svg class="icon"><use href="#i-arrow"></use></svg></button></div>
-        <p class="search-explanation" id="searchExplanation">按关键词查找原文片段，结果保留出处。这里不会生成没有来源的回答。</p>
+        <div class="query-input"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input id="searchQuery" type="search" placeholder="输入问题、术语或原文片段" autocomplete="off" maxlength="200" required></div>
+        <div class="search-options"><label for="searchMode" class="visually-hidden">检索方式</label><select id="searchMode"><option value="hybrid">混合检索 · 语义与关键词</option><option value="semantic">语义检索 · 本地向量</option><option value="literal">字面检索 · 连续原文</option></select></div>
+        <details id="searchEnglishDetails" class="search-english"><summary>补充英文检索词（可选）</summary><label for="searchEnglish" class="visually-hidden">英文检索词</label><input id="searchEnglish" type="text" maxlength="200" placeholder="如 how are token positions represented" autocomplete="off"><p>有填写时用这些词检索，原问题会保留。不会调用付费模型翻译。</p></details>
+        <div class="search-options"><label for="searchScope" class="visually-hidden">检索范围</label><select id="searchScope"><option value="all">全部已导入文献</option><option value="current" id="currentScopeOption" selected disabled>当前文献</option></select><button class="button button-primary" id="searchButton" type="submit">查找证据<svg class="icon"><use href="#i-arrow"></use></svg></button></div>
+        <p class="search-explanation" id="searchExplanation">本地向量与关键词查找原文，不生成回答、不调用付费模型。现有向量模型主要面向英文论文。</p>
       </form>
-      <div class="results-heading" id="resultsHeading" hidden><span id="resultsTitle"></span><button class="text-button" id="clearSearchButton" type="button">清除</button></div>
+      <div class="results-heading" id="resultsHeading" hidden><span id="resultsTitle"></span><button class="text-button" id="exportSearchButton" type="button" hidden>导出核对记录</button><button class="text-button" id="clearSearchButton" type="button">清除</button></div>
       <div class="search-results" id="searchResults" aria-live="polite" aria-busy="false">
-        <div class="search-empty"><div class="evidence-empty-icon" aria-hidden="true"><svg class="icon"><use href="#i-search"></use></svg><span></span><span></span></div><h3>让每个发现，都有出处</h3><p>输入论文中出现的关键词。<br>点击匹配片段，回到对应原文。</p><div class="search-tip">想找具体细节？<br>试试方法名称、参数或一句原文。</div></div>
+        <div class="search-empty"><div class="evidence-empty-icon" aria-hidden="true"><svg class="icon"><use href="#i-search"></use></svg><span></span><span></span></div><h3>让每个发现，都有出处</h3><p>输入问题或关键词。<br>点击候选片段，核对原文。</p><div class="search-tip">可用语义检索查找近义表达。<br>相似度用于排序，不能代替原文核对。</div></div>
       </div>
       <div class="evidence-footer"><span class="source-mark" aria-hidden="true"></span><span>来源片段 · 页码定位 · 原文核对</span></div>
       <div id="evidenceResizeHandle" class="reader-resize-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整证据栏宽度" aria-controls="evidencePanel" aria-valuemin="240" aria-valuemax="600" aria-valuenow="300" title="左右拖动调整宽度；方向键微调，双击恢复默认"><span></span></div>
