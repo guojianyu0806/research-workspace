@@ -43,7 +43,8 @@ def main():
                 check(f'{name}_row{i}_all_ink_accounted',r['coverage_audit']['all_children_resolved'] and r['coverage_audit']['unassigned_ink_pixels']==0)
             check(name+'_groups_transcribed_without_full_equation_claim',all(g['latex'] and g['scope']=='transcribed_aligned_continuations' for g in groups))
         elif name=='erased-last-beta':
-            check(name+'_missing_glyph_not_recovered',len(rows)==7 and rows[-1]['latex']!=EXPECTED[-1])
+            check(name+'_missing_glyph_and_orphan_script_unresolved',len(rows)==7 and rows[-1]['latex'] is None
+                and any(n.get('ocr_audit',{}).get('status')=='unresolved_orphan_lowered_glyph' for n in records(rows[-1])))
             check(name+'_other_rows_unmodified',[r['latex'] for r in rows[:-1]]==EXPECTED[:-1])
         else:
             check(name+'_missing_row_not_invented',[len(g['operands']) for g in groups]==[2,2,2])

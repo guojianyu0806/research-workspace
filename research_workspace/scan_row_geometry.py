@@ -260,6 +260,25 @@ class RowReader:
             else:n=base;rb=c['box']
             n['px_box']=rb;parts.append(n);consumed.append(c)
         parts.sort(key=lambda n:n['px_box'][0])
+        # A lowered script cannot become an ordinary baseline variable merely
+        # because its parent glyph is absent. Anchor only to independently
+        # read full-height digits inside this same operand, never another row.
+        from copy import deepcopy
+        anchors=[n for n in parts if n.get('role')=='observed_glyph' and n.get('latex')
+            and re.fullmatch('[0-9]',n['latex']) and 22<=n['px_box'][3]-n['px_box'][1]<=34]
+        if anchors:
+            baseline=float(np.median([n['px_box'][3] for n in anchors]));height=float(np.median([n['px_box'][3]-n['px_box'][1] for n in anchors]))
+            if max(n['px_box'][3] for n in anchors)-min(n['px_box'][3] for n in anchors)<=4:
+                for n in parts:
+                    r=n['px_box']
+                    if (n.get('role')=='observed_glyph' and n.get('latex') and re.fullmatch('[A-Za-z]',n['latex'])
+                        and r[3]-r[1]<height*.85 and r[1]>baseline-height*.75 and r[3]>baseline+3):
+                        audit=n['ocr_audit'];audit['status']='unresolved_orphan_lowered_glyph'
+                        audit['unpaired_script_audit']={'raw_bbox':list(n['raw_bbox']),'method':'lowered_glyph_without_observed_parent',
+                            'digit_baseline_offset_points':baseline/4,'digit_height_points':height/4,
+                            'reference_regions':[{'raw_bbox':list(t['raw_bbox']),'original_text':t['original_text'],
+                                'ocr_audit':deepcopy(t['ocr_audit'])} for t in anchors]}
+                        n['latex']=None
         accounted=np.zeros_like(own)
         for c in consumed:
             for py,px in c['points']:accounted[py,px]=True

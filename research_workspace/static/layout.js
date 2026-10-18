@@ -248,6 +248,11 @@
             }
             for (const view of [...(value.ocr_audit?.views || []),...(value.ocr_audit?.recheck_views || []),...(value.ocr_audit?.additional_recheck_views || []),...(value.ocr_audit?.greek_views || [])]) own.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}${view.dpi ? `，${view.dpi} DPI${view.resampled_from_source ? `（由 ${view.source_dpi} DPI 等比重采样）` : ''}` : ''}${view.language ? `，${view.language}` : ''}：${view.text || '未识别'}`));
             for (const view of value.ocr_audit?.descender_views || []) own.append(element('p','rm-muted',`β 笔画复核，阈值 ${view.threshold}：${view.descender_observed ? '已观察到下伸笔画' : '下伸笔画未确认'}`));
+            const unpaired=value.ocr_audit?.unpaired_script_audit;
+            if (unpaired) {
+              own.append(element('p','rm-muted','该字符低于本操作数基线，未观察到所属主字符；保留原OCR，不能提升为正文变量。'),evidenceControl(unpaired.evidence,'核对孤立下标 →'));
+              for (const ref of unpaired.reference_regions || []) own.append(evidenceControl(ref.evidence,'核对同一操作数的基线参照 →'));
+            }
             const caseGeometry=value.ocr_audit?.case_geometry;
             if (caseGeometry) {
               own.append(element('p','rm-muted',`大小写核对：自身字高 ${caseGeometry.target_height}，同排参照字高 ${caseGeometry.ascender_height}；保留原OCR观察。`));

@@ -344,9 +344,11 @@ class LayoutService:
                         if item.get('ocr_audit'):
                             item['ocr_audit'].setdefault('raw_bbox',raw_region)
                             raster_record(item['ocr_audit'],'ocr_observation_region')
-                        for key in ('source_greek_recheck','glyph_reference','greek_beta_recheck'):
+                        for key in ('source_greek_recheck','glyph_reference','greek_beta_recheck','unpaired_script_audit'):
                             nested=item.get(key)
                             if nested and nested.get('raw_bbox'):raster_record(nested,'ocr_glyph_recheck_region')
+                        for reference in item.get('reference_regions',[]):
+                            if reference.get('raw_bbox'):raster_record(reference,'ocr_same_operand_baseline_reference')
                         for reference in item.get('ocr_audit',{}).get('case_geometry',{}).get('reference_regions',[]):
                             raster_record(reference,'ocr_letter_height_reference')
                     def raster_formula(formula,precision='ocr_formula_region'):

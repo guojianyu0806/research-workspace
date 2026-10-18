@@ -53,6 +53,10 @@ def test_erased_ink_is_not_borrowed_from_other_rows(configuration,erase):
         pdf[0].draw_rect(pymupdf.Rect(erase),color=None,fill=(1,1,1))
         result,_=read_row(pdf[0],[222.5,423.5,369.5,447],configuration)
     assert result['latex']!=EXPECTED[-1]
+    if erase==[352,437,358.25,447]:
+        assert result['latex'] is None
+        from scripts.verify_real_greek_scan import records
+        assert any(n.get('ocr_audit',{}).get('status')=='unresolved_orphan_lowered_glyph' for n in records(result))
 
 
 def test_exhausted_ocr_budget_keeps_the_row_unknown(configuration):
