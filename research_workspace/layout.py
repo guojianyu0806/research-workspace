@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v9-recursive-scan'
+LAYOUT_VERSION = 'local-layout-v11-source-glyphs-aligned-rows'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -344,6 +344,9 @@ class LayoutService:
                         if item.get('ocr_audit'):
                             item['ocr_audit'].setdefault('raw_bbox',raw_region)
                             raster_record(item['ocr_audit'],'ocr_observation_region')
+                        for key in ('source_greek_recheck','glyph_reference'):
+                            nested=item.get(key)
+                            if nested and nested.get('raw_bbox'):raster_record(nested,'ocr_glyph_recheck_region')
                         for reference in item.get('ocr_audit',{}).get('case_geometry',{}).get('reference_regions',[]):
                             raster_record(reference,'ocr_letter_height_reference')
                     def raster_formula(formula,precision='ocr_formula_region'):
@@ -352,6 +355,9 @@ class LayoutService:
                         for observation in formula.get('associated_line_observations',[]):raster_record(observation,'ocr_operator_limit_line')
                         if formula.get('operator_audit',{}).get('raw_bbox'):
                             raster_record(formula['operator_audit'],'ocr_operator_region')
+                        if formula.get('equality_audit',{}).get('raw_bbox'):
+                            raster_record(formula['equality_audit'],'ocr_aligned_equality_region')
+                        for rejected in formula.get('rejected_regions',[]):raster_record(rejected,'ocr_cross_row_rejected_region')
                         if formula.get('geometry_audit'):
                             geometry=formula['geometry_audit']
                             for key in list(geometry):

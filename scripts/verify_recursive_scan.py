@@ -58,11 +58,11 @@ def main():
             check(name+'_not_completed',not any(f['latex']==EXPECTED[which] for f in result['formulas']))
             check(name+'_failure_positions_retained',bool(recursive['candidate_regions']))
         elif name=='real-root-fraction':
-            roots=[f for f in values if f.get('structure_kind')=='radical'];check(name+'_unknown_greek_retained',bool(roots and all(f['latex'] is None for f in roots)))
+            roots=[f for f in values if f.get('structure_kind')=='radical'];check(name+'_observed_alpha_scripts_restored',any(f['latex']==r'\sqrt{\frac{\alpha_{t}}{\alpha_{t-1}}}' for f in roots))
             check(name+'_fraction_child_observed',any(n.get('structure_kind')=='fraction' for f in roots for n in walk(f)))
         else:
             sums=sorted([f for f in values if f['method']=='raster-summands-v1'],key=lambda f:f['bbox'][1]);check(name+'_two_independent_sums',len(sums)==2)
-            check(name+'_unknown_not_reported_complete',all(s['latex'] is None for s in sums))
+            check(name+'_complete_summands_or_failed_first_operand_retained',all(s['latex'] for s in sums) if name=='real-complex-sums' else sums[0]['latex'] is None)
             if name=='real-complex-sums':
                 check(name+'_known_scripts_and_group_power',all({r'y_{i}',r')^{2}',r'x_{i}' if i==0 else r'\varphi_{0}'}<={n['latex'] for n in walk(s) if n.get('latex')} for i,s in enumerate(sums)))
             elif name=='real-missing-upper':check(name+'_upper_not_borrowed',sums[0]['operands'][0]['operands'][0]['latex'] is None)

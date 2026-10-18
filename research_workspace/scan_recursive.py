@@ -11,13 +11,14 @@ from .scan_operators import shape, union
 VERSION='raster-recursive-v1'
 
 
-def recursive_scan_structures(pixels,primitives,excluded,read_sequence,valid_sequence,budget):
+def recursive_scan_structures(pixels,primitives,excluded,read_sequence,valid_sequence,budget,row_fences=()):
     from .raster_formulas import runs
     mask=pixels<190;cc=components(mask,limit=8000);specs=[];rejected=[]
     hints=[p['raw_bbox'] for p in primitives]
     def allowed(box,require_hint=True):
+        from .scan_multiline import within_row_fence
         r=pymupdf.Rect(box)
-        return (r.get_area()<=8000 and (not require_hint or any(r.intersects(pymupdf.Rect(b)+(-12,-12,12,12)) for b in hints))
+        return (within_row_fence(box,row_fences) and r.get_area()<=8000 and (not require_hint or any(r.intersects(pymupdf.Rect(b)+(-12,-12,12,12)) for b in hints))
             and not any(r.intersects(pymupdf.Rect(e)) for e in excluded))
     # Large radicals are allowed only when the hook, rising stem and roof are
     # present in a connected observed component. Horizontal bars alone fail.
@@ -62,11 +63,11 @@ def recursive_scan_structures(pixels,primitives,excluded,read_sequence,valid_seq
                 'parsed':False,'reason':'operand_separated_by_unresolved_gap','needs_review':True});continue
         for row in reversed(above[:-1]):
             if any(c<=a+1 and z>=b-1 and z-c>(b-a)*1.1 and row[0]<=yy<row[1] for c,yy,z in bars):break
-            if upper[0][0]-row[1]>10:break
+            if upper[0][0]-row[1]>10 or not allowed([a/2,row[0]/2,b/2,lower[-1][1]/2]):break
             upper.insert(0,row)
         for row in below[1:]:
             if any(c<=a+1 and z>=b-1 and z-c>(b-a)*1.1 and row[0]<=yy<row[1] for c,yy,z in bars):break
-            if row[0]-lower[-1][1]>10:break
+            if row[0]-lower[-1][1]>10 or not allowed([a/2,upper[0][0]/2,b/2,row[1]/2]):break
             lower.append(row)
         if upper[-1][1]-upper[0][0]<6 or lower[-1][1]-lower[0][0]<6:continue
         u=[a/2,upper[0][0]/2,b/2,upper[-1][1]/2];l=[a/2,lower[0][0]/2,b/2,lower[-1][1]/2]

@@ -39,6 +39,7 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
     from .raster_formulas import runs, _pixel_crop, consensus
     mask=pixels<190;budget={'remaining':96};result=[]
     page_components=components(mask,limit=8000)
+    glyph_references=[]
 
     def region_mask(box):
         x0,y0,x1,y1=[int(round(v*2)) for v in box]
@@ -56,6 +57,11 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
             own[max(0,round(b[1]*2)-y0):round(b[3]*2)-y0,max(0,round(b[0]*2)-x0):round(b[2]*2)-x0]=False
         cc=join_ink_parts(components(own))
         if parse_scripts:
+            from .scan_glyphs import small_greek_scripts
+            for node in small_greek_scripts(page,own,x0,y0,configuration,budget):
+                parts.append(node);b=node['raw_bbox']
+                own[max(0,int(np.floor(b[1]*2))-y0):int(np.ceil(b[3]*2))-y0,max(0,int(np.floor(b[0]*2))-x0):int(np.ceil(b[2]*2))-x0]=False
+            cc=join_ink_parts(components(own))
             from .scan_operators import pair_regions,transcribe_pair
             # A thin curved delimiter can be disconnected by raster sampling.
             # Join only vertically adjacent narrow strokes, without filling ink.
@@ -89,7 +95,10 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
                 region=union([b,script])
                 if any(pymupdf.Rect(raw(region)).intersects(pymupdf.Rect(p['raw_bbox'])) for p in parts):continue
                 node=transcribe_pair(page,raw(b),raw(script),side,configuration,budget,extended=True);node['role']='nested_structure';parts.append(node)
-                own[region[1]:region[3],region[0]:region[2]]=False
+                from .scan_glyphs import corroborate_base
+                corroborate_base(page,node,glyph_references)
+                observed=node['raw_bbox']
+                own[max(0,int(np.floor(observed[1]*2))-y0):max(0,int(np.ceil(observed[3]*2))-y0),max(0,int(np.floor(observed[0]*2))-x0):max(0,int(np.ceil(observed[2]*2))-x0)]=False
                 if node['latex']:
                     # OCR already observes a half-point pad. Preserve that
                     # declared span for the script's detached edge pixels.
@@ -150,6 +159,18 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
                     'method':'observed_baseline_horizontal_stroke' if text=='-' else 'observed_trailing_ink_point' if text=='.' else 'continuous_stem_and_two_arms' if text!='=' else 'two_aligned_horizontal_strokes',
                     'needs_review':True}})
             own[b[1]:b[3],b[0]:b[2]]=False
+        if parse_scripts:
+            from .scan_glyphs import punctuation
+            for c in components(own):
+                a,b,d,e=c['box']
+                if d-a>4 or e-b>8 or b<own.shape[0]*.55:continue
+                rb=[(a+x0)/2,(b+y0)/2,(d+x0)/2,(e+y0)/2]
+                point=punctuation(page,rb,configuration)
+                if not point:continue
+                # Dot geometry is accepted only as the final observed mark.
+                if point['latex']=='.' and own[:,d+2:].any():continue
+                parts.append(point);pb=point['raw_bbox']
+                own[max(0,int(np.floor(pb[1]*2))-y0):int(np.ceil(pb[3]*2))-y0,max(0,int(np.floor(pb[0]*2))-x0):int(np.ceil(pb[2]*2))-x0]=False
         # Keep complete text runs between observed structures. Never paint a
         # missing symbol, stretch glyphs, or substitute from another equation.
         intervals=runs(own.any(0));groups=[]
@@ -166,11 +187,20 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
                 audit['recheck_views']=extra['views']
                 if revised and re.fullmatch('[A-Za-z0-9]',revised) and revised in [v['normalized_text'] for v in audit['views']]:
                     value=revised;audit['status']='text_pixel_rechecked_candidate'
-            parts.append({'role':'observed_text_run','raw_bbox':rb,'latex':value,'original_text':value or '', 'ocr_audit':audit})
+            greek_token=False
+            if parse_scripts and (value is None or re.fullmatch(r'[A-Za-z]{2,}[)\]]?',value)):
+                from .scan_glyphs import greek_recheck,glyph_extent
+                refined=glyph_extent(page,rb)
+                checked,extra=greek_recheck(page,refined,configuration,budget)
+                audit['source_greek_recheck']=extra
+                if checked:
+                    value=checked[1];audit['status']='source_greek_two_view_candidate';rb=refined;greek_token=True
+            parts.append({'role':'observed_text_run','raw_bbox':rb,'latex':value,'original_text':value or '', 'ocr_audit':audit,
+                **({'token_text':'@'} if greek_token else {})})
             own[lo:hi,a:b]=False
         parts.sort(key=lambda p:p['raw_bbox'][0])
         complete=bool(parts and all(p['latex'] is not None for p in parts) and not own.any())
-        text=''.join(p.get('token_text','@') if p['role']=='nested_structure' else p['latex'] or '?' for p in parts)
+        text=''.join(p.get('token_text','@' if p['role']=='nested_structure' else p['latex'] or '?') for p in parts)
         return {'raw_bbox':box,'role':role,'operands':parts,'latex':''.join(p['latex'] or '?' for p in parts) if complete else None,
             'original_text':' '.join(p['original_text'] for p in parts),'token_text':text,
             'coverage_audit':{'ink_pixels':total,'observed_operator_ink_pixels':ignored,'unassigned_ink_pixels':int(own.sum()),'all_children_resolved':complete},
@@ -272,11 +302,15 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
     new=[f for f in fractions if f['method']==VERSION]
     used=96-budget['remaining'];budget={'remaining':128}
     from .scan_recursive import recursive_scan_structures
-    recursive,recursive_audit=recursive_scan_structures(pixels,primitives,excluded,sequence,valid_sequence,budget)
+    from .scan_multiline import aligned_row_fences,audit_aligned_rows
+    row_fences=aligned_row_fences(pixels,excluded)
+    recursive,recursive_audit=recursive_scan_structures(pixels,primitives,excluded,sequence,valid_sequence,budget,row_fences)
     recursive_audit.update({'ocr_calls':128-budget['remaining'],'ocr_budget':128})
     budget={'remaining':160}
     from .scan_summands import compose_summands
     summands=compose_summands(pixels,primitives,sequence,valid_sequence,budget)
-    return new+wholes+recursive+summands,{'version':VERSION,'ocr_calls':used,'ocr_budget':96,
+    multiline=audit_aligned_rows(row_fences,[*primitives,*new,*recursive,*summands])
+    return new+wholes+recursive+summands+multiline,{'version':VERSION,'ocr_calls':used,'ocr_budget':96,
+        'multiline_audit':{'groups':len(multiline),'max_groups':4,'max_rows_per_group':8,'model_calls':0,'ocr_calls':0},
         'summand_audit':{'ocr_calls':160-budget['remaining'],'ocr_budget':160,'model_calls':0},
         'recursive_audit':recursive_audit,'model_calls':0,'max_depth':8,'max_nodes':128,'needs_review':True}

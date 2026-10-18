@@ -234,12 +234,23 @@
           const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限',numerator:'分子',denominator:'分母',nested_structure:'嵌套结构',observed_text_run:'文字片段',observed_delimiter:'括号',delimiter_or_relation:'标点或关系符',sum_operator_limits:'求和符号及上下限',summand:'被求和项'};
           function appendObservation(value, depth=0) {
             const own=element('div','');
-            if (value !== formula) own.append(element('p','rm-field-title',`${roles[value.role] || '操作数'}：${value.latex || '未完成'}`),evidenceControl(value.evidence,`核对${roles[value.role] || '操作数'} →`));
+            const role=value.role==='aligned_row' ? '对齐续行' : roles[value.role] || '操作数';
+            if (value !== formula) own.append(element('p','rm-field-title',`${role}：${value.latex || '未完成'}`),evidenceControl(value.evidence,`核对${role} →`));
+            if (value.equality_audit) own.append(element('p','rm-muted','本行等号由两条对齐的水平墨迹确认；尚未恢复完整推导。'),evidenceControl(value.equality_audit.evidence,'核对本行等号 →'));
+            for (const rejected of value.rejected_regions || []) own.append(element('p','rm-muted','跨越本行边界的候选未并入该行。'),evidenceControl(rejected.evidence,'核对跨行候选 →'));
             if (value !== formula && value.operator_audit) {
               own.append(evidenceControl(value.operator_audit.evidence,'核对子项运算符 →'));
               for (const view of value.operator_audit.views || []) own.append(element('p','rm-muted',`运算符观察 ${view.language || ''}，${view.dpi} DPI，阈值 ${view.threshold}：${view.text || '未识别'}`));
             }
             for (const view of [...(value.ocr_audit?.views || []),...(value.ocr_audit?.recheck_views || []),...(value.ocr_audit?.additional_recheck_views || []),...(value.ocr_audit?.greek_views || [])]) own.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}${view.dpi ? `，${view.dpi} DPI` : ''}${view.language ? `，${view.language}` : ''}：${view.text || '未识别'}`));
+            const greek=value.ocr_audit?.source_greek_recheck;
+            if (greek) {
+              own.append(evidenceControl(greek.evidence,'核对希腊字符局部复核 →'));
+              for (const view of greek.views || []) own.append(element('p','rm-muted',`希腊文复核 ${view.dpi} DPI，阈值 ${view.threshold}：${view.text || '未识别'}`));
+            }
+            const reference=value.ocr_audit?.glyph_reference;
+            if (reference) own.append(element('p','rm-muted',`本字符自身OCR已观察到 ${reference.original_text}；同页独立字形余弦相似度 ${reference.cosine_similarity.toFixed(3)}，仍待核对。`),evidenceControl(reference.evidence,'核对同页字形参照 →'));
+            for (const view of value.ocr_audit?.geometry_views || []) own.append(element('p','rm-muted',`标点像素观察：${view.observed_punctuation}，${view.dpi} DPI，阈值 ${view.threshold}，墨迹 ${view.ink_width} × ${view.ink_height} 像素`));
             if (value.ocr_audit?.method) own.append(element('p','rm-muted',`像素几何依据：${value.ocr_audit.method}`));
             if (value.coverage_audit) own.append(element('p','rm-muted',`未归属墨迹：${value.coverage_audit.unassigned_ink_pixels} 像素；子项${value.coverage_audit.all_children_resolved ? '已分别转写，仍待复核' : '尚未全部确认'}`));
             if (value.coverage_audit?.observed_operator_ink_pixels) own.append(element('p','rm-muted',`已分离本层运算符墨迹 ${value.coverage_audit.observed_operator_ink_pixels} 像素，原图保留。`));

@@ -72,6 +72,7 @@ def pair_regions(cc,*,min_height=10,extended_parts=False):
 
 
 def transcribe_pair(page,b,s,side,configuration,budget,*,extended=False):
+    original_b=list(b)
     base,ba=observe(page,b,configuration,budget,pattern=r'[A-Za-z)\]]' if extended else r'[A-Za-z]')
     observed_base=base
     if extended and base is None and budget['remaining']>=2:
@@ -94,6 +95,15 @@ def transcribe_pair(page,b,s,side,configuration,budget,*,extended=False):
         if greek:
             from .formula_geometry import SYMBOLS
             observed_base=greek;base=SYMBOLS.get(greek);ba['status']='local_greek_two_view_candidate'
+    if extended and base is None:
+        from .scan_glyphs import greek_recheck,glyph_extent
+        refined=glyph_extent(page,b)
+        checked,extra=greek_recheck(page,refined,configuration,budget)
+        ba['source_greek_recheck']=extra
+        if checked:observed_base,base=checked;b=refined;ba['status']='source_greek_two_view_candidate'
+    if extended and base:
+        from .scan_glyphs import glyph_extent
+        b=glyph_extent(page,b)
     small,sa=observe(page,s,configuration,budget,pattern=r'[A-Za-z0-9]')
     if extended and small is None and budget['remaining']>=2:
         from .raster_formulas import _pixel_crop
@@ -111,7 +121,7 @@ def transcribe_pair(page,b,s,side,configuration,budget,*,extended=False):
         'original_text':(observed_base or '?')+' '+(small or '?'),
         'operands':[{'role':'base','original_text':observed_base or '', 'latex':base,'raw_bbox':b,'ocr_audit':ba},
                     {'role':side+'script','original_text':small or '', 'latex':small,'raw_bbox':s,'ocr_audit':sa}],
-        'geometry_audit':{'base_box':b,'script_box':s,'relation':side,'method':'observed_relative_ink_extent'},
+        'geometry_audit':{'base_box':b,'coarse_base_box':original_b,'script_box':s,'relation':side,'method':'observed_relative_ink_extent'},
         **({'token_text':base+'@'} if base in (')',']') else {})}
 
 
