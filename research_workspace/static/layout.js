@@ -235,10 +235,15 @@
           function appendObservation(value, depth=0) {
             const own=element('div','');
             if (value !== formula) own.append(element('p','rm-field-title',`${roles[value.role] || '操作数'}：${value.latex || '未完成'}`),evidenceControl(value.evidence,`核对${roles[value.role] || '操作数'} →`));
+            if (value !== formula && value.operator_audit) {
+              own.append(evidenceControl(value.operator_audit.evidence,'核对子项运算符 →'));
+              for (const view of value.operator_audit.views || []) own.append(element('p','rm-muted',`运算符观察 ${view.language || ''}，${view.dpi} DPI，阈值 ${view.threshold}：${view.text || '未识别'}`));
+            }
             for (const view of [...(value.ocr_audit?.views || []),...(value.ocr_audit?.recheck_views || []),...(value.ocr_audit?.additional_recheck_views || []),...(value.ocr_audit?.greek_views || [])]) own.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}${view.dpi ? `，${view.dpi} DPI` : ''}${view.language ? `，${view.language}` : ''}：${view.text || '未识别'}`));
             if (value.ocr_audit?.method) own.append(element('p','rm-muted',`像素几何依据：${value.ocr_audit.method}`));
             if (value.coverage_audit) own.append(element('p','rm-muted',`未归属墨迹：${value.coverage_audit.unassigned_ink_pixels} 像素；子项${value.coverage_audit.all_children_resolved ? '已分别转写，仍待复核' : '尚未全部确认'}`));
             if (value.coverage_audit?.observed_operator_ink_pixels) own.append(element('p','rm-muted',`已分离本层运算符墨迹 ${value.coverage_audit.observed_operator_ink_pixels} 像素，原图保留。`));
+            if (value !== formula) for (const line of value.associated_line_observations || []) own.append(element('p','rm-muted',`归属本子项的行观察：${line.original_text}`),evidenceControl(line.evidence,'核对子项行观察 →'));
             audit.append(own);
             if (depth<8) for (const child of value.operands || []) appendObservation(child,depth+1);
           }
