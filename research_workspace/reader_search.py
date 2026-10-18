@@ -12,9 +12,23 @@ from .semantic import SemanticIndex
 
 MAX_BLOCKS = 12000
 MAX_CHARACTERS = 8_000_000
-MIN_SIMILARITY = 0.50
+MIN_SIMILARITY = 0.65
 _slots = threading.BoundedSemaphore(2)
 STOP = set('a an the is are was were be been of to in on for with by and or it this that how what does do can which we from'.split())
+
+
+def query_variants(query):
+    """Small explicit English terminology aliases, never generated assertions."""
+    rewritten = query
+    rules = [(r'\b(?:missing|hidden) words\b', 'masked tokens'),
+             (r'\bboth directions\b', 'bidirectional'),
+             (r'\bword vectors\b', 'token embeddings')]
+    used = []
+    for pattern, replacement in rules:
+        if re.search(pattern, rewritten, re.I):
+            rewritten = re.sub(pattern, replacement, rewritten, flags=re.I)
+            used.append({'pattern':pattern, 'replacement':replacement})
+    return [query] + ([rewritten] if rewritten != query else []), used
 
 
 class ReaderSearch:
@@ -100,14 +114,17 @@ class ReaderSearch:
             result['warnings'].append('部分文献只有部分可读正文，结果不覆盖尚未识别的内容。')
         query = result['query']
         search_query = result['english_query'] or query
+        queries, aliases = query_variants(search_query)
+        result['ranking_queries'] = queries
+        result['local_aliases'] = aliases
         if re.search(r'[\u3400-\u9fff]', search_query):
             result['warnings'].append('本地向量模型主要面向英文；中文检索效果有限，可补充英文检索词。不会自动调用付费模型翻译。')
         canonical = {b.block_id:b for b in blocks}
         lexical_index = IntelligenceService._lexical_index(blocks)
-        lexical_query = ' '.join(t for t in IntelligenceService._search_terms(search_query) if t not in STOP)
+        lexical_query = ' '.join(t for t in IntelligenceService._search_terms(' '.join(queries)) if t not in STOP)
         lexical = IntelligenceService._rank_lexical(lexical_query, blocks, lexical_index) if result['mode'] == 'hybrid' else []
         try:
-            dense, info = asyncio.run(self.semantic.rank([search_query], blocks, limit=min(len(blocks), 100)))
+            dense, info = asyncio.run(self.semantic.rank(queries, blocks, limit=min(len(blocks), 300)))
         except Exception:
             dense, info = [], {'status':'failed', 'error':'local_embedding_unavailable'}
         result['semantic'] = info

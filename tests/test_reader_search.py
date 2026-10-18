@@ -168,3 +168,22 @@ def test_reference_titles_do_not_outrank_explanatory_originals(tmp_path,monkeypa
     monkeypatch.setattr(s,'snapshot',lambda *a:(blocks,[],'ready'))
     assert s.search('token order',mode='semantic')['hits'][0]['block_id']=='body'
     assert s.search('references token order',mode='semantic')['hits'][0]['block_id']=='ref'
+
+
+def test_explicit_local_aliases_are_recorded_without_changing_originals(tmp_path):
+    lib=Library(tmp_path);add(lib,'A canine sleeps.')
+    class Captured:
+        async def rank(self,queries,blocks,**kwargs):
+            assert queries==['missing words in both directions','masked tokens in bidirectional']
+            return [],{'status':'applied'}
+    r=ReaderSearch(lib,semantic=Captured()).search('missing words in both directions')
+    assert r['query']=='missing words in both directions' and len(r['local_aliases'])==2
+    assert r['ranking_queries'][1]=='masked tokens in bidirectional'
+
+
+def test_unrelated_midrange_similarity_is_below_candidate_floor(tmp_path):
+    lib=Library(tmp_path);add(lib,'A canine sleeps.')
+    class Weak:
+        async def rank(self,queries,blocks,**kwargs):
+            return [blocks[0].model_copy(update={'score':.61})],{'status':'applied'}
+    assert ReaderSearch(lib,semantic=Weak()).search('off topic',mode='semantic')['hits']==[]
