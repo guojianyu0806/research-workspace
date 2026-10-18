@@ -8,6 +8,7 @@ import sys
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile
@@ -204,7 +205,7 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
         intelligence = IntelligenceService(library).capabilities()
         return {"mode": "local", "ocr": ocr['available'], "llm": intelligence['configured'],
                 'ocr_details':ocr, 'intelligence':intelligence,
-                "max_upload_mb": upload_mb, "search": "literal",
+                "max_upload_mb": upload_mb, "search": "literal_hybrid_semantic_offline",
                 "worker_running": worker is not None and worker.poll() is None,
                 'activity_worker_running':activity_worker is not None and activity_worker.poll() is None}
 
@@ -256,9 +257,15 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
     @app.get("/api/search")
     def search(q: str = Query(..., min_length=1, max_length=200),
                document_id: str | None = None, run_id: str | None = None,
+               mode: Literal['literal','hybrid','semantic'] = 'literal',
+               english_query: str = Query('', max_length=200),
                limit: int = Query(30, ge=1, le=100),library:Library=Depends(library_for)):
         if not q.strip():
             raise HTTPException(400, "请输入需要查找的关键词。")
+        if mode != 'literal':
+            from .reader_search import ReaderSearch
+            return ReaderSearch(library).search(q,mode=mode,document_id=document_id,
+                run_id=run_id,english_query=english_query,limit=limit)
         return {"query": q, "mode": "literal",
                 "hits": library.search(q, document_id=document_id, run_id=run_id, limit=limit)}
 
