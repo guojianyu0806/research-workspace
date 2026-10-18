@@ -104,6 +104,12 @@ def transcribe_pair(page,b,s,side,configuration,budget,*,extended=False):
     if extended and base:
         from .scan_glyphs import glyph_extent
         b=glyph_extent(page,b)
+    if extended and base=='B' and (Path(configuration['path'])/'ell.traineddata').is_file():
+        from .scan_glyphs import beta_recheck
+        checked,extra,ambiguous=beta_recheck(page,b,configuration,budget)
+        ba['greek_beta_recheck']=extra
+        if checked:base=checked;observed_base='β';ba['status']='greek_beta_and_descender_candidate'
+        elif ambiguous or not extra['views']:base=None;observed_base=None;ba['status']='latin_greek_conflict'
     small,sa=observe(page,s,configuration,budget,pattern=r'[A-Za-z0-9]')
     if extended and small is None and budget['remaining']>=2:
         from .raster_formulas import _pixel_crop

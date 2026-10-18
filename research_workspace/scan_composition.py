@@ -160,6 +160,16 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
                     'needs_review':True}})
             own[b[1]:b[3],b[0]:b[2]]=False
         if parse_scripts:
+            from .scan_glyphs import bracket_recheck
+            for c in components(own):
+                a,b,d,e=c['box']
+                if e-b<12 or d-a>(e-b)*.3:continue
+                rb=[(a+x0)/2,(b+y0)/2,(d+x0)/2,(e+y0)/2]
+                delimiter=bracket_recheck(page,rb)
+                if delimiter:
+                    parts.append(delimiter);pb=delimiter['raw_bbox']
+                    own[max(0,int(np.floor(pb[1]*2))-y0):int(np.ceil(pb[3]*2))-y0,max(0,int(np.floor(pb[0]*2))-x0):int(np.ceil(pb[2]*2))-x0]=False
+        if parse_scripts:
             from .scan_glyphs import punctuation
             for c in components(own):
                 a,b,d,e=c['box']
@@ -302,15 +312,20 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
     new=[f for f in fractions if f['method']==VERSION]
     used=96-budget['remaining'];budget={'remaining':128}
     from .scan_recursive import recursive_scan_structures
-    from .scan_multiline import aligned_row_fences,audit_aligned_rows
+    from .scan_multiline import aligned_row_fences,transcribe_aligned_rows
     row_fences=aligned_row_fences(pixels,excluded)
     recursive,recursive_audit=recursive_scan_structures(pixels,primitives,excluded,sequence,valid_sequence,budget,row_fences)
     recursive_audit.update({'ocr_calls':128-budget['remaining'],'ocr_budget':128})
     budget={'remaining':160}
     from .scan_summands import compose_summands
     summands=compose_summands(pixels,primitives,sequence,valid_sequence,budget)
-    multiline=audit_aligned_rows(row_fences,[*primitives,*new,*recursive,*summands])
-    return new+wholes+recursive+summands+multiline,{'version':VERSION,'ocr_calls':used,'ocr_budget':96,
-        'multiline_audit':{'groups':len(multiline),'max_groups':4,'max_rows_per_group':8,'model_calls':0,'ocr_calls':0},
-        'summand_audit':{'ocr_calls':160-budget['remaining'],'ocr_budget':160,'model_calls':0},
+    summand_calls=160-budget['remaining'];budget={'remaining':96}
+    from .scan_sum_equations import compose_sum_equations
+    sum_equations=compose_sum_equations(pixels,summands,sequence,valid_sequence,excluded)
+    equation_calls=96-budget['remaining'];budget={'remaining':256}
+    multiline=transcribe_aligned_rows(pixels,row_fences,[*primitives,*new,*recursive,*summands],sequence,valid_sequence,budget)
+    return new+wholes+recursive+summands+sum_equations+multiline,{'version':VERSION,'ocr_calls':used,'ocr_budget':96,
+        'sum_equation_audit':{'ocr_calls':equation_calls,'ocr_budget':96,'max_rows':4,'model_calls':0},
+        'multiline_audit':{'groups':len(multiline),'max_groups':4,'max_rows_per_group':8,'model_calls':0,'ocr_calls':256-budget['remaining'],'ocr_budget':256},
+        'summand_audit':{'ocr_calls':summand_calls,'ocr_budget':160,'model_calls':0},
         'recursive_audit':recursive_audit,'model_calls':0,'max_depth':8,'max_nodes':128,'needs_review':True}

@@ -11,7 +11,7 @@ from .scan_operators import shape, union
 VERSION='raster-recursive-v1'
 
 
-def recursive_scan_structures(pixels,primitives,excluded,read_sequence,valid_sequence,budget,row_fences=()):
+def recursive_scan_structures(pixels,primitives,excluded,read_sequence,valid_sequence,budget,row_fences=(),include_flat=False):
     from .raster_formulas import runs
     mask=pixels<190;cc=components(mask,limit=8000);specs=[];rejected=[]
     hints=[p['raw_bbox'] for p in primitives]
@@ -142,7 +142,7 @@ def recursive_scan_structures(pixels,primitives,excluded,read_sequence,valid_seq
     for spec in sorted(specs,key=lambda s:-pymupdf.Rect(s['box']).get_area()):
         if budget['remaining']<2:break
         nested=any(t is not spec and any(contains(b,t['box']) for b in spec['operands']) for t in specs)
-        if not nested:continue
+        if not nested and not include_flat:continue
         if any(contains(n['raw_bbox'],spec['box']) for n in result):continue
         result.append(parse(spec))
         if len(result)>=8:break

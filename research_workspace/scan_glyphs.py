@@ -70,6 +70,52 @@ def punctuation(page,box,configuration):
             'geometry_views':views,'needs_review':True}}
 
 
+def bracket_recheck(page,box):
+    """Resolve anti-aliased bracket edges only when stem and both arms exist."""
+    refined=glyph_extent(page,box);views=[];values=[]
+    image=page.get_pixmap(dpi=576,clip=pymupdf.Rect(refined),colorspace=pymupdf.csGRAY,alpha=False)
+    gray=np.frombuffer(image.samples,dtype='uint8').reshape(image.height,image.stride)[:,:image.width]
+    for threshold in (170,210):
+        yy,xx=np.nonzero(gray<threshold)
+        if not len(xx):return None
+        m=(gray<threshold)[yy.min():yy.max()+1,xx.min():xx.max()+1];h,w=m.shape
+        if not (h>=24 and 4<=w<=h*.3):return None
+        top=m[:3].any(0);bottom=m[-3:].any(0);stem=np.flatnonzero(m.mean(0)>.9)
+        if not len(stem) or (top&bottom).sum()<w*.7:return None
+        if stem.max()<w*.55 and m[:,-1].mean()<.3:value='['
+        elif stem.min()>w*.45 and m[:,0].mean()<.3:value=']'
+        else:return None
+        values.append(value);views.append({'dpi':576,'threshold':threshold,'observed_bracket':value,
+            'ink_height':h,'ink_width':w,'stem_columns':stem.tolist(),'two_arms_width':int((top&bottom).sum())})
+    if values[0]!=values[1]:return None
+    return {'role':'observed_delimiter','raw_bbox':refined,'latex':values[0],'original_text':values[0],
+        'needs_review':True,'ocr_audit':{'raw_bbox':refined,'views':[],'bracket_geometry_views':views,
+            'method':'two_threshold_source_bracket_stem_and_arms','status':'observed_pixel_geometry','needs_review':True}}
+
+
+def beta_recheck(page,box,configuration,budget):
+    """Latin B and beta require both Greek readings and a visible descender."""
+    from .scan_operators import observe
+    refined=glyph_extent(page,box)
+    value,audit=observe(page,refined,configuration,budget,language='ell',pattern='[α-ωϕϵ]',profile=[(576,210),(576,230)])
+    audit['method']='greek_beta_views_and_descender';geometries=[]
+    im=page.get_pixmap(dpi=288,clip=pymupdf.Rect(refined),colorspace=pymupdf.csGRAY,alpha=False)
+    gray=np.frombuffer(im.samples,dtype='uint8').reshape(im.height,im.stride)[:,:im.width]
+    for threshold in (190,210):
+        yy,xx=np.nonzero(gray<threshold)
+        if not len(xx):break
+        m=(gray<threshold)[yy.min():yy.max()+1,xx.min():xx.max()+1];h,w=m.shape
+        tail=np.flatnonzero(m[int(h*.8):].any(0));body=np.flatnonzero(m[int(h*.3):int(h*.75)].any(0))
+        visible=bool(h>=12 and len(tail) and len(tail)<=w*.5 and tail.max()<w*.6 and len(body)>w*.6)
+        geometries.append({'dpi':288,'threshold':threshold,'descender_observed':visible,'ink_height':h,'ink_width':w,
+            'tail_columns':tail.tolist(),'body_columns':body.tolist()})
+    audit['descender_views']=geometries
+    confirmed=value=='β' and len(geometries)==2 and all(g['descender_observed'] for g in geometries)
+    ambiguous=any(re.fullmatch('[α-ωϕϵ]',v['normalized_text']) for v in audit['views'])
+    audit['status']='greek_beta_and_descender_candidate' if confirmed else 'latin_greek_conflict' if ambiguous else 'unresolved'
+    return (r'\beta' if confirmed else None),audit,ambiguous
+
+
 def corroborate_base(page,node,references):
     """Require a local OCR candidate plus a close same-page, independently read shape.
 

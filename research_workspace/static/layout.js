@@ -204,7 +204,7 @@
         const item = element("article", "rm-text-block");
         item.append(element("span", "rm-badge", "需复核"), element("p", "rm-original-text", formula.original_text || formula.text), evidenceControl(formula.evidence));
         if (formula.latex) {
-          item.append(element("p", "rm-field-title", formula.scope === 'whole_equation' ? '整条等式转写候选 · 待核对' : formula.scope === 'summation_expression' ? '求和项转写候选 · 未恢复整条等式 · 待核对' : formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
+          item.append(element("p", "rm-field-title", formula.scope === 'whole_equation' ? (formula.structure_kind==='aligned_sum_equations' ? '含续行的完整求和等式转写候选 · 待核对' : '整条等式转写候选 · 待核对') : formula.scope==='equality_continuation' ? '等号续行片段 · 需结合已确认的前式核对' : formula.scope === 'summation_expression' ? '求和项转写候选 · 未恢复整条等式 · 待核对' : formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
         } else item.append(element("p", "rm-muted", "该公式不在可靠转写子集中，仅保留原文。"));
         if (formula.method?.startsWith('native-math-geometry-')) {
           const audit = element('details'); audit.append(element('summary', '', '查看转写依据'));
@@ -227,11 +227,12 @@
         if (formula.method?.startsWith('raster-')) {
           const audit=element('details');audit.append(element('summary','','查看扫描公式审核记录'));
           audit.append(element('p','rm-muted',formula.latex ? '多次OCR观察一致仍可能出错，请核对原图。' : `未输出完整结果：${formula.conversion}；保留原图与不同识别观察。`));
+          if (formula.alignment_audit) audit.append(element('p','rm-muted',`已保留 ${formula.alignment_audit.row_count} 行独立原文与审核；左侧表达式、等号和每行内容均已转写。数学等价关系尚未由程序验证。`));
           if (formula.operator_audit) {
             audit.append(evidenceControl(formula.operator_audit.evidence,'核对运算符原图 →'));
             for (const view of formula.operator_audit.views || []) audit.append(element('p','rm-muted',`语言 ${view.language}，${view.dpi} DPI：${view.text || '未识别'}`));
           }
-          const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限',numerator:'分子',denominator:'分母',nested_structure:'嵌套结构',observed_text_run:'文字片段',observed_delimiter:'括号',delimiter_or_relation:'标点或关系符',sum_operator_limits:'求和符号及上下限',summand:'被求和项'};
+          const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限',numerator:'分子',denominator:'分母',nested_structure:'嵌套结构',observed_text_run:'文字片段',observed_delimiter:'括号',delimiter_or_relation:'标点或关系符',sum_operator_limits:'求和符号及上下限',summand:'被求和项',left_hand_side:'左侧函数或表达式',right_hand_side:'右侧求和表达式',equality:'等号',equation_row:'等式原文行'};
           function appendObservation(value, depth=0) {
             const own=element('div','');
             const role=value.role==='aligned_row' ? '对齐续行' : roles[value.role] || '操作数';
@@ -248,6 +249,13 @@
               own.append(evidenceControl(greek.evidence,'核对希腊字符局部复核 →'));
               for (const view of greek.views || []) own.append(element('p','rm-muted',`希腊文复核 ${view.dpi} DPI，阈值 ${view.threshold}：${view.text || '未识别'}`));
             }
+            const beta=value.ocr_audit?.greek_beta_recheck;
+            if (beta) {
+              own.append(evidenceControl(beta.evidence,'核对 B 与希腊字符歧义 →'));
+              for (const view of beta.views || []) own.append(element('p','rm-muted',`希腊文复核 ${view.dpi} DPI，阈值 ${view.threshold}：${view.text || '未识别'}`));
+              for (const view of beta.descender_views || []) own.append(element('p','rm-muted',`阈值 ${view.threshold}：${view.descender_observed ? '观察到下伸笔画' : '下伸笔画未确认'}；保留字形歧义。`));
+            }
+            for (const view of value.ocr_audit?.bracket_geometry_views || []) own.append(element('p','rm-muted',`括号像素观察 ${view.observed_bracket}：${view.dpi} DPI，阈值 ${view.threshold}，竖干与上下横臂已观察。`));
             const reference=value.ocr_audit?.glyph_reference;
             if (reference) own.append(element('p','rm-muted',`本字符自身OCR已观察到 ${reference.original_text}；同页独立字形余弦相似度 ${reference.cosine_similarity.toFixed(3)}，仍待核对。`),evidenceControl(reference.evidence,'核对同页字形参照 →'));
             for (const view of value.ocr_audit?.geometry_views || []) own.append(element('p','rm-muted',`标点像素观察：${view.observed_punctuation}，${view.dpi} DPI，阈值 ${view.threshold}，墨迹 ${view.ink_width} × ${view.ink_height} 像素`));

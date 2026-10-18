@@ -83,3 +83,41 @@ def audit_aligned_rows(groups,observations):
                 'full_rows_resolved':False,'model_calls':0,'ocr_calls':0,
                 'method':'observed_alignment_only_no_semantic_equation_merge'}})
     return result
+
+
+def transcribe_aligned_rows(pixels,groups,observations,read_sequence,valid_sequence,budget):
+    """Account for every row's ink; missing operands cannot be skipped."""
+    values=audit_aligned_rows(groups,observations)
+    # Re-run bounded structural detection inside each independent row. A large
+    # earlier formula must not monopolise the page's recursive candidate list.
+    from .scan_recursive import recursive_scan_structures
+    rows=[r for value in values for r in value['operands']]
+    for row in sorted(rows,key=lambda r:pymupdf.Rect(r['raw_bbox']).get_area()):
+        fence=row['geometry_audit']['fence_box'];a,b,d,e=[round(v*2) for v in fence]
+        local=np.full_like(pixels,255);local[b:e,a:d]=pixels[b:e,a:d]
+        hints=[*row['operands'],{'raw_bbox':row['raw_bbox']}]
+        # The horizontal caps of an already resolved Sigma are not fraction
+        # rules. Keep its independently checked region as an atomic child.
+        known_sums=[n['raw_bbox'] for n in row['operands'] if n.get('scope')=='summation_expression' and n.get('latex')]
+        extra,audit=recursive_scan_structures(local,hints,known_sums,read_sequence,valid_sequence,budget,groups,include_flat=True)
+        row['row_recursive_audit']=audit;row['operands'].extend(extra)
+    for value in values:
+        for row in value['operands']:
+            # Equivalent observations of the same region remain available in
+            # the independent records, but cannot be counted twice as ink.
+            children=[]
+            priority=lambda n:(n.get('method')=='raster-recursive-v1',bool(n.get('latex')),
+                pymupdf.Rect(n['raw_bbox']).get_area())
+            for child in sorted(row['operands'],key=priority,reverse=True):
+                if not any(pymupdf.Rect(child['raw_bbox']).intersects(pymupdf.Rect(c['raw_bbox'])) for c in children):children.append(child)
+            observed=read_sequence(row['raw_bbox'],children,'aligned_row',parse_scripts=True)
+            text=observed['token_text']
+            complete=bool(observed['latex'] and text.startswith('=') and valid_sequence(text[1:]))
+            row.update(operands=observed['operands'],original_text=observed['original_text'],
+                latex=observed['latex'] if complete else None,token_text=text,coverage_audit=observed['coverage_audit'],
+                row_audit={'full_row_resolved':complete,'observed_equality_required':True,
+                    'reason':None if complete else 'unresolved_row_ink_or_structure'})
+        value['multiline_audit']['full_rows_resolved']=all(r['latex'] for r in value['operands'])
+        # No implicit LHS is invented even if every bare-equality row is read.
+        value['multiline_audit']['transcription_attempted']=True
+    return values
