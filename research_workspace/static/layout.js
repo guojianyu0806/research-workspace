@@ -89,6 +89,11 @@
       const tables = panel("表格与单元格", "原生表格来自文字与线条；扫描表格按可见网格和本地OCR恢复。数值、数学表头与空格均需复核。");
       if (!data.tables?.length) tables.append(element("p", "rm-muted", data.table_status === "unsupported_or_failed"
         ? "本页表格检测未成功，没有输出猜测的单元格。" : "本页未检测到可提取的线框表格。"));
+      if (data.scan_table_audit?.rejected_candidates?.length) {
+        const rejected=element('details');rejected.append(element('summary','','查看未采用的扫描表格候选'));
+        for (const candidate of data.scan_table_audit.rejected_candidates) rejected.append(element('p','rm-muted',`候选缺少至少三条贯穿共同列范围的水平边界（当前 ${candidate.boundary_audit.rule_count} 条），不作为表格遮挡公式解析。`),evidenceControl(candidate.evidence,'核对未采用的表格候选 →'));
+        tables.append(rejected);
+      }
       for (const [index, table] of (data.tables || []).entries()) {
         const section = element("section", "rm-text-block");
         section.append(element("h4", "", `表格区域 ${index + 1} · ${table.row_count} 行 × ${table.column_count} 列`), evidenceControl(table.evidence, "定位表格区域 →"));

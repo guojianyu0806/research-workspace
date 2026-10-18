@@ -188,6 +188,10 @@ class LayoutService:
                     from .raster_tables import extract_scan_tables
                     source.set_rotation(0)
                     observed,scan_audit=extract_scan_tables(source,self.library._ocr_configuration())
+                    for rejected in scan_audit.get('rejected_candidates',[]):
+                        rejected['bbox']=bbox(rejected.pop('raw_bbox'))
+                        rejected['evidence']=anchor('',rejected['bbox'],'ocr_rejected_table_region') | {
+                            'source':'immutable_pdf_raster_local_ocr','block_id':None}
                     for extracted in observed:
                         box=bbox(extracted['raw_bbox'])
                         if any(_coverage(box,t['bbox'])>.8 and _coverage(t['bbox'],box)>.8 for t in tables):continue

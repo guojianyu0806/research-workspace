@@ -9,6 +9,15 @@ from research_workspace.layout import LayoutService
 from research_workspace.raster_tables import extract_scan_tables
 
 
+def test_horizontal_fallback_requires_shared_boundaries_not_scattered_fraction_rules():
+    from research_workspace.raster_tables import horizontal_boundary_support
+    box=[40,90,340,210]
+    true_rules=[(y*2,80,680,1) for y in (90,130,170,210)]
+    assert horizontal_boundary_support(box,true_rules,.5,.5)['supported']
+    fractions=[(y*2,a*2,b*2,1) for y,a,b in [(90,40,95),(130,110,195),(170,180,230),(210,235,340)]]
+    assert not horizontal_boundary_support(box,fractions,.5,.5)['supported']
+
+
 def scan_fixture(rotation=0,merged=False):
     with pymupdf.open() as vector:
         p=vector.new_page(width=400,height=400)

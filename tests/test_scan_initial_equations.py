@@ -58,6 +58,24 @@ def test_absent_initial_or_intervening_ink_does_not_attach_next_available_expres
         assert len(initial_candidates(changed,rows[1])[0])==1
 
 
+@pytest.mark.parametrize('rotation',[0,90])
+def test_erased_initial_x_cannot_create_false_table_and_hide_the_seven_continuations(tmp_path,configuration,rotation):
+    from research_workspace.library import Library
+    from research_workspace.layout import LayoutService
+    from tests.test_scan_row_geometry import EXPECTED
+    with raster_page('UnderstandingDeepLearning_02_09_26_C.pdf',376,288) as pdf:
+        pdf[0].draw_rect(pymupdf.Rect(293,164.5,300,172),color=None,fill=(1,1,1));pdf[0].set_rotation(rotation);data=pdf.tobytes()
+    lib=Library(tmp_path);doc=lib.import_document(data,'erased-first-x.pdf')['document'];lib.process_next_job()
+    run=doc['current_run']['id'];result=LayoutService(lib).analyze_page(doc['id'],1,run)
+    groups=sorted([n for n in result['formulas'] if n.get('method')=='raster-aligned-rows-v1'],key=lambda g:g['operands'][0]['source_row_number'])
+    assert not result['tables'] and len(groups)==2
+    assert groups[0]['initial_expression']['latex']!=INITIAL and groups[1]['initial_expression']['latex']==INITIAL
+    assert [r['latex'] for g in groups for r in g['operands']]==EXPECTED
+    rejected=result['scan_table_audit']['rejected_candidates']
+    assert rejected and all(n['evidence']['run_id']==run and n['bbox']==n['evidence']['bbox'] for n in rejected)
+    assert all('raw_bbox' not in n for n in records(result))
+
+
 def test_crossing_requires_four_arms_and_no_vertical_stem():
     mask=np.zeros((24,28),dtype=bool)
     for y in range(24):

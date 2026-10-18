@@ -7,7 +7,7 @@ from statistics import median
 import pymupdf
 
 
-VERSION='raster-table-v2-sparse-recheck'
+VERSION='raster-table-v3-observed-horizontal-boundaries'
 MAX_PIXELS=4_000_000
 MAX_OCR_CELLS=200
 
@@ -86,6 +86,15 @@ def _grids(horizontal,vertical):
             boxes[r0,c0]=([xs[c0],ys[r0],xs[c1+1],ys[r1+1]],r1-r0+1,c1-c0+1)
         if valid:tables.append({'xs':xs,'ys':ys,'boxes':boxes,'rows':nr,'columns':nc,'open_sides':open_sides})
     return tables
+
+
+def horizontal_boundary_support(box,horizontal,sx,sy):
+    """Text alignment alone cannot turn scattered fraction bars into a table."""
+    x0,y0,x1,y1=box
+    support=[y*sy for y,a,b,_ in horizontal if y0-4<=y*sy<=y1+4
+        and a*sx<=x0+4 and b*sx>=x1-4]
+    return {'method':'at_least_three_shared_horizontal_boundaries','rule_count':len(support),
+        'supported':len(support)>=3}
 
 
 def extract_scan_tables(page,ocr,*,dpi=144):
@@ -196,6 +205,13 @@ def extract_scan_tables(page,ocr,*,dpi=144):
             candidates=list(found.tables);method='raster_horizontal_rules_text_columns_local_ocr'
         for table in candidates[:12]:
             if table.row_count<2 or table.col_count<2 or table.row_count*table.col_count>3000:continue
+            if method=='raster_horizontal_rules_text_columns_local_ocr':
+                support=horizontal_boundary_support(table.bbox,horizontal,sx,sy)
+                if not support['supported']:
+                    audit.setdefault('rejected_candidates',[]).append({'raw_bbox':list(table.bbox),
+                        'reason':'insufficient_shared_horizontal_boundaries','boundary_audit':support,
+                        'needs_review':True})
+                    continue
             cells=[]
             for ri,row in enumerate(table.rows):
                 for ci,box in enumerate(row.cells):
