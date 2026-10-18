@@ -266,10 +266,18 @@ async def receive(client, endpoint, *, headers, body, model, schema, prompt, att
                 # bounded complete response without inventing a typing effect
                 # or purchasing a second request.
                 raw = bytearray()
-                async for part in cancellable_bytes(response, preview.check_cancel):
-                    raw.extend(part)
+                if response.is_stream_consumed:
+                    # A complete paid response can race cancellation. Preserve
+                    # it for existing schema/protection checks and checkpoint
+                    # persistence; cancellation stops the next model request.
+                    raw.extend(response.content)
                     if len(raw) > MAX_CONTENT:
                         raise StreamProtocolError()
+                else:
+                    async for part in cancellable_bytes(response, preview.check_cancel):
+                        raw.extend(part)
+                        if len(raw) > MAX_CONTENT:
+                            raise StreamProtocolError()
                 try:
                     envelope = json.loads(raw)
                 except ValueError:
