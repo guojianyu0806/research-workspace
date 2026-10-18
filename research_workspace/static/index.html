@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#315ce6">
   <title>研序 · Research Workspace</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/styles.css?v=20261018-reader-search1">
+  <link rel="stylesheet" href="/static/styles.css?v=20261018-dedup-history1">
   <link rel="stylesheet" href="/static/shell.css?v=20261013-floating-notice1">
   <link rel="stylesheet" href="/static/manage.css?v=20261018-dedup1">
   <link rel="stylesheet" href="/static/bilingual.css">
@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="/static/modern-theme.css?v=20261014-modern1">
   <script defer src="/static/notices.js?v=20261013-shared-notices1"></script>
   <script defer src="/static/navigation-motion.js?v=20261013-navigation-motion1"></script>
-  <script defer src="/static/app.js?v=20261018-evidence-preserve1"></script>
+  <script defer src="/static/app.js?v=20261018-dedup-history1"></script>
   <script defer src="/static/reader-controls.js?v=20261009-sizing3"></script>
   <script defer src="/static/reader-layout.js?v=20261009-sizing3"></script>
   <script defer src="/static/bilingual.js?v=20261013-shared-notices1"></script>
@@ -94,6 +94,7 @@
     <aside class="library-panel panel" id="libraryPanel" aria-label="文献库">
       <div class="panel-heading"><div><span class="eyebrow">LIBRARY</span><h1>我的文献 <span class="count-label" id="documentCount">—</span></h1></div><button id="closeLibrary" class="icon-button" type="button" aria-label="收起文献栏"><svg class="icon"><use href="#i-close"></use></svg></button></div>
       <label class="library-search input-with-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><span class="visually-hidden">按文件名查找文献</span><input id="documentFilter" type="search" placeholder="查找已导入的文献" autocomplete="off"></label>
+      <button id="libraryHistoryToggle" class="text-button library-history-toggle" type="button" aria-pressed="false" hidden>显示历史版本</button>
       <button class="drop-zone" id="dropZone" type="button"><svg class="icon" aria-hidden="true"><use href="#i-upload"></use></svg><span>拖放 PDF 到这里<span id="uploadLimit">或点击选择文件</span></span></button>
       <div class="upload-status" id="uploadStatus" role="status" hidden></div>
       <div class="document-list" id="documentList" aria-label="已导入文献" aria-busy="true"></div>

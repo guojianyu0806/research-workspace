@@ -3,7 +3,7 @@
 (() => {
   const byId = (id) => document.getElementById(id);
   const ui = Object.fromEntries([
-    "workspace", "libraryPanel", "documentList", "documentCount", "documentFilter",
+    "workspace", "libraryPanel", "documentList", "documentCount", "documentFilter", "libraryHistoryToggle",
     "uploadButton", "emptyUploadButton", "fileInput", "dropZone", "uploadStatus", "uploadLimit",
     "connectionState", "connectionText", "libraryFooter", "appNotice", "noticeText", "dismissNotice",
     "readerTitle", "readerSubtitle", "reparseButton", "readerToolbar", "readerMessage", "readerViewport",
@@ -16,7 +16,7 @@
   const state = {
     documents: [], capabilities: null, selectedId: null, selectedRunId: null, pinnedRun: false,
     page: 1, highlight: null, selectedHit: null, query: "", hits: [], uploading: false,
-    searching: false, reparsing: false, connected: false, pageHasText: null, searchRecord: null,
+    searching: false, reparsing: false, connected: false, pageHasText: null, searchRecord: null, showHistory: false,
   };
   let listRequest = 0;
   let pageRequest = 0;
@@ -120,10 +120,16 @@
 
   let libraryStamp = "";
   function renderLibrary() {
-    ui.documentCount.textContent = String(state.documents.length);
+    const historical = state.documents.filter(doc => doc.is_current_version === false).length;
+    ui.documentCount.textContent = String(state.documents.length - historical);
+    ui.documentCount.title = `${state.documents.length - historical} 份常用文献，${historical} 份历史版本`;
+    ui.libraryHistoryToggle.hidden = historical === 0;
+    ui.libraryHistoryToggle.textContent = `${state.showHistory ? "收起" : "显示"}历史版本（${historical}）`;
+    ui.libraryHistoryToggle.setAttribute("aria-pressed", String(state.showHistory));
     ui.documentList.setAttribute("aria-busy", "false");
     const filter = ui.documentFilter.value.trim().toLocaleLowerCase();
-    const documents = state.documents.filter((doc) => `${doc.title || ""} ${doc.filename || ""}`.toLocaleLowerCase().includes(filter));
+    const documents = state.documents.filter(doc => state.showHistory || doc.is_current_version !== false || doc.id === state.selectedId)
+      .filter((doc) => `${doc.title || ""} ${doc.filename || ""}`.toLocaleLowerCase().includes(filter));
     const stamp = JSON.stringify([filter, documents]);
     if (documents.length && stamp === libraryStamp && ui.documentList.querySelectorAll('.document-row').length === documents.length) {
       for (const button of ui.documentList.querySelectorAll('.document-row')) {
@@ -153,6 +159,7 @@
       const main = element("span", "document-main");
       main.append(element("span", "document-name", documentName(doc)));
       const meta = element("span", "document-meta");
+      if (doc.is_current_version === false) meta.append(element("span", "document-history-label", "历史版本 · 原引用保留"));
       const run = doc.current_run;
       meta.append(element("span", `document-state is-${run?.status || "unknown"}`, statusLabels[run?.status] || "尚未处理"));
       if (Number(doc.page_count) > 0) meta.append(element("span", "", `${doc.page_count} 页`));
@@ -654,6 +661,7 @@
   ui.retryPageButton.addEventListener("click", loadPage);
   ui.reparseButton.addEventListener("click", reparse);
   ui.searchForm.addEventListener("submit", (event) => { event.preventDefault(); search(); });
+  ui.libraryHistoryToggle.addEventListener("click", () => { state.showHistory = !state.showHistory; renderLibrary(); });
   ui.clearSearchButton.addEventListener("click", () => clearSearch());
   ui.searchScope.addEventListener("change", () => clearSearch(false));
   function updateSearchMode() {
