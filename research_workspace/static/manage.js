@@ -82,7 +82,7 @@
     tabs.setAttribute("aria-label", "文献管理工作区");
     const panes = {};
     const tabButtons = {};
-    for (const [key, title] of [["metadata", "资料与版本"], ["structure", "标题与引用"], ["text", "本页文字"], ["layout", "版面结构"], ["references", "参考文献筛选"]]) {
+    for (const [key, title] of [["metadata", "资料与版本"], ["dedup", "语义去重"], ["structure", "标题与引用"], ["text", "本页文字"], ["layout", "版面结构"], ["references", "参考文献筛选"]]) {
       const tab = btn(title, () => switchTab(key), "rm-tab");
       tab.id = `${prefix}-tab-${key}`;
       tab.setAttribute("role", "tab");
@@ -162,8 +162,8 @@
     }
     function mountExtension(key) {
       if (!selectedDocument || extensions[key]) return;
-      const module = key === "layout" ? window.ResearchLayout : key === "references" ? window.ResearchReferences : null;
-      if (module) extensions[key] = module.mount(panes[key], { api, document: selectedDocument, onEvidence });
+      const module = key === "layout" ? window.ResearchLayout : key === "references" ? window.ResearchReferences : key === "dedup" ? window.ResearchDedup : null;
+      if (module) extensions[key] = module.mount(panes[key], { api, document: selectedDocument, onEvidence, refreshLibrary });
     }
     tabs.addEventListener("keydown", (event) => {
       const names = Object.keys(tabButtons);
@@ -325,6 +325,7 @@
         const actions = el("div", "rm-actions");
         const keep = btn("关联并保留两份", () => confirmVersion(keep, doc.id, other.id, "keep_both"));
         const use = btn("使用候选版本", () => confirmVersion(use, doc.id, other.id, "use_other"), "rm-button rm-primary");
+        if(candidate.conflicting_identifiers){keep.disabled=true;use.disabled=true;}
         actions.append(btn("比较正文", () => compare(doc, other, target)), keep, use);
         item.append(actions);
         target.append(item);

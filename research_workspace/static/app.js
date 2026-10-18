@@ -292,10 +292,12 @@
     state.pinnedRun = Boolean(options.runId);
     state.page = clampReadingPage(options.page ?? rememberedPage(id), doc);
     rememberReadingPage(doc);
-    state.highlight = normalizeBox(options.bbox);
-    state.selectedHit = options.hitKey || null;
     state.pageHasText = null;
     if ((changed || previousRun !== state.selectedRunId) && ui.searchScope.value === "current" && !options.fromSearch) clearSearch(false);
+    // Clear evidence belonging to the previous search before applying the new
+    // citation. Otherwise current-document scope erases a cross-paper bbox.
+    state.highlight = normalizeBox(options.bbox);
+    state.selectedHit = options.hitKey || null;
     renderLibrary();
     renderReaderHeading();
     renderHitSelection();
