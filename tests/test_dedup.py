@@ -89,8 +89,9 @@ def test_partial_or_tiny_sources_cannot_confirm_identity(tmp_path,partial):
     b=add(lib,body=BODY if partial else 'Another short fragment.',own='1706.03762v2',filename='other.pdf')
     if partial:
         with lib._connection() as db:db.execute("UPDATE parse_runs SET status='partial' WHERE id=?",(a['available_run']['id'],))
-    p=pair_for(service(lib).scan(),a,b)
+    report=service(lib).scan();p=pair_for(report,a,b)
     assert p['classification']=='insufficient_evidence' and not p['can_group']
+    assert not report['complete']
 
 
 def test_group_and_undo_preserve_originals_pages_history_and_audits(tmp_path):
@@ -194,3 +195,16 @@ def test_group_eligibility_is_rechecked_in_write_transaction(tmp_path):
     with lib._connection() as db:db.execute('UPDATE dedup_scans SET payload=? WHERE id=?',(json.dumps(r),r['id']))
     with pytest.raises(DedupConflict):s.decide(r['id'],p['pair_id'],'group',a['id'])
     assert lib.get_document(a['id'])['version_family_id'] is None
+
+
+def test_semantic_samples_skip_license_prelude_and_remain_source_substrings(tmp_path):
+    lib=Library(tmp_path)
+    legal='Provided proper attribution is provided, permission to reproduce. '+'Legal attribution statement. '*20
+    a=add(lib,body=legal+'\n'+BODY)
+    s=service(lib)
+    with lib._connection() as db:
+        db.execute('BEGIN');items,_,_=s._snapshot(db,a['id'])
+    samples=items[0]['samples']
+    assert samples and all('Provided proper attribution' not in b['text'] for b in samples)
+    originals={b['block_id']:b for b in lib._evidence_blocks(a['id'])}
+    assert all(originals[b['block_id']]['text'].startswith(b['text']) for b in samples)

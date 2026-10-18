@@ -62,7 +62,9 @@ def signature(doc, run, blocks):
     tokens = re.findall(r'\w+', text)
     shingles = {hashlib.blake2b(' '.join(tokens[i:i+5]).encode(), digest_size=8).hexdigest()
         for i in range(max(0,len(tokens)-4))}
-    prose = [b for b in body if len(re.findall(r'\w+',b['text'])) >= 20]
+    prose = [b for b in body if len(re.findall(r'\w+',b['text'])) >= 40
+        and not re.search(r'provided proper attribution|permission to reproduce|copyright|creative commons|'
+            r'authors would like to thank|^acknowledg(?:e)?ments?\b', ' '.join(b['text'].split()),re.I)]
     samples = [{**prose[i], 'text':prose[i]['text'][:1600],
         'sample_span':{'start':0,'end':min(1600,len(prose[i]['text']))},
         'source_text_length':len(prose[i]['text']), 'truncated':len(prose[i]['text'])>1600}
@@ -72,7 +74,7 @@ def signature(doc, run, blocks):
         'source_sha256':doc['sha256'], 'run_id':run['id'], 'parse_version':run['version'], 'parse_status':run['status'],
         'pages_done':run['pages_done'], 'total_pages':run['total_pages'], 'archived_at':doc['archived_at'],
         'family_id':doc['version_family_id'], 'is_current_version':doc['is_current_version'],
-        'block_count':len(blocks), 'body_tokens':len(tokens),
+        'block_count':len(blocks), 'body_tokens':len(tokens), 'semantic_sample_count':len(samples),
         'body_sha256':hashlib.sha256(' '.join(' '.join(b['text'] for b in body).split()).encode()).hexdigest(),
         'blocks_sha256':digest(blocks)}
     return {'source':source,'identity':identity,'shingles':shingles,'samples':samples}
@@ -190,8 +192,11 @@ class DedupService:
                 if pair:pairs.append(pair)
             pairs.sort(key=lambda p:(not p['can_group'],p['classification']!='identity_conflict',-p['body_overlap'],p['pair_id']))
             omitted=max(0,len(pairs)-MAX_PAIRS)
+            partial=[i['source']['document_id'] for i in items if i['source']['parse_status']!='completed']
+            unsampled=[i['source']['document_id'] for i in items if not i['samples']]
             report={'id':uuid4().hex,'created_at':_now(),'method':'conservative-semantic-dedup-v1','document_id':document_id,
-                'semantic':info,'complete':not(skipped or truncated or omitted) and info.get('status')=='applied',
+                'semantic':info,'complete':not(skipped or truncated or omitted or partial or unsampled) and info.get('status')=='applied',
+                'partial_sources':partial,'unsampled_sources':unsampled,
                 'sources':[i['source'] for i in items],'skipped_sources':skipped,'documents_truncated':truncated,
                 'pairs_omitted':omitted,'pairs_evaluated':evaluated,'pairs':pairs[:MAX_PAIRS],
                 'automatic_merges':0,'model_calls':0,'network_used':False,
