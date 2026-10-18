@@ -237,7 +237,7 @@
             const own=element('div','');
             const role=value.role==='aligned_row' ? '对齐续行' : roles[value.role] || '操作数';
             if (value !== formula) own.append(element('p','rm-field-title',`${role}：${value.latex || '未完成'}`),evidenceControl(value.evidence,`核对${role} →`));
-            if (value.equality_audit) own.append(element('p','rm-muted','本行等号由两条对齐的水平墨迹确认；尚未恢复完整推导。'),evidenceControl(value.equality_audit.evidence,'核对本行等号 →'));
+            if (value.equality_audit) own.append(element('p','rm-muted',value.equation_audit?.all_regions_resolved ? '本行等号和各项已按原文转写，仍需人工核对数学含义。' : '本行等号由两条对齐的水平墨迹确认；尚未恢复完整推导。'),evidenceControl(value.equality_audit.evidence,'核对本行等号 →'));
             for (const rejected of value.rejected_regions || []) own.append(element('p','rm-muted','跨越本行边界的候选未并入该行。'),evidenceControl(rejected.evidence,'核对跨行候选 →'));
             if (value !== formula && value.operator_audit) {
               own.append(evidenceControl(value.operator_audit.evidence,'核对子项运算符 →'));
