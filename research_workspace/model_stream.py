@@ -11,7 +11,10 @@ import httpx
 
 _active = ContextVar('model_stream_job', default=None)
 MAX_PREVIEW = 24000
-MAX_WIRE = 2 * 1024 * 1024
+MAX_CONTENT = 2 * 1024 * 1024
+# SSE envelopes and private-reasoning chunks add transport overhead; keep the
+# original 2MiB public JSON limit separate from the bounded wire budget.
+MAX_WIRE = 16 * 1024 * 1024
 
 
 class StreamProtocolError(Exception):
@@ -240,7 +243,7 @@ async def receive(client, endpoint, *, headers, body, model, schema, prompt, att
                     if not isinstance(text, str) or already_finished and text:
                         raise StreamProtocolError()
                     size += len(text.encode('utf-8'))
-                    if size > MAX_WIRE:
+                    if size > MAX_CONTENT:
                         raise StreamProtocolError()
                     if text:
                         content.append(text)
@@ -265,7 +268,7 @@ async def receive(client, endpoint, *, headers, body, model, schema, prompt, att
                 raw = bytearray()
                 async for part in cancellable_bytes(response, preview.check_cancel):
                     raw.extend(part)
-                    if len(raw) > MAX_WIRE:
+                    if len(raw) > MAX_CONTENT:
                         raise StreamProtocolError()
                 try:
                     envelope = json.loads(raw)

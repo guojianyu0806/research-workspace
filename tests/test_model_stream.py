@@ -14,7 +14,7 @@ from research_workspace.intelligence import (
 )
 from research_workspace.jobs import JobStore, TaskCancelled
 from research_workspace.library import Library
-from research_workspace.model_stream import MAX_PREVIEW, Preview, PublicText, stream_job
+from research_workspace.model_stream import MAX_PREVIEW, MAX_WIRE, Preview, PublicText, stream_job
 from research_workspace.model_usage import record_model_calls
 
 
@@ -128,7 +128,7 @@ def test_partial_or_invalid_stream_is_never_replayed_or_a_final_answer(tmp_path,
             'bad_sse': [b'data: NOT_JSON\n\n'],
             'read_error': [httpx.ReadError('PRIVATE_PROVIDER_ERROR')],
             'provider_error': [b'data: {"error":{"message":"PRIVATE_PROVIDER_ERROR"}}\n\n'],
-            'oversize': [b'x' * (2*1024*1024+1)],
+            'oversize': [b'x' * (MAX_WIRE+1)],
             'invalid_utf8': [b'\xff\n\n'],
             'content_after_finish': [event(finish='stop'),event('tail')],
         }[mode]
@@ -162,6 +162,16 @@ def test_final_content_and_usage_can_arrive_with_stop_in_same_chunk(tmp_path):
     saved=store.get(job['id'])
     assert saved['usage']['total_tokens']==33
     assert saved['stream']['call_id']==saved['model_calls'][0]['id']
+
+
+def test_sse_overhead_does_not_consume_the_public_json_budget(tmp_path):
+    store=JobStore(Library(tmp_path));job=store.create('translate_text',{})
+    def handle(_):
+        return httpx.Response(200,headers={'content-type':'text/event-stream'},stream=Chunks([
+            *[event(reasoning='PRIVATE_REASONING_'*16000) for _ in range(10)],
+            event('{"translated_text":"实际正文很短"}'),event(finish='stop'),b'data: [DONE]\n\n']))
+    assert run_generate(store,job,provider(handle)).translated_text=='实际正文很短'
+    assert store.get(job['id'])['stream']['text']=='实际正文很短'
 
 
 @pytest.mark.parametrize('status', [401,402,429,503])
