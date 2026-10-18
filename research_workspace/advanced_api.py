@@ -96,7 +96,11 @@ class SubscriptionUpdate(StrictInput):
 
 
 class FeedbackInput(StrictInput):
-    value: Literal[-1,0,1]
+    value: int = Field(ge=-1,le=1,strict=True)
+
+
+class CollaborationInput(StrictInput):
+    enabled: bool = Field(strict=True)
 
 
 class ChartInput(StrictInput):
@@ -546,14 +550,47 @@ def build_router():
         return DiscoveryService(library).check_subscription(subscription_id)
 
     @router.get('/recommendations')
-    def recommendations(q:str=Query(default='',max_length=300),library:Library=Depends(library_for)):
+    def recommendations(request:Request,q:str=Query(default='',max_length=300),library:Library=Depends(library_for)):
         from .discovery import DiscoveryService
-        return DiscoveryService(library).recommendations(keywords=q)
+        discovery=DiscoveryService(library)
+        from .collaboration import CollaborativeRecommendations
+        import sqlite3
+        user=request.app.state.accounts.resolve(request.cookies.get(Accounts.COOKIE))
+        cohort=CollaborativeRecommendations(request.app.state.accounts,user,library)
+        # Rerank the full bounded local pool before applying the display limit.
+        def optional_rerank(result,source):
+            try:return cohort.rerank(result,source)
+            except sqlite3.Error:
+                result['collaboration']={'can_join':bool(user['id']),'enabled':None,'shared_feedback_count':None,
+                    'status':'unavailable','network_used':False,
+                    'policy':'协同服务暂不可用，当前保留本账号个人推荐；未披露其他账号资料。'}
+                return result
+        return discovery.recommendations(keywords=q,rerank=optional_rerank)
+
+    @router.put('/recommendations/collaboration')
+    def collaboration(request:Request,body:CollaborationInput,library:Library=Depends(library_for)):
+        from .discovery import DiscoveryService
+        from .collaboration import CollaborativeRecommendations
+        user=request.app.state.accounts.resolve(request.cookies.get(Accounts.COOKIE))
+        if not user['id']:raise HTTPException(403,'请登录独立账号后再加入协同推荐。')
+        return {'collaboration':CollaborativeRecommendations(request.app.state.accounts,user,library).set_enabled(body.enabled,DiscoveryService(library))}
 
     @router.post('/discover/feedback/{paper_id:path}')
-    def feedback(paper_id:str,body:FeedbackInput,library:Library=Depends(library_for)):
+    def feedback(paper_id:str,body:FeedbackInput,request:Request,library:Library=Depends(library_for)):
         from .discovery import DiscoveryService
-        return DiscoveryService(library).feedback(paper_id,body.value)
+        from .collaboration import CollaborativeRecommendations
+        import sqlite3
+        discovery=DiscoveryService(library)
+        result=discovery.feedback(paper_id,body.value)
+        user=request.app.state.accounts.resolve(request.cookies.get(Accounts.COOKIE))
+        try:
+            result['collaboration']=CollaborativeRecommendations(request.app.state.accounts,user,library).sync(discovery)
+            result['collaboration_sync']='completed'
+        except sqlite3.Error:
+            # The private vote is already saved. Do not report that it failed,
+            # or erase it when an optional shared projection is temporarily busy.
+            result['collaboration_sync']='pending'
+        return result
 
     @router.get('/graph')
     def graph(document_id:list[str]=Query(default=[]),library:Library=Depends(library_for)):

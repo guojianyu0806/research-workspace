@@ -253,3 +253,8 @@
   .ex-paper-card,.ex-graph-details,.ex-subscription-panel{padding:16px}
   .ex-graph-host,.ex-network-svg{min-height:340px}
 }
+.ex-collaboration{margin-top:12px;padding:14px;border:1px solid var(--line,#cbd7de);border-radius:8px;background:var(--paper,#fff);min-width:0}
+.ex-collaboration-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ex-collaboration-policy{margin-top:8px;font-size:14px;line-height:1.7}
+.ex-collaboration-policy summary{cursor:pointer}
+.ex-collaboration-policy p{margin-top:8px}

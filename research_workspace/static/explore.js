@@ -84,6 +84,8 @@
     let activeView = "search";
     let searchItems = [];
     let recommendedItems = [];
+    let collaboration = {can_join:false,enabled:false,status:'disabled'};
+    let collaborationBusy = false;
     let resultMeta = null;
     let subscriptions = [];
     const feedback = new Map();
@@ -125,6 +127,39 @@
     const recommendationRow = node("div", "ex-query-row");
     recommendationRow.append(keywords, recommendRefresh);
     recommendationForm.append(recommendationRow, node("p", "ex-context-note", "仅对已检索并保存在本工作区的元数据排序，不会发起新的外部检索。"));
+    const collaborative = node('section','ex-collaboration');
+    const collaborativeTop = node('div','ex-collaboration-top');
+    const collaborativeStatus = node('p','ex-muted','协同推荐默认关闭。');
+    const collaborativeToggle = button('加入协同推荐', async () => {
+      if (collaborationBusy || !collaboration.can_join || collaboration.status==='unavailable') return;
+      collaborationBusy=true;renderCollaboration();
+      try {
+        const result=await api('/api/recommendations/collaboration',json('PUT',{enabled:!collaboration.enabled}));
+        if(!alive)return;
+        collaboration=result.collaboration;renderCollaboration();
+        notice.show(collaboration.enabled ? '已加入协同推荐；仅使用公开论文标识与反馈，样本不足时保留个人推荐。' : '已退出协同推荐并清除本账号共享投影；个人反馈和原文保留。');
+        await loadRecommendations();
+      } catch(error){if(alive)notice.show(error.message,true);}
+      finally{if(alive){collaborationBusy=false;renderCollaboration();}}
+    },'ex-button ex-small');
+    const collaborativeDetails=node('details','ex-collaboration-policy');
+    collaborativeDetails.append(node('summary','','参与范围与隐私说明'),node('p','ex-fine-print',
+      '加入后，仅将本账号已有及后续的公开 arXiv 论文标识、喜欢/不喜欢反馈用于本机协同计算，最多使用最近 500 篇论文的当前反馈；同一论文各版本按最新反馈合并。不会共享私有文献、原文、笔记、检索词、订阅或任务。'),
+      node('p','ex-fine-print','只有至少 3 个相近兴趣参与账号提供足够一致的反馈时才调整排序；仅重排本空间已有公开候选，不提供其他账号身份或逐人反馈。退出后清除本账号共享投影，个人反馈保留。群体汇总仍可能反映参与者兴趣，不保证完全匿名。'));
+    collaborativeTop.append(collaborativeStatus,collaborativeToggle);
+    collaborative.append(collaborativeTop,node('p','ex-fine-print','主动加入后，仅共享公开论文标识和喜欢/不喜欢反馈，用于本机协同计算。私有文献及内容不共享；可随时退出并清除共享反馈。'),collaborativeDetails);recommendationForm.append(collaborative);
+
+    function renderCollaboration(){
+      const states={insufficient_profile:'共同兴趣依据不足，当前使用个人推荐。',insufficient_cohort:'相近兴趣群组不足，当前使用个人推荐。',
+        no_eligible_signals:'候选论文的群体依据不足，当前使用个人推荐。',applied:'已结合群体反馈适度调整排序，具体依据见论文卡片。',
+        unavailable:'协同服务暂不可用，当前仅提供个人推荐。'};
+      collaborativeStatus.textContent=collaboration.status==='unavailable' ? states.unavailable : collaboration.enabled
+        ? `协同推荐已加入 · 共享 ${collaboration.shared_feedback_count ?? 0} 篇公开论文的反馈。${states[collaboration.status] || ''}`
+        : collaboration.can_join ? '协同推荐未加入；当前仅使用本账号资料和反馈。' : '本机默认空间不参与协同；登录独立账号后可主动加入。';
+      collaborativeToggle.textContent=collaboration.enabled ? '退出并清除共享反馈' : '加入协同推荐';
+      collaborativeToggle.disabled=collaborationBusy || !collaboration.can_join || collaboration.status==='unavailable';
+    }
+    renderCollaboration();
     const resultsHeader = node("div", "ex-results-header");
     const results = node("div", "ex-paper-list");
     results.setAttribute("aria-live", "polite");
@@ -201,10 +236,11 @@
       controls.forEach((control) => { control.disabled = true; });
       const updated = feedback.get(paper.id) === value ? 0 : value;
       try {
-        await api(`/api/discover/feedback/${encodeURIComponent(paper.id)}`, json("POST", { value: updated }));
+        const saved = await api(`/api/discover/feedback/${encodeURIComponent(paper.id)}`, json("POST", { value: updated }));
         if (!alive) return;
         feedback.set(paper.id, updated);
         notice.show(updated === 1 ? "已保存喜欢反馈，后续本地推荐会参考它。" : updated === -1 ? "已保存负反馈，后续本地推荐将降低相关条目的排序。" : "已清除这条反馈。");
+        if(saved.collaboration_sync==='pending')notice.show('个人反馈已保存，协同更新暂未完成；下次更新推荐时会再次同步。',true);
         if (activeView === "recommendations") await loadRecommendations();
         else renderResults();
       } catch (error) { if (alive) { notice.show(error.message, true); controls.forEach((control) => { control.disabled = false; }); } }
@@ -302,7 +338,7 @@
       resultsHeader.replaceChildren();
       if (activeView === "search" && resultMeta) {
         resultsHeader.append(node("span", "", `${items.length} 条来源记录`), node("span", "ex-muted", `${resultMeta.cached ? "来源缓存 · " : ""}${date(resultMeta.retrieved_at)}`));
-      } else if (activeView === "recommendations") resultsHeader.append(node("span", "", `${items.length} 条本地推荐`), node("span", "ex-muted", "标题关联与持久反馈排序"));
+      } else if (activeView === "recommendations") resultsHeader.append(node("span", "", `${items.length} 条本地推荐`), node("span", "ex-muted", collaboration.status==='applied' ? '个人关联与群体反馈排序' : '标题关联与持久反馈排序'));
       if (!items.length) {
         if (activeView === "recommendations") empty(results, "还没有可推荐的来源记录", "先检索你关注的公开论文。结果保存在本工作区后，会结合本地文献标题和反馈进行排序。");
         else if (resultMeta) empty(results, "没有找到匹配的公开论文", "尝试更短的英文标题、研究术语或准确的 arXiv 编号。");
@@ -319,6 +355,8 @@
         const result = await api(`/api/recommendations?${new URLSearchParams({ q: keywords.value.trim() })}`);
         if (!alive || request !== recommendationSequence) return;
         recommendedItems = result.items || [];
+        collaboration=result.collaboration || {can_join:false,enabled:false,status:'disabled'};
+        renderCollaboration();
         rememberFeedback(recommendedItems);
         if (activeView === "recommendations") renderResults();
       } catch (error) { if (alive && request === recommendationSequence) notice.show(error.message, true); }

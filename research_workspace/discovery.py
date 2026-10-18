@@ -543,7 +543,7 @@ class DiscoveryService:
                     (uuid4().hex,paper_id,link['url'],result['checked_at'],json.dumps(result,ensure_ascii=False)))
         return self.get_paper(paper_id)
 
-    def recommendations(self, keywords: str = "", document_ids: list[str] | None = None, limit: int = 20) -> dict:
+    def recommendations(self, keywords: str = "", document_ids: list[str] | None = None, limit: int = 20, *, rerank=None) -> dict:
         _bounded_int(limit, 1, 100, "推荐数量")
         if not isinstance(keywords, str) or len(keywords) > 500:
             raise DiscoveryError("推荐关键词不能超过500个字符。")
@@ -592,7 +592,10 @@ class DiscoveryService:
             previous = latest.get(paper["canonical_id"])
             if previous is None or paper["version"] > previous["version"]:
                 latest[paper["canonical_id"]] = paper
-        items = sorted(latest.values(), key=lambda item: (-item["score"], item["id"]))[:limit]
-        return {"items": items, "source": "local_metadata_cache", "network_used": False,
+        items = sorted(latest.values(), key=lambda item: (-item["score"], item["id"]))
+        result = {"items": items, "source": "local_metadata_cache", "network_used": False,
                 "method": "关键词与本地文献标题重合度、持久化反馈及已核验开源关联的适度加分；不是全文语义判定。",
                 "code_policy": "仅出现链接不加分；公开仓库、README回指、许可证和源码核验有效期24小时，未执行复现实验。"}
+        if rerank is not None:result=rerank(result,self)
+        result['items']=result['items'][:limit]
+        return result
