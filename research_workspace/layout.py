@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v13-row-transcriptions'
+LAYOUT_VERSION = 'local-layout-v14-initial-equations'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -344,7 +344,7 @@ class LayoutService:
                         if item.get('ocr_audit'):
                             item['ocr_audit'].setdefault('raw_bbox',raw_region)
                             raster_record(item['ocr_audit'],'ocr_observation_region')
-                        for key in ('source_greek_recheck','glyph_reference','greek_beta_recheck','unpaired_script_audit'):
+                        for key in ('source_greek_recheck','glyph_reference','greek_beta_recheck','unpaired_script_audit','latin_greek_crossing_audit'):
                             nested=item.get(key)
                             if nested and nested.get('raw_bbox'):raster_record(nested,'ocr_glyph_recheck_region')
                         for reference in item.get('reference_regions',[]):
@@ -355,6 +355,9 @@ class LayoutService:
                         raster_record(formula,precision)
                         for operand in formula.get('operands',[]):raster_formula(operand,'ocr_formula_operand')
                         for prior in formula.get('prior_observations',[]):raster_formula(prior,'ocr_prior_row_observation')
+                        if formula.get('initial_expression'):raster_formula(formula['initial_expression'],'ocr_initial_expression')
+                        for candidate in formula.get('initial_candidates',[]):raster_formula(candidate,'ocr_initial_candidate')
+                        if formula.get('initial_expression_reference'):raster_record(formula['initial_expression_reference'],'ocr_initial_expression_reference')
                         for observation in formula.get('associated_line_observations',[]):raster_record(observation,'ocr_operator_limit_line')
                         if formula.get('operator_audit',{}).get('raw_bbox'):
                             raster_record(formula['operator_audit'],'ocr_operator_region')

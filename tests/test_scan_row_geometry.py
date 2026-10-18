@@ -9,6 +9,8 @@ from research_workspace.scan_row_geometry import RowReader
 from research_workspace.scan_multiline import aligned_row_fences
 from research_workspace.raster_formulas import _pixel_crop
 
+INITIAL=r'\frac{(1-\alpha_{t-1})}{1-\alpha_{t}}\sqrt{1-\beta_{t}}z_{t}+\frac{\sqrt{\alpha_{t-1}}\beta_{t}}{1-\alpha_{t}}x'
+
 EXPECTED=[
     r'=\frac{(1-\alpha_{t-1})}{1-\alpha_{t}}\sqrt{1-\beta_{t}}z_{t}+\frac{\sqrt{\alpha_{t-1}}\beta_{t}}{1-\alpha_{t}}(\frac{1}{\sqrt{\alpha_{t}}}z_{t}-\frac{\sqrt{1-\alpha_{t}}}{\sqrt{\alpha_{t}}}\epsilon)',
     r'=\frac{(1-\alpha_{t-1})}{1-\alpha_{t}}\sqrt{1-\beta_{t}}z_{t}+\frac{\beta_{t}}{1-\alpha_{t}}(\frac{1}{\sqrt{1-\beta_{t}}}z_{t}-\frac{\sqrt{1-\alpha_{t}}}{\sqrt{1-\beta_{t}}}\epsilon),',
@@ -78,8 +80,18 @@ def test_seven_row_exports_preserve_new_and_prior_versioned_audits(tmp_path,conf
     groups=[f for f in result['formulas'] if f.get('method')=='raster-aligned-rows-v1']
     rows=sorted([r for g in groups for r in g['operands']],key=lambda r:r['source_row_number'])
     assert [r['latex'] for r in rows]==EXPECTED
-    assert all(g['scope']=='transcribed_aligned_continuations' and not g['multiline_audit']['initial_expression_confirmed']
+    assert all(g['scope']=='whole_equation' and g['multiline_audit']['initial_expression_confirmed']
         and not g['multiline_audit']['mathematical_equivalence_verified'] for g in groups)
+    for g in groups:
+        initial=g['initial_expression'];assert initial['latex']==INITIAL
+        assert initial['initial_row_audit']['not_inferred_from_continuations']
+        assert initial['initial_row_audit']['ocr_calls']<=384
+        assert g['multiline_audit']['source_row_count']==1+len(g['operands'])
+        assert g['bbox']!=initial['bbox']
+        for r in g['operands']:
+            ref=r['initial_expression_reference']
+            assert ref['latex']==initial['latex'] and ref['evidence']==dict(initial['evidence'],location_precision='ocr_initial_expression_reference')
+            assert ref['bbox']==initial['bbox']
     for r in rows:
         assert r['row_audit']['full_row_resolved'] and r['row_audit']['ocr_calls']<=384
         assert r['prior_observations'] and r['equality_audit']

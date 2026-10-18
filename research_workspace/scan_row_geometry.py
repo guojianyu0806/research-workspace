@@ -37,13 +37,47 @@ def join_internal_specks(cc):
     return out
 
 
+def crossing_diagonals(mask):
+    """An observed x-crossing has four arms and no left vertical stem."""
+    from .raster_formulas import runs
+    yy,xx=np.nonzero(mask)
+    if not len(xx):return False,{}
+    m=mask[yy.min():yy.max()+1,xx.min():xx.max()+1];h,w=m.shape
+    if min(h,w)<12 or not .9<=w/h<=1.5:return False,{}
+    top=list(runs(m[:2].any(0)));bottom=list(runs(m[-2:].any(0)))
+    middle=np.flatnonzero(m[max(0,h//2-1):h//2+2].any(0))
+    left=float(m[int(h*.25):int(h*.75),:max(1,int(w*.3))].any(1).mean())
+    good=bool(len(top)==len(bottom)==2 and all(b-a>=2 for a,b in top+bottom)
+        and len(middle) and middle.max()-middle.min()+1<w*.65 and left<=.35)
+    return good,{'source_dpi':288,'ink_height':h,'ink_width':w,'top_arms':[list(map(int,r)) for r in top],'bottom_arms':[list(map(int,r)) for r in bottom],
+        'middle_span':int(middle.max()-middle.min()+1) if len(middle) else 0,'left_middle_occupancy':left,'crossing_observed':good}
+
+
+def join_operator_specks(cc):
+    """Join only actual diagonal neighbours of a wide operator's hook."""
+    removed=set()
+    for c in cc:
+        x,y,z,w=c['box'];h=w-y
+        if h<20 or z-x<h*.8:continue
+        points=set(c['points'])
+        for q in cc:
+            if q is c or id(q) in removed or len(q['points'])>8:continue
+            a,b,d,e=q['box']
+            if not (x-2<=a and d<=x+(z-x)*.25 and y<=b and e<=w+2):continue
+            if not any((py+dy,px+dx) in points for py,px in q['points'] for dy,dx in ((-1,-1),(-1,1),(1,-1),(1,1))):continue
+            c['points'].extend(q['points']);points.update(q['points']);c['box']=union([c['box'],q['box']])
+            c['joined_operator_speck_pixels']=c.get('joined_operator_speck_pixels',0)+len(q['points']);removed.add(id(q))
+    return [c for c in cc if id(c) not in removed]
+
+
 class RowReader:
-    def __init__(self,page,box,configuration,max_calls=384):
+    def __init__(self,page,box,configuration,max_calls=384,allow_initial_equation=False):
         self.page=page;self.configuration=configuration;self.calls=0;self.max_calls=max_calls
         im=page.get_pixmap(dpi=288,clip=pymupdf.Rect(box),colorspace=pymupdf.csGRAY,alpha=False)
         gray=np.frombuffer(im.samples,dtype='uint8').reshape(im.height,im.stride)[:,:im.width]
         self.gray=gray;self.mask=gray<190;self.origin=(im.x,im.y);self.nodes=0
         self.cache={};self.references=[]
+        self.allow_initial_equation=allow_initial_equation
         for c in components(self.mask,limit=1500):
             a,b,d,e=c['box']
             if 22<=e-b<=34 and 5<=d-a<=(e-b)*.65:self.references.append(c['box'])
@@ -121,6 +155,18 @@ class RowReader:
         if value is None:value=pair('eng',13,432,r'[A-Za-z0-9()+,\[\].]')
         audit={'raw_bbox':self.raw(b),'views':views,'method':'isolated_source_component_two_view_ocr',
             'status':'two_view_component_candidate' if value else 'unresolved','needs_review':True}
+        if greek in ('κ','π'):
+            shapes=[]
+            for threshold in (170,210):
+                good,shape=crossing_diagonals((self.gray[y:e,a:d]<threshold)&isolated[y:e,a:d])
+                shapes.append({'threshold':threshold,**shape})
+            if all(v.get('crossing_observed') for v in shapes):
+                latin=en if en=='x' else pair('eng',13,288,'[xX]')
+                audit['latin_greek_crossing_audit']={'raw_bbox':self.raw(b),'geometry_views':shapes,
+                    'method':'four_arms_central_crossing_and_own_latin_ocr','greek_candidate':greek,'latin_candidate':latin,
+                    'needs_review':True}
+                if latin=='x':value='x';audit['status']='own_latin_x_and_observed_crossing_candidate'
+                else:value=None;audit['status']='unresolved_latin_greek_crossing'
         if value==r'\beta':
             geometry=[]
             for threshold in (170,210):
@@ -156,7 +202,7 @@ class RowReader:
         self.nodes+=1
         if mask is None:mask=self.mask.copy()
         a,b,d,e=map(int,box);own=np.zeros_like(mask);own[b:e,a:d]=mask[b:e,a:d]
-        cc=components(own,limit=1500);specs=[];operator=[]
+        cc=join_operator_specks(components(own,limit=1500));specs=[];operator=[]
         if depth>=7 or self.nodes>128:return self.node(box,None,operands=[],role='sequence',coverage_audit={'all_children_resolved':False})
         from .raster_formulas import runs
         for c in cc:
@@ -175,7 +221,8 @@ class RowReader:
             for py,px in c['points']:rem[py,px]=False
             iy,ix=np.nonzero(rem[inner[1]:inner[3],inner[0]:inner[2]])
             if len(iy):inner[3]=inner[1]+int(iy.max())+1
-            region=union([c['box'],inner]);specs.append({'kind':'radical','box':region,'inner':[inner],'ink':c['points'],'operator_box':c['box']})
+            region=union([c['box'],inner]);specs.append({'kind':'radical','box':region,'inner':[inner],'ink':c['points'],'operator_box':c['box'],
+                'joined_operator_speck_pixels':c.get('joined_operator_speck_pixels',0)})
             operator.append(c)
         for c in cc:
             if c in operator:continue
@@ -208,7 +255,8 @@ class RowReader:
                 r'\frac{'+children[0]['latex']+'}{'+children[1]['latex']+'}') if good else None
             n=self.node(s['box'],latex,role='nested_structure',structure_kind=s['kind'],operands=children,
                 coverage_audit={'all_children_resolved':good,'unassigned_ink_pixels':unassigned},
-                geometry_audit={'operator_box':self.raw(s['operator_box']),'method':'source_connected_hook_and_roof' if s['kind']=='radical' else 'source_rule_with_independent_upper_lower_ink'})
+                geometry_audit={'operator_box':self.raw(s['operator_box']),'method':'source_connected_hook_and_roof' if s['kind']=='radical' else 'source_rule_with_independent_upper_lower_ink',
+                    'diagonally_connected_operator_speck_pixels':s.get('joined_operator_speck_pixels',0)})
             for ch,role in zip(children,['radicand'] if s['kind']=='radical' else ['numerator','denominator']):ch['role']=role
             n['px_box']=s['box'];parts.append(n)
             x,y,z,w=map(int,s['box']);own[y:w,x:z]=False
@@ -287,6 +335,8 @@ class RowReader:
         text=''.join(n.get('token_text','@' if n['role']=='nested_structure' else n['latex'] or '?') for n in parts)
         from .scan_composition import valid_sequence
         grammar=valid_sequence(text[1:].removesuffix(',')) if depth==0 and text.startswith('=') else valid_sequence(text)
+        if depth==0 and self.allow_initial_equation and not text.startswith('=') and '=' in text:
+            grammar=valid_sequence(text,equation=True)
         good=good and grammar
         latex=''.join(n['latex'] or '?' for n in parts) if good else None
         for n in parts:n.pop('px_box',None)

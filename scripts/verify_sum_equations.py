@@ -8,7 +8,7 @@ from research_workspace.library import Library
 from research_workspace.layout import LayoutService
 from tests.test_raster_formulas import raster_page
 from tests.test_scan_sum_equations import FIRST,ALIGNED
-from tests.test_scan_row_geometry import EXPECTED as MULTILINE_ROWS
+from tests.test_scan_row_geometry import EXPECTED as MULTILINE_ROWS,INITIAL
 from scripts.verify_real_greek_scan import records
 
 
@@ -54,8 +54,8 @@ def main():
             rows=[r for g in selected for r in g['operands']]
             check(name+'_seven_independent_continuations',sorted(len(g['operands']) for g in selected)==[2,5])
             rows.sort(key=lambda r:r['source_row_number'])
-            check(name+'_rows_transcribed_without_invented_initial_expression',[r['latex'] for r in rows]==MULTILINE_ROWS
-                and all(not g['multiline_audit']['initial_expression_confirmed'] for g in selected))
+            check(name+'_rows_and_own_initial_expression_transcribed',[r['latex'] for r in rows]==MULTILINE_ROWS
+                and all(g['multiline_audit']['initial_expression_confirmed'] and g['initial_expression']['latex']==INITIAL for g in selected))
             check(name+'_row_structures_rechecked',any(r['row_recursive_audit']['parsed_structure_count'] for r in rows))
             observations=list(records(selected))
             check(name+'_beta_root_exact_not_latin_B',any(n.get('latex')==r'\sqrt{1-\beta_{t}}' for n in observations) and not any(n.get('latex')==r'\sqrt{1-B_{t}}' for n in observations))

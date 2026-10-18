@@ -88,7 +88,7 @@ def test_beta_requires_own_greek_observations_and_visible_descender(configuratio
     assert all(v['descender_observed'] for v in audit['descender_views'])
 
 
-def test_complex_derivation_recovers_each_row_without_inventing_initial_expression(configuration):
+def test_complex_derivation_recovers_each_row_and_own_observed_initial_expression(configuration):
     from scripts.verify_real_greek_scan import records
     with raster_page('UnderstandingDeepLearning_02_09_26_C.pdf',376,288) as pdf:
         formulas,_,audit=extract_raster_math(pdf[0],configuration)
@@ -96,7 +96,10 @@ def test_complex_derivation_recovers_each_row_without_inventing_initial_expressi
     assert [len(g['operands']) for g in groups]==[2,5]
     rows=[r for g in groups for r in g['operands']]
     assert all(r['coverage_audit']['all_children_resolved'] and r['latex'] and r['row_audit']['full_row_resolved'] for r in rows)
-    assert all(g['scope']=='transcribed_aligned_continuations' and not g['multiline_audit']['initial_expression_confirmed'] for g in groups)
+    assert all(g['scope']=='whole_equation' and g['multiline_audit']['initial_expression_confirmed'] for g in groups)
+    from tests.test_scan_row_geometry import INITIAL
+    assert all(g['initial_expression']['latex']==INITIAL for g in groups)
+    assert groups[0]['initial_expression']['raw_bbox']!=groups[1]['initial_expression']['raw_bbox']
     assert any(r['row_recursive_audit']['parsed_structure_count'] for r in rows)
     nodes=list(records(groups));assert any(n.get('latex')==r'\sqrt{1-\beta_{t}}' for n in nodes)
     assert not any(n.get('latex')==r'\sqrt{1-B_{t}}' for n in nodes)

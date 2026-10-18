@@ -204,7 +204,7 @@
         const item = element("article", "rm-text-block");
         item.append(element("span", "rm-badge", "需复核"), element("p", "rm-original-text", formula.original_text || formula.text), evidenceControl(formula.evidence));
         if (formula.latex) {
-          item.append(element("p", "rm-field-title", formula.scope === 'whole_equation' ? (formula.structure_kind==='aligned_sum_equations' ? '含续行的完整求和等式转写候选 · 待核对' : '整条等式转写候选 · 待核对') : formula.scope==='transcribed_aligned_continuations' ? '多行续式逐行转写候选 · 起始左式未确认 · 待核对' : formula.scope==='equality_continuation' ? '等号续行片段 · 需结合已确认的前式核对' : formula.scope === 'summation_expression' ? '求和项转写候选 · 未恢复整条等式 · 待核对' : formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
+          item.append(element("p", "rm-field-title", formula.scope === 'whole_equation' ? (formula.structure_kind==='aligned_sum_equations' ? '含续行的完整求和等式转写候选 · 待核对' : formula.structure_kind==='aligned_derivation' ? '含起始式的多行等式转写候选 · 待核对' : '整条等式转写候选 · 待核对') : formula.scope==='transcribed_aligned_continuations' ? '多行续式逐行转写候选 · 起始左式未确认 · 待核对' : formula.scope==='equality_continuation' ? '等号续行片段 · 需结合已确认的前式核对' : formula.scope === 'summation_expression' ? '求和项转写候选 · 未恢复整条等式 · 待核对' : formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
         } else item.append(element("p", "rm-muted", "该公式不在可靠转写子集中，仅保留原文。"));
         if (formula.method?.startsWith('native-math-geometry-')) {
           const audit = element('details'); audit.append(element('summary', '', '查看转写依据'));
@@ -228,16 +228,18 @@
           const audit=element('details');audit.append(element('summary','','查看扫描公式审核记录'));
           audit.append(element('p','rm-muted',formula.latex ? '多次OCR观察一致仍可能出错，请核对原图。' : `未输出完整结果：${formula.conversion}；保留原图与不同识别观察。`));
           if (formula.alignment_audit) audit.append(element('p','rm-muted',`已保留 ${formula.alignment_audit.row_count} 行独立原文与审核；左侧表达式、等号和每行内容均已转写。数学等价关系尚未由程序验证。`));
-          if (formula.multiline_audit) audit.append(element('p','rm-muted',`共 ${formula.multiline_audit.row_count} 行；${formula.multiline_audit.full_rows_resolved ? '每条续行已分别转写，仍待人工核对' : '仍有续行未完成'}。未推断起始左式，未验证各行数学等价。`));
+          if (formula.multiline_audit) audit.append(element('p','rm-muted',`${formula.multiline_audit.initial_expression_confirmed ? `共 ${formula.multiline_audit.source_row_count} 条原文行，含起始式及 ${formula.multiline_audit.row_count} 条续行` : `共 ${formula.multiline_audit.row_count} 条续行`}；${formula.multiline_audit.full_rows_resolved ? '每条续行已分别转写，仍待人工核对' : '仍有续行未完成'}。${formula.multiline_audit.initial_expression_confirmed ? '已保留同组原页起始式' : '起始式尚未确认'}；未验证各行数学等价。`));
           if (formula.operator_audit) {
             audit.append(evidenceControl(formula.operator_audit.evidence,'核对运算符原图 →'));
             for (const view of formula.operator_audit.views || []) audit.append(element('p','rm-muted',`语言 ${view.language}，${view.dpi} DPI：${view.text || '未识别'}`));
           }
-          const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限',numerator:'分子',denominator:'分母',nested_structure:'嵌套结构',observed_text_run:'文字片段',observed_delimiter:'括号',delimiter_or_relation:'标点或关系符',sum_operator_limits:'求和符号及上下限',summand:'被求和项',left_hand_side:'左侧函数或表达式',right_hand_side:'右侧求和表达式',equality:'等号',equation_row:'等式原文行'};
+          const roles={initial_expression:'原页起始左式',base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限',numerator:'分子',denominator:'分母',nested_structure:'嵌套结构',observed_text_run:'文字片段',observed_delimiter:'括号',delimiter_or_relation:'标点或关系符',sum_operator_limits:'求和符号及上下限',summand:'被求和项',left_hand_side:'左侧函数或表达式',right_hand_side:'右侧求和表达式',equality:'等号',equation_row:'等式原文行'};
           function appendObservation(value, depth=0) {
             const own=element('div','');
             const role=value.role==='aligned_row' ? (value.source_row_number ? `第 ${value.source_row_number} 行续式` : '对齐续行') : roles[value.role] || '操作数';
             if (value !== formula) own.append(element('p','rm-field-title',`${role}：${value.latex || '未完成'}`),evidenceControl(value.evidence,`核对${role} →`));
+            if (value.initial_expression_reference) own.append(element('p','rm-muted','本行保留同组起始式的原文引用，请结合本行等号和上下文核对。'),evidenceControl(value.initial_expression_reference.evidence,'核对本组起始左式 →'));
+            if (value.initial_row_audit) own.append(element('p','rm-muted',`起始式独立识别 ${value.initial_row_audit.ocr_calls}/${value.initial_row_audit.ocr_budget} 次；未从后续各行反推或补写。`));
             if (value.equality_audit) own.append(element('p','rm-muted',value.equation_audit?.all_regions_resolved || value.row_audit?.full_row_resolved ? '本行等号和各项已按原文转写，仍需人工核对数学含义。' : '本行等号由两条对齐的水平墨迹确认；尚未恢复完整推导。'),evidenceControl(value.equality_audit.evidence,'核对本行等号 →'));
             if (value.row_audit?.method==='raster-row-geometry-v1') own.append(element('p','rm-muted',`本行独立识别 ${value.row_audit.ocr_calls}/${value.row_audit.ocr_budget} 次，原页采样 ${value.row_audit.source_dpi} DPI；未使用相邻行补全字符。`));
             for (const prior of value.prior_observations || []) own.append(element('p','rm-muted','上一通道的未完成观察及冲突记录已保留在结构导出中，不作为本行补字来源。'),evidenceControl(prior.evidence,'核对上一通道观察区域 →'));
@@ -248,6 +250,9 @@
             }
             for (const view of [...(value.ocr_audit?.views || []),...(value.ocr_audit?.recheck_views || []),...(value.ocr_audit?.additional_recheck_views || []),...(value.ocr_audit?.greek_views || [])]) own.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}${view.dpi ? `，${view.dpi} DPI${view.resampled_from_source ? `（由 ${view.source_dpi} DPI 等比重采样）` : ''}` : ''}${view.language ? `，${view.language}` : ''}：${view.text || '未识别'}`));
             for (const view of value.ocr_audit?.descender_views || []) own.append(element('p','rm-muted',`β 笔画复核，阈值 ${view.threshold}：${view.descender_observed ? '已观察到下伸笔画' : '下伸笔画未确认'}`));
+            const crossing=value.ocr_audit?.latin_greek_crossing_audit;
+            if (crossing) own.append(element('p','rm-muted',`希腊文候选 ${crossing.greek_candidate} 与英文观察存在冲突；保留本字符四臂交叉笔画及自身英文双观察，仍需核对。`),evidenceControl(crossing.evidence,'核对拉丁与希腊字形冲突 →'));
+            if (value.geometry_audit?.diagonally_connected_operator_speck_pixels) own.append(element('p','rm-muted',`根号钩归并 ${value.geometry_audit.diagonally_connected_operator_speck_pixels} 个实际对角相邻像素，未填充缺失笔画。`));
             const unpaired=value.ocr_audit?.unpaired_script_audit;
             if (unpaired) {
               own.append(element('p','rm-muted','该字符低于本操作数基线，未观察到所属主字符；保留原OCR，不能提升为正文变量。'),evidenceControl(unpaired.evidence,'核对孤立下标 →'));
@@ -278,6 +283,7 @@
             if (value.coverage_audit?.observed_operator_ink_pixels) own.append(element('p','rm-muted',`已分离本层运算符墨迹 ${value.coverage_audit.observed_operator_ink_pixels} 像素，原图保留。`));
             if (value !== formula) for (const line of value.associated_line_observations || []) own.append(element('p','rm-muted',`归属本子项的行观察：${line.original_text}`),evidenceControl(line.evidence,'核对子项行观察 →'));
             audit.append(own);
+            if (depth<8 && value.initial_expression) appendObservation(value.initial_expression,depth+1);
             if (depth<8) for (const child of value.operands || []) appendObservation(child,depth+1);
           }
           appendObservation(formula);

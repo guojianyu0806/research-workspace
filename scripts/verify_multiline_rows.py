@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from research_workspace.library import Library
 from research_workspace.layout import LayoutService
 from tests.test_raster_formulas import raster_page
-from tests.test_scan_row_geometry import EXPECTED
+from tests.test_scan_row_geometry import EXPECTED,INITIAL
 from scripts.verify_real_greek_scan import records
 
 
@@ -34,14 +34,15 @@ def main():
             and all(n['evidence']['document_id']==doc['id'] and n['evidence']['run_id']==run and n['evidence']['page']==1
                 and n['bbox']==n['evidence']['bbox'] and n['bbox'] and all(0<=v<=1 for v in n['bbox']) for n in positions))
         check(name+'_each_row_has_equality_and_audit',all(r.get('equality_audit',{}).get('evidence') and r.get('row_audit') and r.get('prior_observations') for r in rows))
-        check(name+'_no_invented_initial_lhs_or_algebra_proof',all(not g['multiline_audit']['initial_expression_confirmed'] and not g['multiline_audit']['mathematical_equivalence_verified'] for g in groups))
+        check(name+'_no_invented_algebra_proof',all(not g['multiline_audit']['mathematical_equivalence_verified'] for g in groups))
         check(name+'_bounded_local_only',all(r['row_audit']['model_calls']==0 and r['row_audit']['ocr_calls']<=384 for r in rows))
         if erase is None:
             check(name+'_two_and_five_row_groups',sorted(len(g['operands']) for g in groups)==[2,5])
             for i,(r,expected) in enumerate(zip(rows,EXPECTED),1):
                 check(f'{name}_row{i}_exact',r['latex']==expected and r['row_audit']['full_row_resolved'])
                 check(f'{name}_row{i}_all_ink_accounted',r['coverage_audit']['all_children_resolved'] and r['coverage_audit']['unassigned_ink_pixels']==0)
-            check(name+'_groups_transcribed_without_full_equation_claim',all(g['latex'] and g['scope']=='transcribed_aligned_continuations' for g in groups))
+            check(name+'_groups_include_own_observed_initial',all(g['latex'] and g['scope']=='whole_equation'
+                and g['initial_expression']['latex']==INITIAL and g['multiline_audit']['initial_expression_confirmed'] for g in groups))
         elif name=='erased-last-beta':
             check(name+'_missing_glyph_and_orphan_script_unresolved',len(rows)==7 and rows[-1]['latex'] is None
                 and any(n.get('ocr_audit',{}).get('status')=='unresolved_orphan_lowered_glyph' for n in records(rows[-1])))

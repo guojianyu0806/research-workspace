@@ -63,7 +63,11 @@ def main():
             selected=[f for f in formulas if f['method']=='raster-aligned-rows-v1']
             counts=[len(f['operands']) for f in selected]
             check(name+'_row_groups_match_visible_signs',sorted(counts)==([2,2,2] if erased else [2,5]))
-            check(name+'_derivation_not_fabricated',all(f['latex'] is None and not f['multiline_audit']['initial_expression_confirmed'] and all(r['latex'] is None for r in f['operands']) for f in selected))
+            check(name+'_derivation_requires_source_initial_and_no_proof_claim',all(
+                not f['multiline_audit']['mathematical_equivalence_verified']
+                and (f['scope']!='whole_equation' or f.get('initial_expression',{}).get('latex')
+                    and f['multiline_audit']['initial_expression_confirmed']
+                    and all(r['latex'] and r.get('initial_expression_reference') for r in f['operands'])) for f in selected))
         with pymupdf.open(library._source_path(doc['id'])) as pdf:
             for i,value in enumerate(selected):
                 p=pdf[0];b=value['bbox'];rect=pymupdf.Rect(b[0]*p.rect.width,b[1]*p.rect.height,b[2]*p.rect.width,b[3]*p.rect.height)
