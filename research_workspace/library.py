@@ -378,6 +378,22 @@ class Library:
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             left, right = self._document(db, document_id), self._document(db, other_id)
+            # Even an explicit version choice must not override conflicting
+            # verified paper labels, including labels in a transitive family.
+            from .dedup import identifiers
+            members={document_id,other_id}
+            for doc in (left,right):
+                if doc['version_family_id']:
+                    members.update(r[0] for r in db.execute('SELECT id FROM documents WHERE version_family_id=?',(doc['version_family_id'],)))
+            labels=[]
+            for did in members:
+                doc=self._document(db,did);run=doc['available_run']
+                blocks=[] if not run else [dict(r)|{'bbox':json.loads(r['bbox'])} for r in db.execute(
+                    'SELECT text,page,bbox FROM blocks WHERE run_id=? AND page=1',(run['id'],))]
+                labels.append(identifiers(doc,blocks))
+            if any(label['internally_conflicting'] for label in labels) or any(
+                    len({v for label in labels for v in label[key]})>1 for key in ['arxiv','doi']):
+                raise LibraryError('论文自身标识存在冲突，不能将不同论文合并为同一版本组。')
             selected = document_id if action == "use_document" else other_id if action == "use_other" else None
             if selected and (left if selected == document_id else right)["archived_at"]:
                 raise LibraryError("请先恢复归档文档，再将其设为当前版本。")

@@ -53,6 +53,16 @@ class Relation(StrictInput):
     action: Literal['keep_both','use_document','use_other'] = 'keep_both'
 
 
+class DedupScan(StrictInput):
+    document_id: str | None = Field(default=None,max_length=100)
+
+
+class DedupDecision(StrictInput):
+    pair_id: str = Field(min_length=1,max_length=100)
+    decision: Literal['group','keep_separate']
+    preferred_id: str | None = Field(default=None,max_length=100)
+
+
 class ResearchTask(StrictInput):
     kind: Literal['qa','compare','translate','translate_text','review','future_work','future_filter','draft','discover_qa']
     source_task_id: str | None = Field(default=None,max_length=100)
@@ -342,6 +352,34 @@ def build_router():
     @router.post('/documents/{document_id}/restore')
     def restore(document_id:str,library:Library=Depends(library_for)):
         return {'document':library.restore_document(document_id)}
+
+    @router.get('/dedup/scans')
+    def dedup_history(library:Library=Depends(library_for)):
+        from .dedup import DedupService
+        return {'scans':DedupService(library).history()}
+
+    @router.post('/dedup/scans',status_code=201)
+    def dedup_scan(body:DedupScan,library:Library=Depends(library_for)):
+        from .dedup import DedupService,DedupConflict
+        try:return DedupService(library).scan(body.document_id)
+        except DedupConflict as exc:raise HTTPException(409,str(exc)) from None
+
+    @router.get('/dedup/scans/{scan_id}')
+    def dedup_report(scan_id:str,library:Library=Depends(library_for)):
+        from .dedup import DedupService
+        return DedupService(library).get(scan_id)
+
+    @router.post('/dedup/scans/{scan_id}/decisions')
+    def dedup_decide(scan_id:str,body:DedupDecision,library:Library=Depends(library_for)):
+        from .dedup import DedupService,DedupConflict
+        try:return DedupService(library).decide(scan_id,body.pair_id,body.decision,body.preferred_id)
+        except DedupConflict as exc:raise HTTPException(409,str(exc)) from None
+
+    @router.post('/dedup/actions/{action_id}/undo')
+    def dedup_undo(action_id:str,library:Library=Depends(library_for)):
+        from .dedup import DedupService,DedupConflict
+        try:return DedupService(library).undo(action_id)
+        except DedupConflict as exc:raise HTTPException(409,str(exc)) from None
 
     @router.get('/documents/{document_id}/versions')
     def versions(document_id:str,library:Library=Depends(library_for)):
