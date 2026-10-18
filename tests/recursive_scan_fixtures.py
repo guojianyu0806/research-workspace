@@ -52,3 +52,19 @@ def fixture(kind,erase=None):
     result=pymupdf.open();p=result.new_page(width=240,height=180);p.insert_image(p.rect,stream=image)
     assert p.get_text()==''
     return result
+
+
+def ascii_sum_fixture():
+    """Derived (x_i-y_i)^2 summand from original source crops; not a paper claim."""
+    with pymupdf.open(ROOT/'data/samples/UnderstandingDeepLearning_02_09_26_C.pdf') as source,pymupdf.open() as pdf:
+        p=source[32];page=pdf.new_page(width=p.rect.width,height=p.rect.height)
+        page.insert_image(page.rect,stream=p.get_pixmap(dpi=288).tobytes('png'))
+        tail=p.get_pixmap(dpi=288,clip=pymupdf.Rect(315,599,341,614)).tobytes('png')
+        page.draw_rect(pymupdf.Rect(283,602,289,614),color=None,fill=(1,1,1),overlay=True)
+        page.draw_rect(pymupdf.Rect(298,599,363,615),color=None,fill=(1,1,1),overlay=True)
+        page.insert_image(pymupdf.Rect(299,599,325,614),stream=tail)
+        page.draw_rect(pymupdf.Rect(215,627,363,662),color=None,fill=(1,1,1),overlay=True)
+        data=page.get_pixmap(dpi=288).tobytes('png')
+        result=pymupdf.open();scan=result.new_page(width=p.rect.width,height=p.rect.height);scan.insert_image(scan.rect,stream=data)
+    assert result[0].get_text()==''
+    return result

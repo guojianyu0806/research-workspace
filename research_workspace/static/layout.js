@@ -204,7 +204,7 @@
         const item = element("article", "rm-text-block");
         item.append(element("span", "rm-badge", "需复核"), element("p", "rm-original-text", formula.original_text || formula.text), evidenceControl(formula.evidence));
         if (formula.latex) {
-          item.append(element("p", "rm-field-title", formula.scope === 'whole_equation' ? '整条等式转写候选 · 待核对' : formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
+          item.append(element("p", "rm-field-title", formula.scope === 'whole_equation' ? '整条等式转写候选 · 待核对' : formula.scope === 'summation_expression' ? '求和项转写候选 · 未恢复整条等式 · 待核对' : formula.scope === 'operator_with_limits' ? '求和符号与上下限片段 · 未恢复被求和项 · 待核对' : formula.scope === 'subexpression' ? '公式子表达式 · 未恢复整条等式 · 待核对' : "LaTeX结构转写 · 待核对"), element("pre", "rm-original-text", formula.latex));
         } else item.append(element("p", "rm-muted", "该公式不在可靠转写子集中，仅保留原文。"));
         if (formula.method?.startsWith('native-math-geometry-')) {
           const audit = element('details'); audit.append(element('summary', '', '查看转写依据'));
@@ -231,11 +231,11 @@
             audit.append(evidenceControl(formula.operator_audit.evidence,'核对运算符原图 →'));
             for (const view of formula.operator_audit.views || []) audit.append(element('p','rm-muted',`语言 ${view.language}，${view.dpi} DPI：${view.text || '未识别'}`));
           }
-          const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限',numerator:'分子',denominator:'分母',nested_structure:'嵌套结构',observed_text_run:'文字片段',observed_delimiter:'括号',delimiter_or_relation:'标点或关系符'};
+          const roles={base:'主字符',subscript:'下标',supscript:'上标',radicand:'根号内内容',upper_limit:'求和上限',lower_limit:'求和下限',numerator:'分子',denominator:'分母',nested_structure:'嵌套结构',observed_text_run:'文字片段',observed_delimiter:'括号',delimiter_or_relation:'标点或关系符',sum_operator_limits:'求和符号及上下限',summand:'被求和项'};
           function appendObservation(value, depth=0) {
             const own=element('div','');
             if (value !== formula) own.append(element('p','rm-field-title',`${roles[value.role] || '操作数'}：${value.latex || '未完成'}`),evidenceControl(value.evidence,`核对${roles[value.role] || '操作数'} →`));
-            for (const view of [...(value.ocr_audit?.views || []),...(value.ocr_audit?.recheck_views || [])]) own.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}${view.dpi ? `，${view.dpi} DPI` : ''}：${view.text || '未识别'}`));
+            for (const view of [...(value.ocr_audit?.views || []),...(value.ocr_audit?.recheck_views || []),...(value.ocr_audit?.additional_recheck_views || []),...(value.ocr_audit?.greek_views || [])]) own.append(element('p','rm-muted',`阈值 ${view.threshold}，模式 ${view.mode}${view.dpi ? `，${view.dpi} DPI` : ''}${view.language ? `，${view.language}` : ''}：${view.text || '未识别'}`));
             if (value.ocr_audit?.method) own.append(element('p','rm-muted',`像素几何依据：${value.ocr_audit.method}`));
             if (value.coverage_audit) own.append(element('p','rm-muted',`未归属墨迹：${value.coverage_audit.unassigned_ink_pixels} 像素；子项${value.coverage_audit.all_children_resolved ? '已分别转写，仍待复核' : '尚未全部确认'}`));
             if (value.coverage_audit?.observed_operator_ink_pixels) own.append(element('p','rm-muted',`已分离本层运算符墨迹 ${value.coverage_audit.observed_operator_ink_pixels} 像素，原图保留。`));

@@ -57,14 +57,44 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
         cc=join_ink_parts(components(own))
         if parse_scripts:
             from .scan_operators import pair_regions,transcribe_pair
-            for base,script,side in pair_regions(cc):
+            # A thin curved delimiter can be disconnected by raster sampling.
+            # Join only vertically adjacent narrow strokes, without filling ink.
+            changed=True
+            while changed:
+                changed=False
+                for i,c in enumerate(cc):
+                    for j,d in enumerate(cc[i+1:],i+1):
+                        a,b=c['box'],d['box'];merged=union([a,b]);height=merged[3]-merged[1]
+                        curve=(min(a[2],b[2])>=max(a[0],b[0]) and 0<=max(a[1],b[1])-min(a[3],b[3])<=1
+                            and height>=12 and merged[2]-merged[0]<=height*.3)
+                        halves=(0<=max(a[0],b[0])-min(a[2],b[2])<=1 and min(a[3],b[3])>max(a[1],b[1])
+                            and min(a[3]-a[1],b[3]-b[1])>=.8*height and merged[2]-merged[0]<=height*.9)
+                        short_glyph=(min(a[2],b[2])>max(a[0],b[0]) and 0<=max(a[1],b[1])-min(a[3],b[3])<=1
+                            and 7<=height<=14 and height*.5<=merged[2]-merged[0]<=height)
+                        if curve or halves or short_glyph:
+                            c['box']=merged;c['points']+=d['points'];cc.pop(j);changed=True;break
+                    if changed:break
+            cc=join_ink_parts(cc)
+            for base,script,side in pair_regions(cc,min_height=8,extended_parts=True):
                 b=base['box']
-                if script[3]-script[1] < .5*(b[3]-b[1]) or budget['remaining']<4:continue
+                if budget['remaining']<4:continue
+                if any(c is not base and b[2]<=c['box'][0] and c['box'][2]<=script[0]
+                    and c['box'][3]-c['box'][1]>=(b[3]-b[1])*.8 for c in cc):continue
+                # Preserve tiny observed dots lost by the component-size filter
+                # when bounding a script such as i. Read only its own x strip.
+                sy=max(0,int(script[1]-(b[3]-b[1])*.4));sx0=int(script[0]);sx1=int(script[2])
+                yy,xx=np.nonzero(own[sy:int(script[3]),sx0:sx1])
+                if len(yy):script=[script[0],min(script[1],sy+int(yy.min())),script[2],script[3]]
                 raw=lambda r:[(r[0]+x0)/2,(r[1]+y0)/2,(r[2]+x0)/2,(r[3]+y0)/2]
                 region=union([b,script])
                 if any(pymupdf.Rect(raw(region)).intersects(pymupdf.Rect(p['raw_bbox'])) for p in parts):continue
-                node=transcribe_pair(page,raw(b),raw(script),side,configuration,budget);node['role']='nested_structure';parts.append(node)
+                node=transcribe_pair(page,raw(b),raw(script),side,configuration,budget,extended=True);node['role']='nested_structure';parts.append(node)
                 own[region[1]:region[3],region[0]:region[2]]=False
+                if node['latex']:
+                    # OCR already observes a half-point pad. Preserve that
+                    # declared span for the script's detached edge pixels.
+                    own[int(script[1]):int(script[3]),int(script[2]):int(script[2])+1]=False
+                    node['geometry_audit']['observed_script_right_pad_points']=.5
             cc=join_ink_parts(components(own))
         specials=[]
         # Square brackets have a continuous stem and two visible arms. Curved
@@ -109,11 +139,15 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
                 if (1<=b[1]-a[3]<=6 and abs(a[0]-b[0])<=1 and abs(a[2]-b[2])<=1
                         and a[2]-a[0]>=1.8*(b[3]-a[1])):
                     specials.append((union([a,b]),'='))
+        if parse_scripts:
+            for b in horizontal:
+                if (not any(pymupdf.Rect(p).contains(pymupdf.Rect(b)) for p,_ in specials)
+                    and abs((b[1]+b[3])/2-own.shape[0]/2)<=own.shape[0]*.25):specials.append((b,'-'))
         for b,text in specials:
             rb=[(b[0]+x0)/2,(b[1]+y0)/2,(b[2]+x0)/2,(b[3]+y0)/2]
             parts.append({'role':'delimiter_or_relation','raw_bbox':rb,'latex':text,'original_text':text,
                 'ocr_audit':{'status':'observed_pixel_geometry','raw_bbox':rb,'views':[],
-                    'method':'observed_trailing_ink_point' if text=='.' else 'continuous_stem_and_two_arms' if text!='=' else 'two_aligned_horizontal_strokes',
+                    'method':'observed_baseline_horizontal_stroke' if text=='-' else 'observed_trailing_ink_point' if text=='.' else 'continuous_stem_and_two_arms' if text!='=' else 'two_aligned_horizontal_strokes',
                     'needs_review':True}})
             own[b[1]:b[3],b[0]:b[2]]=False
         # Keep complete text runs between observed structures. Never paint a
@@ -136,7 +170,7 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
             own[lo:hi,a:b]=False
         parts.sort(key=lambda p:p['raw_bbox'][0])
         complete=bool(parts and all(p['latex'] is not None for p in parts) and not own.any())
-        text=''.join('@' if p['role']=='nested_structure' else p['latex'] or '?' for p in parts)
+        text=''.join(p.get('token_text','@') if p['role']=='nested_structure' else p['latex'] or '?' for p in parts)
         return {'raw_bbox':box,'role':role,'operands':parts,'latex':''.join(p['latex'] or '?' for p in parts) if complete else None,
             'original_text':' '.join(p['original_text'] for p in parts),'token_text':text,
             'coverage_audit':{'ink_pixels':total,'observed_operator_ink_pixels':ignored,'unassigned_ink_pixels':int(own.sum()),'all_children_resolved':complete},
@@ -240,5 +274,9 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
     from .scan_recursive import recursive_scan_structures
     recursive,recursive_audit=recursive_scan_structures(pixels,primitives,excluded,sequence,valid_sequence,budget)
     recursive_audit.update({'ocr_calls':128-budget['remaining'],'ocr_budget':128})
-    return new+wholes+recursive,{'version':VERSION,'ocr_calls':used,'ocr_budget':96,
+    budget={'remaining':160}
+    from .scan_summands import compose_summands
+    summands=compose_summands(pixels,primitives,sequence,valid_sequence,budget)
+    return new+wholes+recursive+summands,{'version':VERSION,'ocr_calls':used,'ocr_budget':96,
+        'summand_audit':{'ocr_calls':160-budget['remaining'],'ocr_budget':160,'model_calls':0},
         'recursive_audit':recursive_audit,'model_calls':0,'max_depth':8,'max_nodes':128,'needs_review':True}

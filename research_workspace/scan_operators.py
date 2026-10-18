@@ -18,18 +18,18 @@ def union(boxes):
     return [min(b[0] for b in boxes),min(b[1] for b in boxes),max(b[2] for b in boxes),max(b[3] for b in boxes)]
 
 
-def observe(page,box,configuration,budget,*,language='eng',pattern=r'[A-Za-z0-9]+',symbol=False,relation=False,upper=False):
+def observe(page,box,configuration,budget,*,language='eng',pattern=r'[A-Za-z0-9]+',symbol=False,relation=False,upper=False,profile=None):
     views=[]
     if budget['remaining']<2 or pymupdf.Rect(box).get_area()*64>200_000:
         return None,{'status':'not_processed_budget','views':[],'raw_bbox':box,'needs_review':True}
-    profile=([(216,230),(216,245)] if symbol else [(432,150),(432,190)] if relation
+    profile=profile or ([(216,230),(216,245)] if symbol else [(432,150),(432,190)] if relation
              else [(576,150),(576,230)] if upper else [(576,190),(576,210)])
     for dpi,threshold in profile:
         pad=.25 if symbol else .5
         image=page.get_pixmap(dpi=dpi,clip=pymupdf.Rect(box)+(-pad,-pad,pad,pad),colorspace=pymupdf.csGRAY,alpha=False)
         gray=np.frombuffer(image.samples,dtype='uint8').reshape(image.height,image.stride)[:,:image.width]
         value=_read_mask(gray<threshold,configuration,language=language,mode=7)
-        budget['remaining']-=1;views.append({'text':value,'normalized_text':re.sub(r'\s+','',value),'dpi':dpi,'threshold':threshold,'mode':7,'language':language})
+        budget['remaining']-=1;views.append({'text':value,'normalized_text':re.sub(r'\s+','',value),'dpi':dpi,'threshold':threshold,'mode':7,'language':language,'padding_points':pad})
     text=views[0]['normalized_text'] if views[0]['normalized_text']==views[1]['normalized_text'] and re.fullmatch(pattern,views[0]['normalized_text']) else None
     return text,{'status':'two_view_candidate' if text else 'unresolved','views':views,'raw_bbox':box,'needs_review':True}
 
@@ -45,18 +45,18 @@ def join_ink_parts(cc):
     return result
 
 
-def pair_regions(cc):
+def pair_regions(cc,*,min_height=10,extended_parts=False):
     pairs=[]
     for base in cc:
         b=base['box'];h=b[3]-b[1];w=b[2]-b[0]
-        if not (10<=h<=36 and 2<=w<=h*1.6):continue
+        if not (min_height<=h<=36 and 2<=w<=h*1.6):continue
         candidates=[]
         for small in cc:
             s=small['box'];sh=s[3]-s[1]
             if small is base or not h*.35<=sh<=h*.78 or not -1<=s[0]-b[2]<=h*.6:continue
             if abs((s[1]+s[3]-b[1]-b[3])/2)>h*.9:continue
-            if s[1]<b[1]-h*.2 and s[3]<b[3]-h*.45:side='sup'
-            elif s[1]>b[1]+h*.2 and s[3]>b[3]+h*.08:side='sub'
+            if (s[1]<=b[1]-h*.2 if extended_parts else s[1]<b[1]-h*.2) and s[3]<b[3]-h*.45:side='sup'
+            elif s[1]>b[1]+h*.2 and (s[3]>b[3]+h*.08 or extended_parts and (s[1]+s[3]-b[1]-b[3])/2>h*.15):side='sub'
             else:continue
             candidates.append((small,side))
         for small,side in candidates:
@@ -65,22 +65,54 @@ def pair_regions(cc):
             for part in cc:
                 q=part['box']
                 if part is small or part is base:continue
-                if s[0]-1<=q[0] and q[2]<=s[2]+1 and s[1]-h*.4<=q[1]<=s[3]:parts.append(part)
+                margin=max(1,h*.2) if extended_parts else 1
+                if s[0]-margin<=q[0] and q[2]<=s[2]+margin and s[1]-h*.4<=q[1]<=s[3]+(h*.15 if extended_parts else 0):parts.append(part)
             pairs.append((base,union(p['box'] for p in parts),side))
     return pairs
 
 
-def transcribe_pair(page,b,s,side,configuration,budget):
-    base,ba=observe(page,b,configuration,budget,pattern=r'[A-Za-z]')
+def transcribe_pair(page,b,s,side,configuration,budget,*,extended=False):
+    base,ba=observe(page,b,configuration,budget,pattern=r'[A-Za-z)\]]' if extended else r'[A-Za-z]')
+    observed_base=base
+    if extended and base is None and budget['remaining']>=2:
+        from .raster_formulas import _pixel_crop,consensus
+        gray,_=_pixel_crop(page,b);revised,extra=consensus(gray,configuration,budget,scalar=True)
+        ba['recheck_views']=extra['views']
+        if revised and re.fullmatch(r'[A-Za-z)\]]',revised) and (revised in (')',']') or revised in [v['normalized_text'] for v in ba['views']]):
+            observed_base=base=revised;ba['status']='base_pixel_rechecked_candidate'
+        if base is None and budget['remaining']>=2:
+            from .scan_math import _read_mask
+            readings=[];ba['additional_recheck_views']=[]
+            for threshold in (170,190):
+                text=_read_mask(gray<threshold,configuration,mode=7);budget['remaining']-=1;readings.append(text)
+                ba['additional_recheck_views'].append({'text':text,'dpi':288,'threshold':threshold,'mode':7})
+            if readings[0]==readings[1] and re.fullmatch(r'[A-Za-z)\]]',readings[0]) and (readings[0] in (')',']') or readings[0] in [v['normalized_text'] for v in ba['views']]):
+                observed_base=base=readings[0];ba['status']='base_pixel_rechecked_candidate'
+    if extended and base is None and (Path(configuration['path'])/'ell.traineddata').is_file():
+        greek,ga=observe(page,b,configuration,budget,language='ell',pattern='[α-ωϕϵ]',profile=[(432,170),(432,190)])
+        ba['greek_views']=ga['views']
+        if greek:
+            from .formula_geometry import SYMBOLS
+            observed_base=greek;base=SYMBOLS.get(greek);ba['status']='local_greek_two_view_candidate'
     small,sa=observe(page,s,configuration,budget,pattern=r'[A-Za-z0-9]')
+    if extended and small is None and budget['remaining']>=2:
+        from .raster_formulas import _pixel_crop
+        from .scan_math import _read_mask
+        gray,_=_pixel_crop(page,s,dpi=432);readings=[];sa['recheck_views']=[]
+        for threshold in (170,190):
+            text=_read_mask(gray<threshold,configuration,mode=7);budget['remaining']-=1;readings.append(text)
+            sa['recheck_views'].append({'text':text,'dpi':432,'threshold':threshold,'mode':7})
+        if readings[0]==readings[1] and re.fullmatch(r'[A-Za-z0-9]',readings[0]):
+            small=readings[0];sa['status']='script_pixel_rechecked_candidate'
     latex=base+('_{' if side=='sub' else '^{')+small+'}' if base and small else None
     return {'raw_bbox':union([b,s]),'latex':latex,'scope':'subexpression','method':VERSION,
         'status':'partial_formula_needs_review' if latex else 'unsupported_geometry','needs_review':True,
         'conversion':'observed_'+side+'script_pair' if latex else 'unresolved_script_glyph',
-        'original_text':(base or '?')+' '+(small or '?'),
-        'operands':[{'role':'base','original_text':base or '', 'latex':base,'raw_bbox':b,'ocr_audit':ba},
+        'original_text':(observed_base or '?')+' '+(small or '?'),
+        'operands':[{'role':'base','original_text':observed_base or '', 'latex':base,'raw_bbox':b,'ocr_audit':ba},
                     {'role':side+'script','original_text':small or '', 'latex':small,'raw_bbox':s,'ocr_audit':sa}],
-        'geometry_audit':{'base_box':b,'script_box':s,'relation':side,'method':'observed_relative_ink_extent'}}
+        'geometry_audit':{'base_box':b,'script_box':s,'relation':side,'method':'observed_relative_ink_extent'},
+        **({'token_text':base+'@'} if base in (')',']') else {})}
 
 
 def shape(component):
