@@ -10,7 +10,7 @@ import pymupdf
 from .local_ocr import words
 
 
-def components(mask, *, limit=800):
+def components(mask, *, limit=800, min_pixels=3):
     import numpy as np
     seen=np.zeros(mask.shape,dtype=bool);result=[]
     for y,x in zip(*np.nonzero(mask)):
@@ -21,7 +21,7 @@ def components(mask, *, limit=800):
             for j,k in ((a-1,b),(a+1,b),(a,b-1),(a,b+1)):
                 if 0<=j<mask.shape[0] and 0<=k<mask.shape[1] and mask[j,k] and not seen[j,k]:
                     seen[j,k]=True;stack.append((j,k))
-        if len(points)>=3:
+        if len(points)>=min_pixels:
             ys,xs=zip(*points)
             result.append({'box':[min(xs),min(ys),max(xs)+1,max(ys)+1],'points':points})
         if len(result)>limit:raise ValueError('Raster math component budget exceeded')

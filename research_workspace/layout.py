@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v12-complete-sum-equations'
+LAYOUT_VERSION = 'local-layout-v13-row-transcriptions'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)
@@ -352,6 +352,7 @@ class LayoutService:
                     def raster_formula(formula,precision='ocr_formula_region'):
                         raster_record(formula,precision)
                         for operand in formula.get('operands',[]):raster_formula(operand,'ocr_formula_operand')
+                        for prior in formula.get('prior_observations',[]):raster_formula(prior,'ocr_prior_row_observation')
                         for observation in formula.get('associated_line_observations',[]):raster_record(observation,'ocr_operator_limit_line')
                         if formula.get('operator_audit',{}).get('raw_bbox'):
                             raster_record(formula['operator_audit'],'ocr_operator_region')

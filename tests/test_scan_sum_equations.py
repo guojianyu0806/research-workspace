@@ -88,14 +88,15 @@ def test_beta_requires_own_greek_observations_and_visible_descender(configuratio
     assert all(v['descender_observed'] for v in audit['descender_views'])
 
 
-def test_complex_derivation_rechecks_own_row_and_keeps_unresolved_full_rows(configuration):
+def test_complex_derivation_recovers_each_row_without_inventing_initial_expression(configuration):
     from scripts.verify_real_greek_scan import records
     with raster_page('UnderstandingDeepLearning_02_09_26_C.pdf',376,288) as pdf:
         formulas,_,audit=extract_raster_math(pdf[0],configuration)
     groups=[f for f in formulas if f['method']=='raster-aligned-rows-v1']
     assert [len(g['operands']) for g in groups]==[2,5]
     rows=[r for g in groups for r in g['operands']]
-    assert all('coverage_audit' in r and r['latex'] is None and not r['row_audit']['full_row_resolved'] for r in rows)
+    assert all(r['coverage_audit']['all_children_resolved'] and r['latex'] and r['row_audit']['full_row_resolved'] for r in rows)
+    assert all(g['scope']=='transcribed_aligned_continuations' and not g['multiline_audit']['initial_expression_confirmed'] for g in groups)
     assert any(r['row_recursive_audit']['parsed_structure_count'] for r in rows)
     nodes=list(records(groups));assert any(n.get('latex')==r'\sqrt{1-\beta_{t}}' for n in nodes)
     assert not any(n.get('latex')==r'\sqrt{1-B_{t}}' for n in nodes)

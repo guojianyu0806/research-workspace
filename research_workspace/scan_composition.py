@@ -324,8 +324,11 @@ def compose_scan_math(page,pixels,configuration,primitives,excluded=()):
     sum_equations=compose_sum_equations(pixels,summands,sequence,valid_sequence,excluded)
     equation_calls=96-budget['remaining'];budget={'remaining':256}
     multiline=transcribe_aligned_rows(pixels,row_fences,[*primitives,*new,*recursive,*summands],sequence,valid_sequence,budget)
+    from .scan_row_geometry import refine_aligned_rows
+    row_refinement_audit=refine_aligned_rows(page,multiline,configuration)
     return new+wholes+recursive+summands+sum_equations+multiline,{'version':VERSION,'ocr_calls':used,'ocr_budget':96,
         'sum_equation_audit':{'ocr_calls':equation_calls,'ocr_budget':96,'max_rows':4,'model_calls':0},
         'multiline_audit':{'groups':len(multiline),'max_groups':4,'max_rows_per_group':8,'model_calls':0,'ocr_calls':256-budget['remaining'],'ocr_budget':256},
+        'row_refinement_audit':row_refinement_audit,
         'summand_audit':{'ocr_calls':summand_calls,'ocr_budget':160,'model_calls':0},
         'recursive_audit':recursive_audit,'model_calls':0,'max_depth':8,'max_nodes':128,'needs_review':True}
