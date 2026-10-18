@@ -352,8 +352,9 @@ def build_router():
         return {'relation':library.confirm_version_relation(document_id,body.other_id,action=body.action)}
 
     @router.get('/documents/{document_id}/diff')
-    def diff(document_id:str,other_id:str,library:Library=Depends(library_for)):
-        return library.compare_versions(document_id,other_id)
+    def diff(document_id:str,other_id:str,run_id:str|None=Query(default=None,max_length=100),
+             other_run_id:str|None=Query(default=None,max_length=100),library:Library=Depends(library_for)):
+        return library.compare_versions(document_id,other_id,run_id=run_id,other_run_id=other_run_id)
 
     @router.get('/documents/{document_id}/structure')
     def structure(document_id:str,run_id:str|None=None,library:Library=Depends(library_for)):

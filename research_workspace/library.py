@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
 import errno
 import hashlib
 import json
@@ -410,22 +409,36 @@ class Library:
             return {"family_id": family_id, "current_document_id": current,
                     "documents": [self._document(db, row[0]) for row in ids], "relations": relations}
 
-    def compare_versions(self, document_id: str, other_id: str) -> dict:
-        before, after = self._evidence_blocks(document_id), self._evidence_blocks(other_id)
-        if not before or not after:
-            raise LibraryError("两个版本都需要有可提取正文后才能比较。")
-        matcher = SequenceMatcher(a=[_normalize(block["text"]) for block in before],
-                                  b=[_normalize(block["text"]) for block in after], autojunk=False)
-        changes = []
-        for kind, i, j, x, y in matcher.get_opcodes():
-            if kind == "equal":
-                continue
-            for offset in range(max(j - i, y - x)):
-                changes.append({"kind": kind, "before": before[i + offset] if i + offset < j else None,
-                                "after": after[x + offset] if x + offset < y else None})
-        return {"document_id": document_id, "other_id": other_id,
-                "method": "normalized_text_block_diff", "changes": changes,
-                "limitations": ["这是正文块差异，不是语义修订判定。", "换栏、断行和分块变化仍可能形成差异，需核对两侧原文。"]}
+    def compare_versions(self, document_id: str, other_id: str, *,
+                         run_id: str | None = None, other_run_id: str | None = None) -> dict:
+        from .version_diff import compare_text_snapshots
+        selections=[];contents=[]
+        # Select both immutable runs and their evidence in one SQLite snapshot.
+        # A simultaneous reparse or preferred-version change cannot mix epochs.
+        with self._connection() as db:
+            db.execute('BEGIN')
+            for did,rid in [(document_id,run_id),(other_id,other_run_id)]:
+                doc=self._document(db,did)
+                run=self._run(db,rid) if rid else doc['available_run']
+                if not run or run['document_id']!=did:
+                    raise LibraryError('请选择属于该文献的可读解析版本。')
+                if run['status'] not in {'completed','partial'}:
+                    raise LibraryError('解析尚未结束，不能比较变化中的正文；请选择已完成的历史版本。')
+                blocks=[dict(r)|{'document_id':did,'bbox':json.loads(r['bbox'])} for r in db.execute(
+                    'SELECT id AS block_id,run_id,page,text,bbox FROM blocks WHERE run_id=? ORDER BY page,ordinal',(run['id'],))]
+                if not blocks:raise LibraryError('两个版本都需要有可提取正文后才能比较。')
+                selections.append({'document_id':did,'run_id':run['id'],'parse_version':run['version'],
+                    'parse_status':run['status'],'pages_done':run['pages_done'],'total_pages':run['total_pages'],
+                    'source_sha256':doc['sha256'],'snapshot_sha256':hashlib.sha256(
+                        json.dumps(blocks,ensure_ascii=False,sort_keys=True).encode()).hexdigest()})
+                contents.append(blocks)
+        result=compare_text_snapshots(*contents)
+        result.update(document_id=document_id,other_id=other_id,run_id=selections[0]['run_id'],
+            other_run_id=selections[1]['run_id'],source_snapshots={'before':selections[0],'after':selections[1]},
+            model_calls=0,network_used=False)
+        if any(s['parse_status']=='partial' for s in selections):
+            result['limitations'].append('至少一侧为部分可读解析，仅比较已保存的文字；不代表两份PDF全文已完整覆盖。')
+        return result
 
     def get_document(self, document_id: str) -> dict:
         with self._connection() as db:
