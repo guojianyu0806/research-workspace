@@ -14,7 +14,7 @@ from research_workspace.intelligence import (
 )
 from research_workspace.jobs import JobStore, TaskCancelled
 from research_workspace.library import Library
-from research_workspace.model_stream import MAX_PREVIEW, PublicText, stream_job
+from research_workspace.model_stream import MAX_PREVIEW, Preview, PublicText, stream_job
 from research_workspace.model_usage import record_model_calls
 
 
@@ -100,10 +100,11 @@ def test_actual_incremental_preview_precedes_response_completion_and_receipt(tmp
 
 
 @pytest.mark.parametrize('split', [1, 2, 7, 59])
-def test_utf8_tcp_splits_escapes_crlf_usage_and_reasoning_exclusion(tmp_path, split):
+@pytest.mark.parametrize('ascii_escaped', [True, False])
+def test_utf8_tcp_splits_escapes_crlf_usage_and_reasoning_exclusion(tmp_path, split, ascii_escaped):
     store = JobStore(Library(tmp_path)); job = store.create('translate_text', {})
     payload = {'translated_text': '中文😀\n"引号"\\根号√'}
-    wire = event(reasoning='PRIVATE_REASONING_NEVER_SAVE') + event(json.dumps(payload, ensure_ascii=True)) + event(finish='stop') + b'data: [DONE]\r\n\r\n'
+    wire = event(reasoning='PRIVATE_REASONING_NEVER_SAVE') + event(json.dumps(payload, ensure_ascii=ascii_escaped)) + event(finish='stop') + b'data: [DONE]\r\n\r\n'
     def handle(_):
         return httpx.Response(200, headers={'content-type':'text/event-stream'},
             stream=Chunks([wire[i:i+split] for i in range(0,len(wire),split)]))
@@ -149,6 +150,18 @@ def test_completed_invalid_schema_repairs_once_and_replaces_preview(tmp_path):
     assert run_generate(store,job,provider(handle,attempts=2)).translated_text == '修正后的译文'
     assert store.get(job['id'])['stream']['text'] == '修正后的译文'
     assert store.get(job['id'])['usage']['calls'] == 2
+
+
+def test_final_content_and_usage_can_arrive_with_stop_in_same_chunk(tmp_path):
+    store=JobStore(Library(tmp_path));job=store.create('translate_text',{})
+    def handle(_):
+        return httpx.Response(200,headers={'content-type':'text/event-stream'},stream=Chunks([
+            event('{"translated_text":"中文最终片段"}',finish='stop',usage={'total_tokens':33}),
+            b'data: [DONE]\n\n']))
+    assert run_generate(store,job,provider(handle)).translated_text=='中文最终片段'
+    saved=store.get(job['id'])
+    assert saved['usage']['total_tokens']==33
+    assert saved['stream']['call_id']==saved['model_calls'][0]['id']
 
 
 @pytest.mark.parametrize('status', [401,402,429,503])
@@ -198,6 +211,36 @@ def test_preview_is_bounded_and_does_not_project_quotes_identifiers_or_reasoning
     assert parser.text=='x'*MAX_PREVIEW
 
 
+def test_tiny_delta_burst_does_not_open_database_for_every_token(tmp_path,monkeypatch):
+    store=JobStore(Library(tmp_path));job=store.create('translate_text',{});checks=[]
+    original=store.check_cancel
+    def check(job_id):
+        checks.append(job_id);original(job_id)
+    monkeypatch.setattr(store,'check_cancel',check)
+    with stream_job(store,job['id']):
+        preview=Preview('TranslationPayload')
+        for _ in range(2000):preview.feed(' ')
+    assert 1<=len(checks)<20
+
+
+def test_streamed_invented_quote_is_rejected_without_promoting_draft(tmp_path):
+    library=Library(tmp_path)
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((40,80),'The model uses an encoder and a decoder.')
+        document=library.import_document(pdf.tobytes(),'fixture.pdf')['document']
+    library.process_next_job();store=JobStore(library)
+    job=store.create('qa',{'document_ids':[document['id']],'question':'What architecture does the model use?'})
+    def handle(request):
+        payload=json.loads(json.loads(request.content)['messages'][1]['content'])
+        evidence=payload['evidence'][0]
+        return streamed({'status':'answered','claims':[{'text':'The model uses 99 encoders.',
+            'citations':[{'evidence_id':evidence['evidence_id'],'quote':'The model uses 99 encoders.'}]}],'message':''})
+    asyncio.run(store.process_next(IntelligenceService(library,provider(handle))))
+    saved=store.get(job['id'])
+    assert saved['status']=='failed' and saved['result'] is None and saved['stream'] is None
+    assert len(saved['model_calls'])==2  # Existing bounded source repair, no transport retry.
+
+
 def test_translation_job_clears_draft_on_completion_and_keeps_receipt(tmp_path):
     store=JobStore(Library(tmp_path));job=store.create('translate_text',{'text':'Vector search improves retrieval.','target_language':'zh'})
     adapter=provider(lambda _:streamed({'translated_text':'向量搜索改善检索。'}))
@@ -242,6 +285,56 @@ def test_stream_context_isolated_across_concurrent_jobs_and_resets(tmp_path):
         saved=store.get(job['id'])
         assert saved['status']=='completed' and saved['stream'] is None and saved['usage']['calls']==1
         assert saved['model_calls'][0]['job_id']==job['id']
+
+
+@pytest.mark.parametrize('kind',['compare','review','draft','translate'])
+def test_remaining_public_task_kinds_keep_streaming_and_source_audit(tmp_path,kind):
+    library=Library(tmp_path);documents=[]
+    for index,text in enumerate(['The model uses an encoder and a decoder.','The second model uses an encoder.']):
+        with pymupdf.open() as pdf:
+            pdf.new_page().insert_text((40,80),text)
+            documents.append(library.import_document(pdf.tobytes(),f'fixture-{index}.pdf')['document']['id'])
+        library.process_next_job()
+    store=JobStore(library)
+    payload={'document_ids':documents if kind=='compare' else documents[:1],
+        'question':'Compare the encoder architectures.','instruction':'encoder evaluation'}
+    if kind=='translate':payload={'document_id':documents[0],'target_language':'zh'}
+    job=store.create(kind,payload);calls=[]
+    def envelope(result):
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':json.dumps(result)}}]})
+    def handle(request):
+        body=json.loads(request.content);data=json.loads(body['messages'][1]['content']);calls.append(body)
+        task=data.get('task')
+        if task=='verify_single_claim':return envelope({'verdict':'supported','reason':'fixture'})
+        if task=='verify_review_claim_coverage':
+            return envelope({'answers':[{'document_id':cite['document_id'],'aspect':aspect,
+                'subject_citation_id':cite['citation_id'],'answer_citation_id':cite['citation_id'],'reason':'fixture'}
+                for cite in data['claim']['citations'] for aspect in data['requested_aspects']]})
+        if task=='verify_response_coverage':
+            if data.get('response_kind')=='review':
+                return envelope({'requested_aspects':['structure'],'assessments':[
+                    {'document_id':d,'aspect':'structure','answer_claim_indices':[0], 'gap_is_appropriate':False,'reason':'fixture'}
+                    for d in data['selected_document_ids']],'unverified_statements':[]})
+            return envelope({'unverified_statements':[],'missing_aspects':[]})
+        if kind=='translate':return streamed({'translated_text':'该模型使用编码器和解码器。'})
+        claims=[{'text':e['text'],'citations':[{'evidence_id':e['evidence_id'],'quote':e['text']}]} for e in data['evidence']]
+        if kind=='compare':return streamed({'status':'answered','claims':claims,'message':''})
+        headings=['Abstract','Introduction','Related Work'] if kind=='draft' else ['Supported Findings']
+        return streamed({'status':'generated','sections':[{'heading':h,'claims':claims,'proposed_work':''} for h in headings],'message':''})
+    asyncio.run(store.process_next(IntelligenceService(library,provider(handle))))
+    saved=store.get(job['id'])
+    assert saved['status']=='completed',saved['error']
+    assert any(call.get('stream') is True for call in calls)
+    assert saved['stream'] is None
+    if kind=='translate':
+        block=saved['result']['blocks'][0]
+        assert block['document_id']==documents[0] and block['source_text']=='The model uses an encoder and a decoder.'
+    else:
+        assert saved['result']['grounding']['status']=='passed'
+        sources=saved['result']['sources']
+        assert set(s['document_id'] for s in sources)==set(payload['document_ids'])
+        for source in sources:
+            assert source['run_id']==library.get_document(source['document_id'])['available_run']['id']
 
 
 def test_recovery_retry_and_export_do_not_promote_stream_draft(tmp_path,monkeypatch):

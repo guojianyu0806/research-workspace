@@ -712,6 +712,7 @@
         state.initialJobId = null;
         if (selectedId) await selectJob(selectedId);
         else {
+          stopStream(); state.streamRevision = 0; streamPanel.hidden = true; streamText.textContent = '';
           state.selectedJob = null; state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = "";
           layout.classList.remove("rs-has-task"); detail.hidden = true;
           actions.hidden = true; eventDetails.hidden = true; progress.hidden = true;

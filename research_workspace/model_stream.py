@@ -130,6 +130,7 @@ class Preview:
         self.schema = schema
         self.projection = PublicText()
         self.last_write = 0
+        self.last_cancel_check = 0
         self.deltas = 0
         self.write('receiving')
 
@@ -143,11 +144,17 @@ class Preview:
         self.last_write = time.monotonic()
 
     def feed(self, text):
-        self.store.check_cancel(self.job_id)
+        self.check_cancel()
         self.projection.feed(text)
         self.deltas += 1
         if time.monotonic() - self.last_write >= .08:
             self.write('receiving')
+
+    def check_cancel(self):
+        now = time.monotonic()
+        if now - self.last_cancel_check >= .1:
+            self.store.check_cancel(self.job_id)
+            self.last_cancel_check = now
 
 
 async def cancellable_bytes(response, check_cancel):
@@ -256,7 +263,7 @@ async def receive(client, endpoint, *, headers, body, model, schema, prompt, att
                 # bounded complete response without inventing a typing effect
                 # or purchasing a second request.
                 raw = bytearray()
-                async for part in cancellable_bytes(response, lambda: preview.store.check_cancel(preview.job_id)):
+                async for part in cancellable_bytes(response, preview.check_cancel):
                     raw.extend(part)
                     if len(raw) > MAX_WIRE:
                         raise StreamProtocolError()
@@ -269,9 +276,9 @@ async def receive(client, endpoint, *, headers, body, model, schema, prompt, att
                 return httpx.Response(200, content=bytes(raw), headers={'content-type': 'application/json'})
             if 'text/event-stream' not in media:
                 raise StreamProtocolError()
-            # aiter_lines handles UTF-8 and CRLF split over arbitrary TCP chunks.
-            async for line in bounded_lines(response, lambda: preview.store.check_cancel(preview.job_id)):
-                preview.store.check_cancel(preview.job_id)
+            # Bound raw bytes before decoding UTF-8 or assembling an SSE line.
+            async for line in bounded_lines(response, preview.check_cancel):
+                preview.check_cancel()
                 if not line:
                     event()
                     receipt['usage'] = usage
