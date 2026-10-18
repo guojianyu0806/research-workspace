@@ -341,14 +341,66 @@
       const epoch = ++diffEpoch;
       let output = target.querySelector(".rm-diff");
       if (!output) { output = el("section", "rm-diff"); target.append(output); }
-      empty(output, "正在比较两份正文", "差异会分别保留两侧的原文位置。");
+      empty(output, "正在读取可比较的历史版本", "每次比较都会固定两侧解析来源。");
       try {
-        const data = await api(`${pathFor(doc.id)}/diff?other_id=${encodeURIComponent(other.id)}`);
+        const histories = await Promise.all([api(`${pathFor(doc.id)}/parse-runs`),api(`${pathFor(other.id)}/parse-runs`)]);
         if (!alive || epoch !== diffEpoch || selectedId !== doc.id) return;
         output.replaceChildren(panelTitle("正文差异", `${doc.filename} → ${other.filename}`));
-        output.append(el("p", "rm-muted", "正文块差异可能包含排版或分块变化，请核对两侧原文。"));
+        const controls=el('div','rm-diff-controls');
+        const makeSelect=(history,document,label)=>{
+          const input=el('select','rm-select');input.setAttribute('aria-label',label);
+          for(const run of history.runs || []) if(['completed','partial'].includes(run.status) && run.text_pages>0)
+            input.append(option(run.id,`第 ${run.version} 版解析 · ${run.status==='partial'?'部分可读':'完整'} · ${run.id.slice(0,8)}`));
+          if(!input.options.length){input.append(option('','暂无可比较的完成版本'));input.disabled=true;}
+          const preferred=document.available_run?.id;
+          if(preferred && [...input.options].some(o=>o.value===preferred)) input.value=preferred;
+          controls.append(field(label,input));return input;
+        };
+        const left=makeSelect(histories[0],doc,'所选文献解析版本');
+        const right=makeSelect(histories[1],other,'对比文献解析版本');
+        const apply=btn('比较选定版本',()=>loadComparison(),'rm-button rm-primary');
+        apply.disabled=left.disabled || right.disabled;controls.append(apply);
+        const progress=el('p','rm-muted');progress.setAttribute('role','status');
+        const body=el('div','rm-diff-result');output.append(controls,progress,body);
+        let revisionEpoch=0;
+        for(const input of [left,right])input.addEventListener('change',()=>{
+          revisionEpoch++;apply.disabled=left.disabled || right.disabled;
+          body.removeAttribute('aria-busy');
+          progress.textContent='已选择新的解析版本，点击“比较选定版本”后更新结果。';
+        });
+        async function loadComparison(){
+          const revision=++revisionEpoch;apply.disabled=true;progress.textContent='正在比较选定版本的已保存正文……';
+          body.setAttribute('aria-busy','true');
+          try{
+            const query=new URLSearchParams({other_id:other.id,run_id:left.value,other_run_id:right.value});
+            const data=await api(`${pathFor(doc.id)}/diff?${query}`);
+            if(!alive || epoch!==diffEpoch || revision!==revisionEpoch || selectedId!==doc.id)return;
+            renderDiff(data,body);progress.textContent=data.complete ? '比较完成，以下结果已固定到所选解析版本。' : '本次比较未完整，请查看下方的范围与限制提示。';
+          }catch(error){
+            if(alive && epoch===diffEpoch && revision===revisionEpoch) {
+              progress.textContent='本次比较未完成。';empty(body,'无法比较正文',error.message || String(error));
+            }
+          }finally{
+            if(alive && epoch===diffEpoch && revision===revisionEpoch){apply.disabled=left.disabled || right.disabled;body.removeAttribute('aria-busy');}
+          }
+        }
+        if(!apply.disabled)await loadComparison();
+        else progress.textContent='请先完成两侧文献解析；不会使用仍在变化中的正文。';
+      } catch (error) { if (alive && epoch === diffEpoch) empty(output, "无法比较正文", error.message || String(error)); }
+    }
+    function renderDiff(data,output) {
+        output.replaceChildren();
+        const snapshots=data.source_snapshots || {};
+        if(snapshots.before && snapshots.after) output.append(el('p','rm-muted',`固定来源：所选文献第 ${snapshots.before.parse_version} 版解析；对比文献第 ${snapshots.after.parse_version} 版解析。`));
+        output.append(el('p','rm-muted','忽略空白与分块边界，保留数字、大小写和符号变化。页面高亮对应原文本块；不判断语义等价或图片变化。'));
+        if(Object.values(snapshots).some(s=>s.parse_status==='partial'))output.append(el('p','rm-warning','至少一侧只有部分可读正文，此次比较不代表两份PDF全文完整覆盖。'));
+        if(data.status==='resource_limit' || data.status==='no_comparable_tokens'){
+          output.append(el('p','rm-warning','本次未完成正文比较：内容为空或超过本地比较上限，不能据此认定没有差异。'));return;
+        }
         const changes = Array.isArray(data.changes) ? data.changes : [];
-        if (!changes.length) output.append(el("p", "rm-empty-inline", "已提取正文中未发现块级差异。"));
+        if(data.changes_truncated || data.complete===false) output.append(el('p','rm-warning',`本次仅显示 ${changes.length} / ${data.total_changes ?? '未知'} 处修改，已达到输出上限，其余未显示；不能当作完整差异清单。`));
+        else if(data.text_equivalent===true)output.append(el('p','rm-empty-inline','已提取正文内容一致（忽略空白与分块变化）；图片和未提取内容仍需核对原PDF。'));
+        else output.append(el('p','rm-muted',`已记录 ${data.total_changes ?? changes.length} 处文字修改。`));
         let shown = 0;
         const items = el("div");
         const more = btn("显示更多差异", () => addChanges());
@@ -361,11 +413,22 @@
             details.append(el("summary", "", `${({ replace: "文本变化", insert: "新增内容", delete: "移除内容" })[change.kind] || "正文变化"} · 第 ${shown + 1} 处`));
             const sides = el("div", "rm-diff-sides");
             for (const [side, label] of [["before", "所选文献"], ["after", "对比文献"]]) {
-              const evidence = change[side];
-              const sideBox = el("div", "rm-diff-side");
+              const regions=Array.isArray(change[`${side}_regions`])?change[`${side}_regions`]:(change[side]?[change[side]]:[]);
+              const sideBox = el("div", `rm-diff-side is-${side}`);
               sideBox.append(el("span", "rm-field-title", label));
-              if (evidence) sideBox.append(el("p", "rm-original-text", evidence.text), evidenceButton(evidence, `查看第 ${evidence.page} 页 →`));
-              else sideBox.append(el("p", "rm-muted", "此侧没有对应文本。"));
+              for(const evidence of regions){
+                const region=el('div','rm-diff-region');const span=evidence.change_span;
+                const excerpt=el('p','rm-diff-excerpt');excerpt.append(el('span','rm-muted','改动片段：'),el('mark','',span?.text ?? evidence.text));
+                region.append(excerpt,evidenceButton(evidence,`查看${label}第 ${evidence.page} 页原文 →`));
+                if(span){
+                  const context=el('details','rm-diff-context');context.append(el('summary','','查看文本块上下文'));
+                  const paragraph=el('p','rm-original-text');
+                  paragraph.append(document.createTextNode(evidence.text.slice(0,span.start)),el('mark','',evidence.text.slice(span.start,span.end)),document.createTextNode(evidence.text.slice(span.end)));
+                  context.append(paragraph);region.append(context);
+                }
+                sideBox.append(region);
+              }
+              if(!regions.length)sideBox.append(el("p", "rm-muted", "此侧没有对应文本。"));
               sides.append(sideBox);
             }
             details.append(sides); items.append(details);
@@ -374,8 +437,6 @@
           more.textContent = `显示更多差异（已显示 ${shown} / ${changes.length}）`;
         }
         output.append(items, more); addChanges();
-        output.scrollIntoView({ block: "nearest", behavior: "auto" });
-      } catch (error) { if (alive && epoch === diffEpoch) empty(output, "无法比较正文", error.message || String(error)); }
     }
 
     function renderStructure(data) {
