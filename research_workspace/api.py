@@ -117,7 +117,7 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
             if start_worker:
                 with (directory / 'worker.log').open('ab') as output:
                     activity_worker = subprocess.Popen(
-                        [sys.executable,'-m','research_workspace.activity_worker','--data-dir',str(directory)],
+                        [sys.executable,'-m','research_workspace.activity_worker','--data-dir',str(directory),'--parent-pid',str(os.getpid())],
                         cwd=PROJECT_ROOT,stdin=subprocess.DEVNULL,stdout=output,stderr=output,
                         creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0,
                     )
@@ -129,12 +129,12 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
         if start_worker:
             logfile = (directory / "worker.log").open("ab")
             worker = subprocess.Popen(
-                [sys.executable, "-m", "research_workspace.worker", "--data-dir", str(directory)],
+                [sys.executable, "-m", "research_workspace.worker", "--data-dir", str(directory), "--parent-pid", str(os.getpid())],
                 cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL, stdout=logfile, stderr=logfile,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             activity_worker = subprocess.Popen(
-                [sys.executable, '-m', 'research_workspace.activity_worker', '--data-dir', str(directory)],
+                [sys.executable, '-m', 'research_workspace.activity_worker', '--data-dir', str(directory), '--parent-pid', str(os.getpid())],
                 cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL, stdout=logfile, stderr=logfile,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
             )

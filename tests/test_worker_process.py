@@ -5,6 +5,10 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import json
+import signal
+
+import pytest
 
 from research_workspace.worker_process import stop_worker
 from scripts.local_process_stats import alive, descendants
@@ -51,3 +55,54 @@ def test_stop_already_exited_worker_is_noop():
 
 def test_process_tree_discovery_is_bounded_and_transitive():
     assert descendants(10,[(10,1),(11,10),(12,11),(20,1)])=={10,11,12}
+
+
+def test_service_crash_stops_real_workers_and_releases_locks(tmp_path):
+    from research_workspace.worker import WorkerLock
+    ready=tmp_path/'owner.json'; workspace=tmp_path/'workspace'
+    code='''
+import asyncio,json,os,sys
+from pathlib import Path
+from research_workspace.api import create_app
+async def main():
+ app=create_app(Path(sys.argv[1]),start_worker=True)
+ async with app.router.lifespan_context(app):
+  Path(sys.argv[2]).write_text(json.dumps({'pid':os.getpid()}))
+  await asyncio.sleep(120)
+asyncio.run(main())
+'''
+    env=os.environ.copy();env['RESEARCH_DATA_DIR']=str(workspace)
+    for name in ('RESEARCH_MODEL_BASE_URL','RESEARCH_MODEL','RESEARCH_MODEL_API_KEY'):
+        env.pop(name,None)
+    owned=set()
+    with (tmp_path/'owner.log').open('wb') as log:
+        owner=subprocess.Popen([sys.executable,'-c',code,str(workspace),str(ready)],
+            env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log)
+        try:
+            deadline=time.monotonic()+25
+            while time.monotonic()<deadline:
+                owned.update(descendants(owner.pid))
+                locked=[]
+                for directory in (workspace,workspace/'.activity'):
+                    try:
+                        with WorkerLock(directory):pass
+                        locked.append(False)
+                    except RuntimeError:locked.append(True)
+                if ready.exists() and all(locked):break
+                assert owner.poll() is None
+                time.sleep(.1)
+            else:pytest.fail('Real API workers did not acquire both locks')
+            pid=json.loads(ready.read_text())['pid']
+            # Kill only the actual API, deliberately bypassing graceful shutdown
+            # and taskkill /T. The workers must observe their owner disappearing.
+            os.kill(pid,signal.SIGTERM)
+            owner.wait(timeout=10)
+            deadline=time.monotonic()+10
+            while any(alive(p) for p in owned) and time.monotonic()<deadline:
+                time.sleep(.1)
+            assert not any(alive(p) for p in owned)
+            with WorkerLock(workspace),WorkerLock(workspace/'.activity'):pass
+        finally:
+            stop_worker(owner)
+            for pid in owned:
+                if alive(pid):os.kill(pid,signal.SIGTERM)

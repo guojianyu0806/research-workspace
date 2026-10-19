@@ -10,6 +10,7 @@ from pathlib import Path
 import time
 
 from .library import Library
+from .worker_process import guard_parent
 
 
 class WorkerLock(AbstractContextManager):
@@ -59,11 +60,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="科研助手PDF解析worker")
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--poll-interval", type=float, default=0.5)
+    parser.add_argument("--parent-pid", type=int)
     parser.add_argument("--once", action="store_true", help="处理最多一个任务后退出，供验证使用")
     args = parser.parse_args()
     if not 0.05 <= args.poll_interval <= 60:
         parser.error("poll-interval必须介于0.05和60秒之间")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    guard_parent(args.parent_pid)
     library = Library(args.data_dir)
     try:
         with WorkerLock(args.data_dir):

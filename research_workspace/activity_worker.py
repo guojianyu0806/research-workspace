@@ -13,6 +13,7 @@ from .discovery import DiscoveryService
 from .jobs import JobStore
 from .library import Library
 from .worker import WorkerLock
+from .worker_process import guard_parent
 
 
 def workspace_tick(library, *, parse_documents=False):
@@ -27,7 +28,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-dir',type=Path,required=True)
     parser.add_argument('--once',action='store_true')
+    parser.add_argument('--parent-pid',type=int)
     args = parser.parse_args()
+    guard_parent(args.parent_pid)
     root = args.data_dir.resolve()
     accounts = Accounts(root)
     logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
