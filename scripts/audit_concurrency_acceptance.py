@@ -102,6 +102,16 @@ def audit(directory):
         # records only its concurrent load actors.
         require(phase + ' raw actor activity',
                 {f'LocalActor{i:02}' for i in range(1, count + 1)} <= observed)
+    for phase in report['phases']:
+        require(phase['name'] + ' wall and monotonic duration are consistent',
+                abs((phase['end_at'] - phase['start_at']) - phase['seconds']) < 2)
+        for actor, recorded in phase['activity_max_gaps_seconds'].items():
+            times = sorted(r['at'] for r in raw if r['phase'] == phase['name'] and r['actor'] == actor
+                           and phase['start_at'] <= r['at'] <= phase['end_at'])
+            points = [phase['start_at'], *times, phase['end_at']]
+            actual = max(b - a for a, b in zip(points, points[1:]))
+            require(actor + ' continuous activity ' + phase['name'],
+                    bool(times) and actual <= 45 and abs(actual - recorded) < .001, actual)
     # The original request latency summary includes explicit busy responses.
     # Recover semantic calls from the driver's sequential structure->search
     # operation pair, then remove the maximum possible count of fast busy calls.

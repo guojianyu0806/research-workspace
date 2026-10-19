@@ -35,6 +35,11 @@ def percentile(values,fraction):
     return round(values[min(len(values)-1,max(0,int((len(values)-1)*fraction)))],3) if values else None
 
 
+def maximum_business_gap(start,end,events):
+    points=[start,*sorted(t for t in events if start<=t<=end),end]
+    return max(b-a for a,b in zip(points,points[1:]))
+
+
 class Acceptance:
     def __init__(self,quick=False):
         self.manifest=verify(DATA)
@@ -45,16 +50,19 @@ class Acceptance:
         self.metrics=defaultdict(list);self.errors=[];self.operations=Counter();self.checks=[]
         self.accepted={};self.actors=[];self.samples=[];self.phase='setup';self.started=time.monotonic()
         self.phase_spans=[];self.done=False;self.clients=[];self.book=None;self.browser=None
+        self.phase_activity=defaultdict(lambda:defaultdict(list))
         self.root_before=main_snapshot();self.log=(self.output/'requests.jsonl').open('a',encoding='utf-8')
         self.record={'mode':'preflight_not_sustained_acceptance' if quick else 'full_sustained_acceptance',
+            'driver_pid':os.getpid(),
             'source_revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
             'frozen_manifest_sha256':sha256(DATA/'manifest.json'),'contract':self.contract,
             'output':str(self.output),'checks':self.checks,'errors':self.errors}
         self.source_fingerprints={str(path.relative_to(ROOT)):sha256(path) for path in
             [*sorted((ROOT/'research_workspace').rglob('*.py')),*sorted((ROOT/'research_workspace/static').glob('*.js')),
-             *[ROOT/'scripts'/name for name in ['concurrency_acceptance.py','concurrency_fixture_server.py','concurrency_browser.cjs','local_process_stats.py']]]}
+             *[ROOT/'scripts'/name for name in ['concurrency_acceptance.py','concurrency_fixture_server.py','concurrency_browser.cjs','local_process_stats.py','start_concurrency_acceptance.ps1']]]}
         self.record['source_sha256']=self.source_fingerprints
         (self.output/'manifest.json').write_text(json.dumps(self.record,indent=2),encoding='utf-8')
+        print(json.dumps({'event':'start','output':str(self.output),'driver_pid':os.getpid(),'mode':self.record['mode']}),flush=True)
 
     def check(self,name,ok,details=None):
         self.checks.append({'name':name,'passed':bool(ok),'details':details})
@@ -72,6 +80,7 @@ class Acceptance:
             line={'phase':self.phase,'actor':actor['name'] if actor else 'control','method':method,
                   'path':path,'status':response.status_code,'elapsed_ms':round(elapsed,3),'at':time.time()}
             self.log.write(json.dumps(line)+'\n');self.log.flush()
+            if actor:self.phase_activity[self.phase][actor['name']].append(line['at'])
             assert response.status_code in expected,(path,response.status_code,response.text[:300])
             if actor and 'application/json' in response.headers.get('content-type','') and response.status_code==200:
                 payload=response.json()
@@ -299,18 +308,25 @@ class Acceptance:
             status={'phase':self.phase,'elapsed_seconds':round(time.monotonic()-self.started,1),'actors':len(self.actors),
                 'cycles':sum(a['iterations'] for a in self.actors),'request_count':sum(len(v) for v in self.metrics.values()),
                 'errors':len(self.errors),'rss_bytes':sample['rss_bytes'],'server_pid':self.server.pid}
-            (self.output/'progress.json').write_text(json.dumps(status,indent=2),encoding='utf-8')
+            status['driver_pid']=os.getpid()
+            pending=self.output/'progress.pending.json'
+            pending.write_text(json.dumps(status,indent=2),encoding='utf-8')
+            pending.replace(self.output/'progress.json')
             await asyncio.sleep(2 if self.quick else 5)
 
     async def phase_run(self,name,seconds):
-        self.phase=name;start=time.monotonic()
+        self.phase=name;start=time.monotonic();wall_start=time.time()
         print(json.dumps({'phase':name,'seconds':seconds,'actors':len(self.actors),'output':str(self.output)}),flush=True)
         (self.output/'phase.json').write_text(json.dumps({'phase':name,'seconds':seconds}),encoding='utf-8')
         async with asyncio.TaskGroup() as group:
             for actor in self.actors:group.create_task(self.load(actor,start+seconds))
         duration=time.monotonic()-start
-        self.phase_spans.append({'name':name,'seconds':duration,'actors':len(self.actors)})
+        wall_end=time.time()
+        gaps={a['name']:maximum_business_gap(wall_start,wall_end,self.phase_activity[name][a['name']]) for a in self.actors}
+        self.phase_spans.append({'name':name,'seconds':duration,'actors':len(self.actors),
+            'start_at':wall_start,'end_at':wall_end,'activity_max_gaps_seconds':gaps})
         self.check(name+' actual wall-clock duration',duration>=seconds)
+        self.check(name+' continuous business activity without a 45-second gap',bool(gaps) and max(gaps.values())<=45,gaps)
 
     async def idle_round(self,index):
         """Wait for every live browser to finish its cycle before timing idle."""
@@ -364,7 +380,7 @@ class Acceptance:
         env['LOCAL_CONCURRENCY_DIAGNOSTICS']='0'
         for key in ('RESEARCH_MODEL_BASE_URL','RESEARCH_MODEL','RESEARCH_MODEL_API_KEY'):env.pop(key,None)
         self.server=subprocess.Popen([sys.executable,'-u',str(ROOT/'scripts/concurrency_fixture_server.py'),
-            '--data-dir',str(self.output/'workspace')],cwd=ROOT,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+            '--data-dir',str(self.output/'workspace'),'--parent-pid',str(os.getpid())],cwd=ROOT,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
             stderr=(self.output/'server-stderr.log').open('wb'),text=True,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
         ready_line=await asyncio.wait_for(asyncio.to_thread(self.server.stdout.readline),timeout=30)

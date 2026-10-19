@@ -60,7 +60,8 @@ async function main(){
      await page.screenshot({path:path.join(out,actor.name+'-first.png')});
      await ctx.tracing.stop({path:path.join(out,actor.name+'-first-trace.zip')});
     }
-    fs.writeFileSync(path.join(out,actor.name+'-browser-progress.json'),JSON.stringify(entry));
+    const progressFile=path.join(out,actor.name+'-browser-progress.json');
+    fs.writeFileSync(progressFile+'.pending',JSON.stringify(entry));fs.renameSync(progressFile+'.pending',progressFile);
     await page.waitForTimeout(input.quick?100:3000);
    }
    if(activePause)activePause.end_at=Date.now();

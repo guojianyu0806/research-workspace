@@ -19,7 +19,10 @@ from freeze_local_acceptance import main_snapshot
 from local_process_stats import alive, descendants, rss, stop_owned_tree
 
 parser=argparse.ArgumentParser();parser.add_argument('--data-dir',required=True,type=Path)
+parser.add_argument('--parent-pid',type=int)
 args=parser.parse_args();args.data_dir.mkdir(parents=True,exist_ok=False)
+from research_workspace.worker_process import guard_parent
+guard_parent(args.parent_pid)
 faulthandler.enable()
 if os.getenv('LOCAL_CONCURRENCY_DIAGNOSTICS')=='1':
     faulthandler.dump_traceback_later(30,repeat=True)
