@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -20,6 +21,13 @@ def main():
         datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'-http')
     output.mkdir(parents=True, exist_ok=False)
     before = main_snapshot()
+    files = ['research_workspace/front_matter.py', 'research_workspace/structure.py',
+             'research_workspace/static/manage.js', 'scripts/affiliation_continuation_fixture.py',
+             'scripts/affiliation_continuation_smoke.cjs']
+    fingerprints = {name: sha256(ROOT/name) for name in files}
+    provenance = dict(source_revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+                      source_sha256=fingerprints, manifest_sha256=sha256(DEFAULT/'manifest.json'))
+    (output/'provenance.json').write_text(json.dumps(provenance, indent=2), encoding='utf-8')
     manifest = verify(DEFAULT)
     for key in ('RESEARCH_MODEL_BASE_URL', 'RESEARCH_MODEL', 'RESEARCH_MODEL_API_KEY'):
         os.environ.pop(key, None)
@@ -74,6 +82,7 @@ def main():
         assert not thread.is_alive(), 'Fixture server did not stop'
         assert before == main_snapshot(), 'Main selected records or originals changed'
         assert local_before == main_snapshot(output/'workspace'), 'Fixed fixture documents/history changed'
+        assert fingerprints == {name: sha256(ROOT/name) for name in files}, 'Runtime files changed during acceptance'
         model_calls = 0
         database_checks = []
         for database in (output/'workspace').rglob('library.sqlite3'):
