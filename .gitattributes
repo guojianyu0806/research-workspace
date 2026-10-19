@@ -7,4 +7,4 @@
 *.json text eol=lf
 *.ps1 text eol=crlf
 *.pdf binary
-tests/fixtures/local_acceptance/**/*.csv -text
+tests/fixtures/local_acceptance/** -text whitespace=cr-at-eol
