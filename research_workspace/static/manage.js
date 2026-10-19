@@ -452,6 +452,13 @@
         const front = data.front_matter;
         metadata.append(el("summary", "", `作者与机构 · ${front.authors?.length || 0} 位作者候选 · ${front.audit?.unresolved_author_count || 0} 位机构未确认`));
         metadata.append(el("p", "rm-muted", "从当前解析版本首页识别的候选，不自动修改目录作者。可分别核对姓名、机构和关联依据；未确认项不按邮箱域名补全。"));
+        metadata.append(btn("下载作者与机构JSON", () => {
+          const snapshot = { document_id: data.document_id, run_id: data.run_id, version: data.version, front_matter: front };
+          const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json;charset=utf-8" }));
+          const link = document.createElement("a");
+          link.href = url; link.download = `authors-${data.document_id}-${data.run_id}.json`; link.click();
+          window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }, "rm-small-button"));
         const organizations = new Map((front.affiliations || []).map(item => [item.id, item]));
         const methods = { explicit_affiliation_marker: "相同机构标记", inline_author_affiliation: "同一行明确列出姓名和机构", single_affiliation_in_author_block: "同一文本块的唯一机构", unique_nearby_column: "无歧义的相邻栏位" };
         const organizationSources = (organization) => {

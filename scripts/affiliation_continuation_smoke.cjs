@@ -52,6 +52,12 @@ async function main(){
    const org=current.affiliations.find(o=>o.text===doc.expected);
    const author=current.authors.find(a=>a.affiliation_ids.includes(org.id));
    const row=panel.locator('.rm-front-row').filter({hasText:author.name});
+   const downloading=page.waitForEvent('download');
+   await panel.getByRole('button',{name:'下载作者与机构JSON',exact:true}).click();
+   const download=await downloading;
+   const exportedPath=path.join(ready.output,doc.filename+'-authors.json');await download.saveAs(exportedPath);
+   const exported=JSON.parse(fs.readFileSync(exportedPath,'utf8'));
+   check(`${doc.filename}: downloaded JSON equals displayed fixed-version audit and every piece`,exported.document_id===doc.id&&exported.run_id===doc.current_run&&JSON.stringify(exported.front_matter)===JSON.stringify(current));
    for(let index=0;index<org.evidence_parts.length;index++){
     await row.getByRole('button',{name:`核对机构原文 ${index+1}/2`,exact:true}).click();
     await page.locator('#evidenceHighlight:not([hidden])').waitFor();
