@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
+# NumPy is a declared core dependency. Initialize its native runtime before
+# concurrent request threads start: first-import DLL initialization on Windows
+# can otherwise deadlock with another thread being created by the ASGI pool.
+import numpy  # noqa: F401
+
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +29,7 @@ from .advanced_api import build_router, library_for
 from .intelligence import IntelligenceService
 from .model_settings import router as model_settings_router
 from .enhancements_api import router as enhancements_router
+from .worker_process import stop_worker
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
@@ -104,8 +110,7 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
                         if db.execute("SELECT 1 FROM research_jobs WHERE status IN ('queued','running') LIMIT 1").fetchone():
                             raise ValueError('请先等待或取消正在排队和执行的研究任务，再更换模型配置。')
             if activity_worker is not None and activity_worker.poll() is None:
-                activity_worker.terminate()
-                activity_worker.wait(timeout=5)
+                stop_worker(activity_worker)
             os.environ['RESEARCH_MODEL_BASE_URL'] = 'https://api.deepseek.com'
             os.environ['RESEARCH_MODEL'] = model
             os.environ['RESEARCH_MODEL_API_KEY'] = api_key
@@ -113,7 +118,7 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
                 with (directory / 'worker.log').open('ab') as output:
                     activity_worker = subprocess.Popen(
                         [sys.executable,'-m','research_workspace.activity_worker','--data-dir',str(directory)],
-                        cwd=PROJECT_ROOT,stdout=output,stderr=output,
+                        cwd=PROJECT_ROOT,stdin=subprocess.DEVNULL,stdout=output,stderr=output,
                         creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0,
                     )
 
@@ -125,12 +130,12 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
             logfile = (directory / "worker.log").open("ab")
             worker = subprocess.Popen(
                 [sys.executable, "-m", "research_workspace.worker", "--data-dir", str(directory)],
-                cwd=PROJECT_ROOT, stdout=logfile, stderr=logfile,
+                cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL, stdout=logfile, stderr=logfile,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             activity_worker = subprocess.Popen(
                 [sys.executable, '-m', 'research_workspace.activity_worker', '--data-dir', str(directory)],
-                cwd=PROJECT_ROOT, stdout=logfile, stderr=logfile,
+                cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL, stdout=logfile, stderr=logfile,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
             )
         try:
@@ -138,12 +143,7 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
         finally:
             for child in (worker, activity_worker):
                 if child is not None and child.poll() is None:
-                    child.terminate()
-                    try:
-                        child.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        child.kill()
-                        child.wait(timeout=5)
+                    stop_worker(child)
             if logfile:
                 logfile.close()
 
