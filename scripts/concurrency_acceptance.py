@@ -312,6 +312,37 @@ class Acceptance:
         self.phase_spans.append({'name':name,'seconds':duration,'actors':len(self.actors)})
         self.check(name+' actual wall-clock duration',duration>=seconds)
 
+    async def idle_round(self,index):
+        """Wait for every live browser to finish its cycle before timing idle."""
+        token=str(index)
+        self.phase='memory_pause_'+token
+        pause=self.output/'browser-pause'
+        pending=self.output/'browser-pause.pending'
+        pending.write_text(token,encoding='utf-8');pending.replace(pause)
+        deadline=time.monotonic()+20
+        names=[a['name'] for a in self.actors[:5]]
+        while True:
+            assert self.browser.poll() is None,'Browser stopped before idle acknowledgement'
+            acknowledged={}
+            for name in names:
+                marker=self.output/(name+'-browser-paused.json')
+                if marker.exists():
+                    try:value=json.loads(marker.read_text())
+                    except (OSError,json.JSONDecodeError):continue
+                    if value['token']==token:acknowledged[name]=value['paused_at']
+            if len(acknowledged)==5:break
+            assert time.monotonic()<deadline,'Not all five browsers acknowledged idle'
+            await asyncio.sleep(.05)
+        self.phase='memory_idle_'+token
+        start=time.monotonic()
+        window={'token':token,'start_at':time.time(),'acknowledged_at':acknowledged}
+        await asyncio.sleep(1 if self.quick else self.contract['memory_idle_seconds'])
+        self.samples.append({'at':time.time(),'phase':self.phase,**snapshot(os.getpid())})
+        window.update(end_at=time.time(),seconds=time.monotonic()-start)
+        self.record.setdefault('browser_idle_windows',[]).append(window)
+        pause.unlink()
+        self.phase='memory_resume_'+token
+
     async def finish_book(self):
         actor=self.actors[0];book=self.book
         if self.quick:
@@ -366,9 +397,8 @@ class Acceptance:
             await self.phase_run('extended_10_accounts',durations[2])
             for index in range(3):
                 await self.phase_run('memory_load_'+str(index+1),1 if self.quick else self.contract['memory_load_seconds'])
-                self.phase='memory_idle_'+str(index+1)
-                await asyncio.sleep(1 if self.quick else self.contract['memory_idle_seconds'])
-                self.samples.append({'at':time.time(),'phase':self.phase,**snapshot(os.getpid())})
+                await self.idle_round(index+1)
+            self.phase='book_final_coverage'
             await self.finish_book()
             self.phase='final'
             for actor in self.actors:
@@ -397,6 +427,7 @@ class Acceptance:
             try:await observer
             except asyncio.CancelledError:pass
             if self.browser:
+                (self.output/'browser-pause').unlink(missing_ok=True)
                 (self.output/'browser-stop').write_text('stop')
                 try:await asyncio.to_thread(self.browser.wait,timeout=25)
                 except subprocess.TimeoutExpired:stop_owned_tree(self.browser)
@@ -428,6 +459,9 @@ class Acceptance:
                 self.record['peak_rss_bytes']=peak
                 self.checks.append({'name':'Peak owned process RSS below 8 GiB','passed':peak<=self.contract['peak_rss_bytes']})
             idle=[s for s in self.samples if s['phase'].startswith('memory_idle')]
+            windows=self.record.get('browser_idle_windows',[])
+            self.checks.append({'name':'Three true idle windows acknowledged by all five browsers',
+                'passed':len(windows)==3 and all(len(w['acknowledged_at'])==5 and w['seconds']>=(1 if self.quick else self.contract['memory_idle_seconds']) for w in windows)})
             if idle:
                 growth=idle[-1]['rss_bytes']-idle[0]['rss_bytes'];self.record['idle_rss_growth_bytes']=growth
                 self.checks.append({'name':'Three memory rounds idle growth below 512 MiB','passed':growth<=self.contract['idle_growth_bytes']})

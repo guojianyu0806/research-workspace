@@ -73,9 +73,23 @@ def audit(directory):
             browser['passed'] and len(browser['contexts']) == 5 and overlap >= 2700 and
             all(c['cycles'] >= 2 for c in browser['contexts']) and not browser['errors'] and
             not browser['externalRequests'], overlap)
+    require('Browser response bodies and handles released after every operation', all(
+        c['disposed_api_responses'] == c['cycles'] + 1 and c['disposed_js_handles'] == c['cycles']
+        for c in browser['contexts']))
+    windows = report['browser_idle_windows']
+    require('Three acknowledged true idle windows', len(windows) == 3 and all(
+        w['seconds'] >= 30 and len(w['acknowledged_at']) == 5 for w in windows))
+    for window in windows:
+        for context in browser['contexts']:
+            intervals = [i for i in context['pause_intervals'] if i['token'] == window['token']]
+            require(context['name'] + ' idle coverage ' + window['token'], len(intervals) == 1 and
+                    intervals[0]['start_at'] <= window['start_at'] * 1000 + 1 and
+                    intervals[0]['end_at'] is not None and intervals[0]['end_at'] >= window['end_at'] * 1000 - 1)
     raw = [json.loads(line) for line in (directory / 'requests.jsonl').read_text().splitlines()]
     allowed_errors = {('POST', '/api/documents', 400), ('GET', '/api/documents', 401),
                       ('POST', '/api/research/tasks', 503)}
+    require('No active load requests labelled as idle',
+            not any(r['phase'].startswith('memory_idle_') for r in raw))
     require('Raw HTTP log contains no unexpected failures', raw and all(
         row['status'] < 400 or row['status'] == 404 or
         (row['method'], row['path'], row['status']) in allowed_errors for row in raw))
