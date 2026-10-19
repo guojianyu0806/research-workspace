@@ -1,0 +1,2797 @@
+{
+  "version": "affiliation-continuation-20261020-v1",
+  "created_at": "2026-10-19T23:39:11.047109+00:00",
+  "source_revision": "5563dd9812952ef2cd636c655f0b24ee48a79f47",
+  "review": "Assistant visual transcription of Poppler first-page renders, not independent human certification.",
+  "render_evidence": "artifacts/front-matter-continuation/source-review-20261019T233324129032Z",
+  "source_scope": "Native first-page header snapshots; no application parser output used for expected labels.",
+  "sources": [
+    {
+      "path": "data/samples/1706.03762v7.pdf",
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "family": "1706.03762",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.2031258227778416,
+            0.09204080369737414,
+            0.7972132364908854,
+            0.12474562905051491
+          ],
+          "text": "Provided proper attribution is provided, Google hereby grants permission to\nreproduce the tables and figures in this paper solely for use in journalistic or\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.43724508846507354,
+            0.12726178795400292,
+            0.56617372799543,
+            0.1423567376955591
+          ],
+          "text": "scholarly works.\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.3455686382218903,
+            0.18791651484942196,
+            0.6534207412619996,
+            0.20965312225650054
+          ],
+          "text": "Attention Is All You Need\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.21716994241951337,
+            0.2948729775168679,
+            0.33314815845364837,
+            0.30935747936518504
+          ],
+          "text": "Ashish Vaswani∗\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.19065522835924734,
+            0.31066726915764087,
+            0.3530357460570491,
+            0.33733344800544507
+          ],
+          "text": "Google Brain\navaswani@google.com\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b5",
+          "native_block_index": 5,
+          "page": 1,
+          "bbox": [
+            0.3906241772221584,
+            0.2948729775168679,
+            0.4981040705263225,
+            0.30935747936518504
+          ],
+          "text": "Noam Shazeer∗\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b6",
+          "native_block_index": 6,
+          "page": 1,
+          "bbox": [
+            0.3769477146123749,
+            0.31066726915764087,
+            0.5051431094898897,
+            0.33733344800544507
+          ],
+          "text": "Google Brain\nnoam@google.com\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b7",
+          "native_block_index": 7,
+          "page": 1,
+          "bbox": [
+            0.5290637546115451,
+            0.2948729775168679,
+            0.6658056421217575,
+            0.33733344800544507
+          ],
+          "text": "Niki Parmar∗\nGoogle Research\nnikip@google.com\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b8",
+          "native_block_index": 8,
+          "page": 1,
+          "bbox": [
+            0.6897254893982333,
+            0.2948729775168679,
+            0.8124357734630311,
+            0.33733344800544507
+          ],
+          "text": "Jakob Uszkoreit∗\nGoogle Research\nusz@google.com\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b9",
+          "native_block_index": 9,
+          "page": 1,
+          "bbox": [
+            0.20732353559506486,
+            0.358000514483211,
+            0.3440650241826874,
+            0.4004622565375434
+          ],
+          "text": "Llion Jones∗\nGoogle Research\nllion@google.com\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b10",
+          "native_block_index": 10,
+          "page": 1,
+          "bbox": [
+            0.38465193206188725,
+            0.358000514483211,
+            0.5555791917190053,
+            0.4004622565375434
+          ],
+          "text": "Aidan N. Gomez∗†\nUniversity of Toronto\naidan@cs.toronto.edu\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b11",
+          "native_block_index": 11,
+          "page": 1,
+          "bbox": [
+            0.6439950980392157,
+            0.358000514483211,
+            0.751506032507404,
+            0.37248499706538035
+          ],
+          "text": "Łukasz Kaiser∗\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b12",
+          "native_block_index": 12,
+          "page": 1,
+          "bbox": [
+            0.5961584951363358,
+            0.3737947868578362,
+            0.792708702336729,
+            0.40046098497178817
+          ],
+          "text": "Google Brain\nlukaszkaiser@google.com\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b13",
+          "native_block_index": 13,
+          "page": 1,
+          "bbox": [
+            0.38892484178730086,
+            0.42112801291725854,
+            0.6111140531652114,
+            0.4498157693882181
+          ],
+          "text": "Illia Polosukhin∗‡\nillia.polosukhin@gmail.com\n"
+        },
+        {
+          "document_id": "native-bdfaa68d8984f0dc",
+          "run_id": "frozen-header-bdfaa68d8984f0dc",
+          "block_id": "native-bdfaa68d8984f0dc-p1-b14",
+          "native_block_index": 14,
+          "page": 1,
+          "bbox": [
+            0.46365685556449143,
+            0.4868752065331045,
+            0.5363452387791053,
+            0.5019701562746607
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/samples/1810.04805v2.pdf",
+      "sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "family": "1810.04805",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-5692a5514787a8c6",
+          "run_id": "frozen-header-5692a5514787a8c6",
+          "block_id": "native-5692a5514787a8c6-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.19573945027387465,
+            0.08395634299743228,
+            0.8080745805240274,
+            0.10099681002522488
+          ],
+          "text": "BERT: Pre-training of Deep Bidirectional Transformers for\n"
+        },
+        {
+          "document_id": "native-5692a5514787a8c6",
+          "run_id": "frozen-header-5692a5514787a8c6",
+          "block_id": "native-5692a5514787a8c6-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.3710060502397108,
+            0.10288993546682697,
+            0.6328053659785982,
+            0.11993040249461957
+          ],
+          "text": "Language Understanding\n"
+        },
+        {
+          "document_id": "native-5692a5514787a8c6",
+          "run_id": "frozen-header-5692a5514787a8c6",
+          "block_id": "native-5692a5514787a8c6-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.18107229958529691,
+            0.15540290423202885,
+            0.8277578021618369,
+            0.2023552752211436
+          ],
+          "text": "Jacob Devlin\nMing-Wei Chang\nKenton Lee\nKristina Toutanova\nGoogle AI Language\n{jacobdevlin,mingweichang,kentonl,kristout}@google.com\n"
+        },
+        {
+          "document_id": "native-5692a5514787a8c6",
+          "run_id": "frozen-header-5692a5514787a8c6",
+          "block_id": "native-5692a5514787a8c6-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.2669198160730409,
+            0.2664530447109753,
+            0.34165034519627907,
+            0.28065347468080315
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/samples/2005.11401v4.pdf",
+      "sha256": "23e3249e9a1e75418d82efecab0ea8c4d033b89c93742f63208d47ce01f21233",
+      "family": "2005.11401",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-23e3249e9a1e7541",
+          "run_id": "frozen-header-23e3249e9a1e7541",
+          "block_id": "native-23e3249e9a1e7541-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.27907026203629237,
+            0.1260528275460908,
+            0.7215513341567096,
+            0.1477894445862433
+          ],
+          "text": "Retrieval-Augmented Generation for\n"
+        },
+        {
+          "document_id": "native-23e3249e9a1e7541",
+          "run_id": "frozen-header-23e3249e9a1e7541",
+          "block_id": "native-23e3249e9a1e7541-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.3047957576178258,
+            0.15121064041600082,
+            0.6952085308000153,
+            0.17294725745615333
+          ],
+          "text": "Knowledge-Intensive NLP Tasks\n"
+        },
+        {
+          "document_id": "native-23e3249e9a1e7541",
+          "run_id": "frozen-header-23e3249e9a1e7541",
+          "block_id": "native-23e3249e9a1e7541-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.39288561951880363,
+            0.2267377834127407,
+            0.6071138070299734,
+            0.24122359535910867
+          ],
+          "text": "Patrick Lewis†‡, Ethan Perez⋆,\n"
+        },
+        {
+          "document_id": "native-23e3249e9a1e7541",
+          "run_id": "frozen-header-23e3249e9a1e7541",
+          "block_id": "native-23e3249e9a1e7541-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.18623853197284773,
+            0.26231865931038906,
+            0.8385124455869587,
+            0.2768031611587062
+          ],
+          "text": "Aleksandra Piktus†, Fabio Petroni†, Vladimir Karpukhin†, Naman Goyal†, Heinrich Küttler†,\n"
+        },
+        {
+          "document_id": "native-23e3249e9a1e7541",
+          "run_id": "frozen-header-23e3249e9a1e7541",
+          "block_id": "native-23e3249e9a1e7541-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.21482515023424734,
+            0.2978982251099866,
+            0.7843631420260161,
+            0.3123827269583037
+          ],
+          "text": "Mike Lewis†, Wen-tau Yih†, Tim Rocktäschel†‡, Sebastian Riedel†‡, Douwe Kiela†\n"
+        },
+        {
+          "document_id": "native-23e3249e9a1e7541",
+          "run_id": "frozen-header-23e3249e9a1e7541",
+          "block_id": "native-23e3249e9a1e7541-p1-b5",
+          "native_block_index": 5,
+          "page": 1,
+          "bbox": [
+            0.2468741423164318,
+            0.3315787652526239,
+            0.7531258078182445,
+            0.34617811260801373
+          ],
+          "text": "†Facebook AI Research; ‡University College London; ⋆New York University;\n"
+        },
+        {
+          "document_id": "native-23e3249e9a1e7541",
+          "run_id": "frozen-header-23e3249e9a1e7541",
+          "block_id": "native-23e3249e9a1e7541-p1-b6",
+          "native_block_index": 6,
+          "page": 1,
+          "bbox": [
+            0.4444623959609886,
+            0.35020265675554374,
+            0.5555651795630362,
+            0.3627816787873856
+          ],
+          "text": "plewis@fb.com\n"
+        },
+        {
+          "document_id": "native-23e3249e9a1e7541",
+          "run_id": "frozen-header-23e3249e9a1e7541",
+          "block_id": "native-23e3249e9a1e7541-p1-b7",
+          "native_block_index": 7,
+          "page": 1,
+          "bbox": [
+            0.46365685556449143,
+            0.39984111593227195,
+            0.5363452387791053,
+            0.4149360656738281
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1308.0850v1.pdf",
+      "sha256": "c421fefbd16c513197fa5c0359f9717ec29e813ecba12f0781a179f6142deef8",
+      "family": "1308.0850",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-c421fefbd16c5131",
+          "run_id": "frozen-header-c421fefbd16c5131",
+          "block_id": "native-c421fefbd16c5131-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.3431111005396625,
+            0.20602112587052163,
+            0.6556603924121732,
+            0.2277577332776002
+          ],
+          "text": "Generating Sequences With\n"
+        },
+        {
+          "document_id": "native-c421fefbd16c5131",
+          "run_id": "frozen-header-c421fefbd16c5131",
+          "block_id": "native-c421fefbd16c5131-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.345230376798343,
+            0.23369540590228458,
+            0.653503966487311,
+            0.25543201330936316
+          ],
+          "text": "Recurrent Neural Networks\n"
+        },
+        {
+          "document_id": "native-c421fefbd16c5131",
+          "run_id": "frozen-header-c421fefbd16c5131",
+          "block_id": "native-c421fefbd16c5131-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.3597843195098677,
+            0.2753454844156901,
+            0.6389929079541973,
+            0.30805154280229047
+          ],
+          "text": "Alex Graves\nDepartment of Computer Science\n"
+        },
+        {
+          "document_id": "native-c421fefbd16c5131",
+          "run_id": "frozen-header-c421fefbd16c5131",
+          "block_id": "native-c421fefbd16c5131-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.3938382217307496,
+            0.31056770170577847,
+            0.6051051320593341,
+            0.34399764706390074
+          ],
+          "text": "University of Toronto\ngraves@cs.toronto.edu\n"
+        },
+        {
+          "document_id": "native-c421fefbd16c5131",
+          "run_id": "frozen-header-c421fefbd16c5131",
+          "block_id": "native-c421fefbd16c5131-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.466225468255336,
+            0.37697786273378314,
+            0.5325358272377961,
+            0.38829907503995026
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1312.3005v1.pdf",
+      "sha256": "32c65d36793cf14888907ed454ae05e170b59c6772462a1034165458105db756",
+      "family": "1312.3005",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-32c65d36793cf148",
+          "run_id": "frozen-header-32c65d36793cf148",
+          "block_id": "native-32c65d36793cf148-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.017875817866107216,
+            0.2489393600309738,
+            0.061470586490007785,
+            0.6767676767676768
+          ],
+          "text": "arXiv:1312.3005v1  [cs.CL]  11 Dec 2013\n"
+        },
+        {
+          "document_id": "native-32c65d36793cf148",
+          "run_id": "frozen-header-32c65d36793cf148",
+          "block_id": "native-32c65d36793cf148-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.2166666766397314,
+            0.09578610429860125,
+            0.7832285064497805,
+            0.12087383655586628
+          ],
+          "text": "One Billion Word Benchmark for Measuring Progress in\n"
+        },
+        {
+          "document_id": "native-32c65d36793cf148",
+          "run_id": "frozen-header-32c65d36793cf148",
+          "block_id": "native-32c65d36793cf148-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.34764739890503726,
+            0.11851337702587397,
+            0.652112723955142,
+            0.14360110928313902
+          ],
+          "text": "Statistical Language Modeling\n"
+        },
+        {
+          "document_id": "native-32c65d36793cf148",
+          "run_id": "frozen-header-32c65d36793cf148",
+          "block_id": "native-32c65d36793cf148-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.16980393104303895,
+            0.1787865763962871,
+            0.4966181337443832,
+            0.21726874149206912
+          ],
+          "text": "Ciprian Chelba, Tomas Mikolov,\nMike Schuster, Qi Ge, Thorsten Brants\n"
+        },
+        {
+          "document_id": "native-32c65d36793cf148",
+          "run_id": "frozen-header-32c65d36793cf148",
+          "block_id": "native-32c65d36793cf148-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.18764664145076976,
+            0.21380204865426727,
+            0.47898410971647776,
+            0.2339386988167811
+          ],
+          "text": "Google, 1600 Amphitheatre Parkway\n"
+        },
+        {
+          "document_id": "native-32c65d36793cf148",
+          "run_id": "frozen-header-32c65d36793cf148",
+          "block_id": "native-32c65d36793cf148-p1-b5",
+          "native_block_index": 5,
+          "page": 1,
+          "bbox": [
+            0.20352950750612744,
+            0.2313777075873481,
+            0.463124094445721,
+            0.2515143577498619
+          ],
+          "text": "Mountain View, CA 94043, USA\n"
+        },
+        {
+          "document_id": "native-32c65d36793cf148",
+          "run_id": "frozen-header-32c65d36793cf148",
+          "block_id": "native-32c65d36793cf148-p1-b6",
+          "native_block_index": 6,
+          "page": 1,
+          "bbox": [
+            0.5113727843839359,
+            0.17878649933169585,
+            0.8222570481643178,
+            0.25151428068527065
+          ],
+          "text": "Phillipp Koehn\nUniversity of Edinburgh\n10 Crichton Street, Room 4.19\nEdinburgh, EH8 9AB, United Kingdom\n"
+        },
+        {
+          "document_id": "native-32c65d36793cf148",
+          "run_id": "frozen-header-32c65d36793cf148",
+          "block_id": "native-32c65d36793cf148-p1-b7",
+          "native_block_index": 7,
+          "page": 1,
+          "bbox": [
+            0.26666691100675294,
+            0.32166502210828996,
+            0.3392505271762025,
+            0.3425715282709912
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1508.04025v1.pdf",
+      "sha256": "baf0b2710ae484792e12434a69ab6ea948ba429c47c2d66203cd6e987606d33c",
+      "family": "1508.04025",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-baf0b2710ae48479",
+          "run_id": "frozen-header-baf0b2710ae48479",
+          "block_id": "native-baf0b2710ae48479-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.018386555519424568,
+            0.2837529488244136,
+            0.06322688896115086,
+            0.7007125890736342
+          ],
+          "text": "arXiv:1508.04025v1  [cs.CL]  17 Aug 2015\n"
+        },
+        {
+          "document_id": "native-baf0b2710ae48479",
+          "run_id": "frozen-header-baf0b2710ae48479",
+          "block_id": "native-baf0b2710ae48479-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.14541159237132353,
+            0.07938548108461067,
+            0.8588511747472426,
+            0.10298344301781008
+          ],
+          "text": "Effective Approaches to Attention-based Neural Machine Translation\n"
+        },
+        {
+          "document_id": "native-baf0b2710ae48479",
+          "run_id": "frozen-header-baf0b2710ae48479",
+          "block_id": "native-baf0b2710ae48479-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.20853752328568145,
+            0.13180400639984782,
+            0.7957942674139968,
+            0.16714908844501558
+          ],
+          "text": "Minh-Thang Luong\nHieu Pham\nChristopher D. Manning\nComputer Science Department Stanford University, Stanford, CA, 94305\n"
+        },
+        {
+          "document_id": "native-baf0b2710ae48479",
+          "run_id": "frozen-header-baf0b2710ae48479",
+          "block_id": "native-baf0b2710ae48479-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.2811425986410189,
+            0.16875140627319626,
+            0.7243926232602416,
+            0.18338328019457023
+          ],
+          "text": "{lmthang,hyhieu,manning}@stanford.edu\n"
+        },
+        {
+          "document_id": "native-baf0b2710ae48479",
+          "run_id": "frozen-header-baf0b2710ae48479",
+          "block_id": "native-baf0b2710ae48479-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.2670249361951812,
+            0.24125736626196928,
+            0.34168236996947216,
+            0.26092239343638657
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1508.07909v1.pdf",
+      "sha256": "1c3665998df191f8a63488eff25beb7313ce27137d8f3a153b00ce94a51d0f60",
+      "family": "1508.07909",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-1c3665998df191f8",
+          "run_id": "frozen-header-1c3665998df191f8",
+          "block_id": "native-1c3665998df191f8-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.017875817866107216,
+            0.238535331957268,
+            0.061470586490007785,
+            0.6818181818181818
+          ],
+          "text": "arXiv:1508.07909v1  [cs.CL]  31 Aug 2015\n"
+        },
+        {
+          "document_id": "native-1c3665998df191f8",
+          "run_id": "frozen-header-1c3665998df191f8",
+          "block_id": "native-1c3665998df191f8-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.16725490295809078,
+            0.0842708818840258,
+            0.8089211158503115,
+            0.10935861414129083
+          ],
+          "text": "Neural Machine Translation of Rare Words with Subword Units\n"
+        },
+        {
+          "document_id": "native-1c3665998df191f8",
+          "run_id": "frozen-header-1c3665998df191f8",
+          "block_id": "native-1c3665998df191f8-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.25196045520258886,
+            0.13986281192663944,
+            0.7292926264744178,
+            0.16090516369752209
+          ],
+          "text": "Rico Sennrich and Barry Haddow and Alexandra Birch\n"
+        },
+        {
+          "document_id": "native-1c3665998df191f8",
+          "run_id": "frozen-header-1c3665998df191f8",
+          "block_id": "native-1c3665998df191f8-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.17862743801540798,
+            0.15743847085972024,
+            0.7985850814121221,
+            0.19530213481248027
+          ],
+          "text": "School of Informatics, University of Edinburgh\n{rico.sennrich,a.birch}@ed.ac.uk, bhaddow@inf.ed.ac.uk\n"
+        },
+        {
+          "document_id": "native-1c3665998df191f8",
+          "run_id": "frozen-header-1c3665998df191f8",
+          "block_id": "native-1c3665998df191f8-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.25960805057700165,
+            0.2563619517316722,
+            0.3321916667464512,
+            0.27726845789437343
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1701.06538v1.pdf",
+      "sha256": "2567713d198a376b65b92f0c60b9f58c8c5f66755530b92203533a17c4ec4b8e",
+      "family": "1701.06538",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-2567713d198a376b",
+          "run_id": "frozen-header-2567713d198a376b",
+          "block_id": "native-2567713d198a376b-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.17647058823529413,
+            0.035118042820631856,
+            0.502924800698274,
+            0.04769708171035304
+          ],
+          "text": "Under review as a conference paper at ICLR 2017\n"
+        },
+        {
+          "document_id": "native-2567713d198a376b",
+          "run_id": "frozen-header-2567713d198a376b",
+          "block_id": "native-2567713d198a376b-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.17705719143736595,
+            0.1018144241487137,
+            0.717858806934232,
+            0.14005457752882833
+          ],
+          "text": "OUTRAGEOUSLY LARGE NEURAL NETWORKS:\nTHE SPARSELY-GATED MIXTURE-OF-EXPERTS LAYER\n"
+        },
+        {
+          "document_id": "native-2567713d198a376b",
+          "run_id": "frozen-header-2567713d198a376b",
+          "block_id": "native-2567713d198a376b-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.19183005538641237,
+            0.1695649503457426,
+            0.808169495825674,
+            0.1841642977011324
+          ],
+          "text": "Noam Shazeer1, Azalia Mirhoseini∗†1, Krzysztof Maziarz∗2, Andy Davis1, Quoc Le1, Geoffrey\n"
+        },
+        {
+          "document_id": "native-2567713d198a376b",
+          "run_id": "frozen-header-2567713d198a376b",
+          "block_id": "native-2567713d198a376b-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.42384787166819854,
+            0.18085797627766928,
+            0.5753379273258783,
+            0.19800139918471826
+          ],
+          "text": "Hinton1 and Jeff Dean1\n"
+        },
+        {
+          "document_id": "native-2567713d198a376b",
+          "run_id": "frozen-header-2567713d198a376b",
+          "block_id": "native-2567713d198a376b-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.2557220708310994,
+            0.2101328300707268,
+            0.7442798988491881,
+            0.2382513874709004
+          ],
+          "text": "1Google Brain, {noam,azalia,andydavis,qvl,geoffhinton,jeff}@google.com\n2Jagiellonian University, Cracow, krzysztof.maziarz@student.uj.edu.pl\n"
+        },
+        {
+          "document_id": "native-2567713d198a376b",
+          "run_id": "frozen-header-2567713d198a376b",
+          "block_id": "native-2567713d198a376b-p1-b5",
+          "native_block_index": 5,
+          "page": 1,
+          "bbox": [
+            0.45471879547717525,
+            0.28070494141241514,
+            0.5452974606183619,
+            0.2957998911539714
+          ],
+          "text": "ABSTRACT\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1705.04304v1.pdf",
+      "sha256": "ccd17e2fa17f8569a878f82b61a85658b1f5228bb4c129d334338330f8b8e57b",
+      "family": "1705.04304",
+      "split": "development",
+      "blocks": [
+        {
+          "document_id": "native-ccd17e2fa17f8569",
+          "run_id": "frozen-header-ccd17e2fa17f8569",
+          "block_id": "native-ccd17e2fa17f8569-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.018386555519424568,
+            0.28111633155804633,
+            0.06322688896115086,
+            0.7007125890736342
+          ],
+          "text": "arXiv:1705.04304v1  [cs.CL]  11 May 2017\n"
+        },
+        {
+          "document_id": "native-ccd17e2fa17f8569",
+          "run_id": "frozen-header-ccd17e2fa17f8569",
+          "block_id": "native-ccd17e2fa17f8569-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.20591596074464943,
+            0.0840350262059735,
+            0.7983456908153886,
+            0.10107326734094325
+          ],
+          "text": "A Deep Reinforced Model for Abstractive Summarization\n"
+        },
+        {
+          "document_id": "native-ccd17e2fa17f8569",
+          "run_id": "frozen-header-ccd17e2fa17f8569",
+          "block_id": "native-ccd17e2fa17f8569-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.27166417226070116,
+            0.14836235680659424,
+            0.7389144256335347,
+            0.1793930887326492
+          ],
+          "text": "Romain Paulus, Caiming Xiong and Richard Socher\n{rpaulus,cxiong,rsocher}@salesforce.com\n"
+        },
+        {
+          "document_id": "native-ccd17e2fa17f8569",
+          "run_id": "frozen-header-ccd17e2fa17f8569",
+          "block_id": "native-ccd17e2fa17f8569-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.2670254747406775,
+            0.2665097560565432,
+            0.34168290851496846,
+            0.28070833111035853
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1608.05859v1.pdf",
+      "sha256": "f0d1f3513e0c73e9695bfa41536d0cbb2a26bc6c8b93fc974b911a74b8f1ac93",
+      "family": "1608.05859",
+      "split": "holdout",
+      "blocks": [
+        {
+          "document_id": "native-f0d1f3513e0c73e9",
+          "run_id": "frozen-header-f0d1f3513e0c73e9",
+          "block_id": "native-f0d1f3513e0c73e9-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.017875817866107216,
+            0.238535331957268,
+            0.061470586490007785,
+            0.6818181818181818
+          ],
+          "text": "arXiv:1608.05859v1  [cs.CL]  20 Aug 2016\n"
+        },
+        {
+          "document_id": "native-f0d1f3513e0c73e9",
+          "run_id": "frozen-header-f0d1f3513e0c73e9",
+          "block_id": "native-f0d1f3513e0c73e9-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.20254901811188342,
+            0.09578610429860125,
+            0.7973525103400735,
+            0.12087383655586628
+          ],
+          "text": "Using the Output Embedding to Improve Language Models\n"
+        },
+        {
+          "document_id": "native-f0d1f3513e0c73e9",
+          "run_id": "frozen-header-f0d1f3513e0c73e9",
+          "block_id": "native-f0d1f3513e0c73e9-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.33274492251327614,
+            0.16759003533257377,
+            0.6720068937812755,
+            0.20530234442816842
+          ],
+          "text": "Oﬁr Press and Lior Wolf\nThe Blavatnik School of Computer Science\n"
+        },
+        {
+          "document_id": "native-f0d1f3513e0c73e9",
+          "run_id": "frozen-header-f0d1f3513e0c73e9",
+          "block_id": "native-f0d1f3513e0c73e9-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.42588217741523693,
+            0.2028932475080394,
+            0.5795716927721609,
+            0.2230298976705532
+          ],
+          "text": "Tel Aviv University\n"
+        },
+        {
+          "document_id": "native-f0d1f3513e0c73e9",
+          "run_id": "frozen-header-f0d1f3513e0c73e9",
+          "block_id": "native-f0d1f3513e0c73e9-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.26666683620876735,
+            0.316210621535176,
+            0.33925045237821694,
+            0.3371171276978772
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1607.06450v1.pdf",
+      "sha256": "c464f839fb8d59f7fde92f9b4caa67c2d1f2f196b88f93fb60502249df0aaef7",
+      "family": "1607.06450",
+      "split": "holdout",
+      "blocks": [
+        {
+          "document_id": "native-c464f839fb8d59f7",
+          "run_id": "frozen-header-c464f839fb8d59f7",
+          "block_id": "native-c464f839fb8d59f7-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.37396569345511643,
+            0.1260528275460908,
+            0.6260364008884803,
+            0.1477894445862433
+          ],
+          "text": "Layer Normalization\n"
+        },
+        {
+          "document_id": "native-c464f839fb8d59f7",
+          "run_id": "frozen-header-c464f839fb8d59f7",
+          "block_id": "native-c464f839fb8d59f7-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.21129249123965993,
+            0.2034968366526594,
+            0.37281978831571694,
+            0.24344136016537446
+          ],
+          "text": "Jimmy Lei Ba\nUniversity of Toronto\njimmy@psi.toronto.edu\n"
+        },
+        {
+          "document_id": "native-c464f839fb8d59f7",
+          "run_id": "frozen-header-c464f839fb8d59f7",
+          "block_id": "native-c464f839fb8d59f7-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.417406892464831,
+            0.2034968366526594,
+            0.5789341646082261,
+            0.24344136016537446
+          ],
+          "text": "Jamie Ryan Kiros\nUniversity of Toronto\nrkiros@cs.toronto.edu\n"
+        },
+        {
+          "document_id": "native-c464f839fb8d59f7",
+          "run_id": "frozen-header-c464f839fb8d59f7",
+          "block_id": "native-c464f839fb8d59f7-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.6356520309946896,
+            0.2034968366526594,
+            0.7765771205129187,
+            0.22982707168116714
+          ],
+          "text": "Geoffrey E. Hinton\nUniversity of Toronto\n"
+        },
+        {
+          "document_id": "native-c464f839fb8d59f7",
+          "run_id": "frozen-header-c464f839fb8d59f7",
+          "block_id": "native-c464f839fb8d59f7-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.6235196979996426,
+            0.23088437860662286,
+            0.7850469950756995,
+            0.2570777083888198
+          ],
+          "text": "and Google Inc.\nhinton@cs.toronto.edu\n"
+        },
+        {
+          "document_id": "native-c464f839fb8d59f7",
+          "run_id": "frozen-header-c464f839fb8d59f7",
+          "block_id": "native-c464f839fb8d59f7-p1-b5",
+          "native_block_index": 5,
+          "page": 1,
+          "bbox": [
+            0.4636569552951389,
+            0.2942930279356061,
+            0.5363453385097529,
+            0.30938797767716225
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1610.02357v1.pdf",
+      "sha256": "5a48d304e3026cd953cf0ba6a49d0dc90d1798509eb0d64e1442c83d1588ec28",
+      "family": "1610.02357",
+      "split": "holdout",
+      "blocks": [
+        {
+          "document_id": "native-5a48d304e3026cd9",
+          "run_id": "frozen-header-5a48d304e3026cd9",
+          "block_id": "native-5a48d304e3026cd9-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.2519983777812883,
+            0.18480655400439946,
+            0.748122321234809,
+            0.20654316141147805
+          ],
+          "text": "Deep Learning with Separable Convolutions\n"
+        },
+        {
+          "document_id": "native-5a48d304e3026cd9",
+          "run_id": "frozen-header-5a48d304e3026cd9",
+          "block_id": "native-5a48d304e3026cd9-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.43180717518127043,
+            0.226456632517805,
+            0.5681980606777216,
+            0.24155158225936119
+          ],
+          "text": "Fran¸cois Chollet\n"
+        },
+        {
+          "document_id": "native-5a48d304e3026cd9",
+          "run_id": "frozen-header-5a48d304e3026cd9",
+          "block_id": "native-5a48d304e3026cd9-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.4045048632652931,
+            0.24406774116284918,
+            0.5956511154673458,
+            0.27749893882057886
+          ],
+          "text": "Google, Inc.\nfchollet@google.com\n"
+        },
+        {
+          "document_id": "native-5a48d304e3026cd9",
+          "run_id": "frozen-header-5a48d304e3026cd9",
+          "block_id": "native-5a48d304e3026cd9-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.38968950159409466,
+            0.28778740853974316,
+            0.6108294717626634,
+            0.308359647038007
+          ],
+          "text": "Monday 3rd October, 2016\n"
+        },
+        {
+          "document_id": "native-5a48d304e3026cd9",
+          "run_id": "frozen-header-5a48d304e3026cd9",
+          "block_id": "native-5a48d304e3026cd9-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.4670734779507506,
+            0.3414993671455769,
+            0.5333838369332108,
+            0.352820579451744
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1610.10099v1.pdf",
+      "sha256": "7edb302fc4e390be4dbbd91c579b9754bc04076d60694781e5fa4839df7b293c",
+      "family": "1610.10099",
+      "split": "holdout",
+      "blocks": [
+        {
+          "document_id": "native-7edb302fc4e390be",
+          "run_id": "frozen-header-7edb302fc4e390be",
+          "block_id": "native-7edb302fc4e390be-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.17647058823529413,
+            0.10191215168346059,
+            0.8181382222892413,
+            0.12364876872361308
+          ],
+          "text": "Neural Machine Translation in Linear Time\n"
+        },
+        {
+          "document_id": "native-7edb302fc4e390be",
+          "run_id": "frozen-header-7edb302fc4e390be",
+          "block_id": "native-7edb302fc4e390be-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.19247875338286355,
+            0.14737861325042417,
+            0.6183634739296109,
+            0.15995765454841382
+          ],
+          "text": "Nal Kalchbrenner, Lasse Espeholt, Karen Simonyan\n"
+        },
+        {
+          "document_id": "native-7edb302fc4e390be",
+          "run_id": "frozen-header-7edb302fc4e390be",
+          "block_id": "native-7edb302fc4e390be-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.192637250314351,
+            0.17195312422935408,
+            0.6440012314740349,
+            0.18492879771222973
+          ],
+          "text": "A¨aron van den Oord, Alex Graves, Koray Kavukcuoglu\n"
+        },
+        {
+          "document_id": "native-7edb302fc4e390be",
+          "run_id": "frozen-header-7edb302fc4e390be",
+          "block_id": "native-7edb302fc4e390be-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.19263722538168915,
+            0.19636460506554806,
+            0.7046015122357536,
+            0.20971095923221472
+          ],
+          "text": "{nalk,lespeholt,simonyan,avdnoord,gravesa,korayk}@google.com\n"
+        },
+        {
+          "document_id": "native-7edb302fc4e390be",
+          "run_id": "frozen-header-7edb302fc4e390be",
+          "block_id": "native-7edb302fc4e390be-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.19263722538168915,
+            0.2214987783720999,
+            0.4193514655618107,
+            0.23407781967008956
+          ],
+          "text": "Google DeepMind, London, UK\n"
+        },
+        {
+          "document_id": "native-7edb302fc4e390be",
+          "run_id": "frozen-header-7edb302fc4e390be",
+          "block_id": "native-7edb302fc4e390be-p1-b5",
+          "native_block_index": 5,
+          "page": 1,
+          "bbox": [
+            0.45293790530535133,
+            0.27169009892627444,
+            0.547055861529182,
+            0.28678504866783067
+          ],
+          "text": "Abstract\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1703.03130v1.pdf",
+      "sha256": "14acb4c846f46646fca07c4b3d2263d509792fe627c8f84a2108a5d0189bab5f",
+      "family": "1703.03130",
+      "split": "holdout",
+      "blocks": [
+        {
+          "document_id": "native-14acb4c846f46646",
+          "run_id": "frozen-header-14acb4c846f46646",
+          "block_id": "native-14acb4c846f46646-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.17647058823529413,
+            0.035118042820631856,
+            0.47891369987936583,
+            0.04769708171035304
+          ],
+          "text": "Published as a conference paper at ICLR 2017\n"
+        },
+        {
+          "document_id": "native-14acb4c846f46646",
+          "run_id": "frozen-header-14acb4c846f46646",
+          "block_id": "native-14acb4c846f46646-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.17717316571403952,
+            0.10163516227645103,
+            0.5821771559372447,
+            0.14852959218651357
+          ],
+          "text": "A STRUCTURED SELF-ATTENTIVE\nSENTENCE EMBEDDING\n"
+        },
+        {
+          "document_id": "native-14acb4c846f46646",
+          "run_id": "frozen-header-14acb4c846f46646",
+          "block_id": "native-14acb4c846f46646-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.18623845717486212,
+            0.1709840177285551,
+            0.6717101452397365,
+            0.2003006019977608
+          ],
+          "text": "Zhouhan Lin‡⋄∗, Minwei Feng⋄, Cicero Nogueira dos Santos⋄, Mo Yu⋄,\nBing Xiang⋄, Bowen Zhou⋄& Yoshua Bengio‡†\n"
+        },
+        {
+          "document_id": "native-14acb4c846f46646",
+          "run_id": "frozen-header-14acb4c846f46646",
+          "block_id": "native-14acb4c846f46646-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.18623845717486212,
+            0.1996518915349787,
+            0.6892423442765778,
+            0.2711328448671283
+          ],
+          "text": "⋄IBM Watson\n‡Montreal Institute for Learning Algorithms (MILA), Universit´e de Montr´eal\n†CIFAR Senior Fellow\nlin.zhouhan@gmail.com\n{mfeng, cicerons, yum, bingxia, zhou}@us.ibm.com\n"
+        },
+        {
+          "document_id": "native-14acb4c846f46646",
+          "run_id": "frozen-header-14acb4c846f46646",
+          "block_id": "native-14acb4c846f46646-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.45471884534249896,
+            0.3091794601594559,
+            0.5452975104836857,
+            0.32427442916715987
+          ],
+          "text": "ABSTRACT\n"
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1703.10722v1.pdf",
+      "sha256": "c2a6639291631da107b82d54a6095014e5ae7a4cc28e1324bf676b738c92a11e",
+      "family": "1703.10722",
+      "split": "holdout",
+      "blocks": [
+        {
+          "document_id": "native-c2a6639291631da1",
+          "run_id": "frozen-header-c2a6639291631da1",
+          "block_id": "native-c2a6639291631da1-p1-b0",
+          "native_block_index": 0,
+          "page": 1,
+          "bbox": [
+            0.17647058823529413,
+            0.035118042820631856,
+            0.3668668659683926,
+            0.04769708171035304
+          ],
+          "text": "Workshop track - ICLR 2017\n"
+        },
+        {
+          "document_id": "native-c2a6639291631da1",
+          "run_id": "frozen-header-c2a6639291631da1",
+          "block_id": "native-c2a6639291631da1-p1-b1",
+          "native_block_index": 1,
+          "page": 1,
+          "bbox": [
+            0.17717320311303233,
+            0.10163516227645103,
+            0.7522991404813879,
+            0.12337177931660354
+          ],
+          "text": "FACTORIZATION TRICKS FOR LSTM NETWORKS\n"
+        },
+        {
+          "document_id": "native-c2a6639291631da1",
+          "run_id": "frozen-header-c2a6639291631da1",
+          "block_id": "native-c2a6639291631da1-p1-b2",
+          "native_block_index": 2,
+          "page": 1,
+          "bbox": [
+            0.1862385569055096,
+            0.14773173284048985,
+            0.38158349429859834,
+            0.18745582272308042
+          ],
+          "text": "Oleksii Kuchaiev\nNVIDIA\nokuchaiev@nvidia.com\n"
+        },
+        {
+          "document_id": "native-c2a6639291631da1",
+          "run_id": "frozen-header-c2a6639291631da1",
+          "block_id": "native-c2a6639291631da1-p1-b3",
+          "native_block_index": 3,
+          "page": 1,
+          "bbox": [
+            0.5097679686702155,
+            0.14773173284048985,
+            0.7051133797838797,
+            0.18745582272308042
+          ],
+          "text": "Boris Ginsburg\nNVIDIA\nbginsburg@nvidia.com\n"
+        },
+        {
+          "document_id": "native-c2a6639291631da1",
+          "run_id": "frozen-header-c2a6639291631da1",
+          "block_id": "native-c2a6639291631da1-p1-b4",
+          "native_block_index": 4,
+          "page": 1,
+          "bbox": [
+            0.4547189450731464,
+            0.22569230590203795,
+            0.5452976102143331,
+            0.24078725564359416
+          ],
+          "text": "ABSTRACT\n"
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "attention-ashish",
+      "source": "data/samples/1706.03762v7.pdf",
+      "split": "development",
+      "note": "Separate author column; do not absorb another column or email.",
+      "expected_affiliations": [
+        {
+          "text": "Google Brain",
+          "evidence_parts": [
+            {
+              "block_id": "native-bdfaa68d8984f0dc-p1-b4",
+              "page": 1,
+              "bbox": [
+                0.19065522835924734,
+                0.31066726915764087,
+                0.3530357460570491,
+                0.33733344800544507
+              ],
+              "text": "Google Brain",
+              "char_start": 0,
+              "char_end": 12
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-bdfaa68d8984f0dc-p1-b4",
+          "page": 1,
+          "bbox": [
+            0.19065522835924734,
+            0.31066726915764087,
+            0.3530357460570491,
+            0.33733344800544507
+          ],
+          "text": "Google Brain",
+          "char_start": 0,
+          "char_end": 12
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "attention-noam",
+      "source": "data/samples/1706.03762v7.pdf",
+      "split": "development",
+      "note": "Separate author column; do not absorb another column or email.",
+      "expected_affiliations": [
+        {
+          "text": "Google Brain",
+          "evidence_parts": [
+            {
+              "block_id": "native-bdfaa68d8984f0dc-p1-b6",
+              "page": 1,
+              "bbox": [
+                0.3769477146123749,
+                0.31066726915764087,
+                0.5051431094898897,
+                0.33733344800544507
+              ],
+              "text": "Google Brain",
+              "char_start": 0,
+              "char_end": 12
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-bdfaa68d8984f0dc-p1-b6",
+          "page": 1,
+          "bbox": [
+            0.3769477146123749,
+            0.31066726915764087,
+            0.5051431094898897,
+            0.33733344800544507
+          ],
+          "text": "Google Brain",
+          "char_start": 0,
+          "char_end": 12
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "attention-niki",
+      "source": "data/samples/1706.03762v7.pdf",
+      "split": "development",
+      "note": "Separate author column; do not absorb another column or email.",
+      "expected_affiliations": [
+        {
+          "text": "Google Research",
+          "evidence_parts": [
+            {
+              "block_id": "native-bdfaa68d8984f0dc-p1-b7",
+              "page": 1,
+              "bbox": [
+                0.5290637546115451,
+                0.2948729775168679,
+                0.6658056421217575,
+                0.33733344800544507
+              ],
+              "text": "Google Research",
+              "char_start": 13,
+              "char_end": 28
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-bdfaa68d8984f0dc-p1-b7",
+          "page": 1,
+          "bbox": [
+            0.5290637546115451,
+            0.2948729775168679,
+            0.6658056421217575,
+            0.33733344800544507
+          ],
+          "text": "Google Research",
+          "char_start": 13,
+          "char_end": 28
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "attention-jakob",
+      "source": "data/samples/1706.03762v7.pdf",
+      "split": "development",
+      "note": "Separate author column; do not absorb another column or email.",
+      "expected_affiliations": [
+        {
+          "text": "Google Research",
+          "evidence_parts": [
+            {
+              "block_id": "native-bdfaa68d8984f0dc-p1-b8",
+              "page": 1,
+              "bbox": [
+                0.6897254893982333,
+                0.2948729775168679,
+                0.8124357734630311,
+                0.33733344800544507
+              ],
+              "text": "Google Research",
+              "char_start": 17,
+              "char_end": 32
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-bdfaa68d8984f0dc-p1-b8",
+          "page": 1,
+          "bbox": [
+            0.6897254893982333,
+            0.2948729775168679,
+            0.8124357734630311,
+            0.33733344800544507
+          ],
+          "text": "Google Research",
+          "char_start": 17,
+          "char_end": 32
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "attention-llion",
+      "source": "data/samples/1706.03762v7.pdf",
+      "split": "development",
+      "note": "Separate author column; do not absorb another column or email.",
+      "expected_affiliations": [
+        {
+          "text": "Google Research",
+          "evidence_parts": [
+            {
+              "block_id": "native-bdfaa68d8984f0dc-p1-b9",
+              "page": 1,
+              "bbox": [
+                0.20732353559506486,
+                0.358000514483211,
+                0.3440650241826874,
+                0.4004622565375434
+              ],
+              "text": "Google Research",
+              "char_start": 13,
+              "char_end": 28
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-bdfaa68d8984f0dc-p1-b9",
+          "page": 1,
+          "bbox": [
+            0.20732353559506486,
+            0.358000514483211,
+            0.3440650241826874,
+            0.4004622565375434
+          ],
+          "text": "Google Research",
+          "char_start": 13,
+          "char_end": 28
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "attention-aidan",
+      "source": "data/samples/1706.03762v7.pdf",
+      "split": "development",
+      "note": "Separate author column; do not absorb another column or email.",
+      "expected_affiliations": [
+        {
+          "text": "University of Toronto",
+          "evidence_parts": [
+            {
+              "block_id": "native-bdfaa68d8984f0dc-p1-b10",
+              "page": 1,
+              "bbox": [
+                0.38465193206188725,
+                0.358000514483211,
+                0.5555791917190053,
+                0.4004622565375434
+              ],
+              "text": "University of Toronto",
+              "char_start": 17,
+              "char_end": 38
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-bdfaa68d8984f0dc-p1-b10",
+          "page": 1,
+          "bbox": [
+            0.38465193206188725,
+            0.358000514483211,
+            0.5555791917190053,
+            0.4004622565375434
+          ],
+          "text": "University of Toronto",
+          "char_start": 17,
+          "char_end": 38
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "attention-lukasz",
+      "source": "data/samples/1706.03762v7.pdf",
+      "split": "development",
+      "note": "Separate author column; do not absorb another column or email.",
+      "expected_affiliations": [
+        {
+          "text": "Google Brain",
+          "evidence_parts": [
+            {
+              "block_id": "native-bdfaa68d8984f0dc-p1-b12",
+              "page": 1,
+              "bbox": [
+                0.5961584951363358,
+                0.3737947868578362,
+                0.792708702336729,
+                0.40046098497178817
+              ],
+              "text": "Google Brain",
+              "char_start": 0,
+              "char_end": 12
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-bdfaa68d8984f0dc-p1-b12",
+          "page": 1,
+          "bbox": [
+            0.5961584951363358,
+            0.3737947868578362,
+            0.792708702336729,
+            0.40046098497178817
+          ],
+          "text": "Google Brain",
+          "char_start": 0,
+          "char_end": 12
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "attention-illia-no-header-affiliation",
+      "source": "data/samples/1706.03762v7.pdf",
+      "split": "development",
+      "note": "Header has a name/contact but no institution; later work-performed footnote is not a current affiliation.",
+      "expected_affiliations": [],
+      "scope_spans": [
+        {
+          "block_id": "native-bdfaa68d8984f0dc-p1-b13",
+          "page": 1,
+          "bbox": [
+            0.38892484178730086,
+            0.42112801291725854,
+            0.6111140531652114,
+            0.4498157693882181
+          ],
+          "text": "Illia Polosukhin∗‡\nillia.polosukhin@gmail.com\n",
+          "char_start": 0,
+          "char_end": 46
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "bert-shared",
+      "source": "data/samples/1810.04805v2.pdf",
+      "split": "development",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "Google AI Language",
+          "evidence_parts": [
+            {
+              "block_id": "native-5692a5514787a8c6-p1-b2",
+              "page": 1,
+              "bbox": [
+                0.18107229958529691,
+                0.15540290423202885,
+                0.8277578021618369,
+                0.2023552752211436
+              ],
+              "text": "Google AI Language",
+              "char_start": 58,
+              "char_end": 76
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-5692a5514787a8c6-p1-b2",
+          "page": 1,
+          "bbox": [
+            0.18107229958529691,
+            0.15540290423202885,
+            0.8277578021618369,
+            0.2023552752211436
+          ],
+          "text": "Google AI Language",
+          "char_start": 58,
+          "char_end": 76
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "rag-facebook",
+      "source": "data/samples/2005.11401v4.pdf",
+      "split": "development",
+      "note": "One explicitly marked institution, not the whole semicolon-separated line.",
+      "expected_affiliations": [
+        {
+          "text": "Facebook AI Research",
+          "evidence_parts": [
+            {
+              "block_id": "native-23e3249e9a1e7541-p1-b5",
+              "page": 1,
+              "bbox": [
+                0.2468741423164318,
+                0.3315787652526239,
+                0.7531258078182445,
+                0.34617811260801373
+              ],
+              "text": "Facebook AI Research",
+              "char_start": 1,
+              "char_end": 21
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-23e3249e9a1e7541-p1-b5",
+          "page": 1,
+          "bbox": [
+            0.2468741423164318,
+            0.3315787652526239,
+            0.7531258078182445,
+            0.34617811260801373
+          ],
+          "text": "Facebook AI Research",
+          "char_start": 1,
+          "char_end": 21
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "rag-ucl",
+      "source": "data/samples/2005.11401v4.pdf",
+      "split": "development",
+      "note": "One explicitly marked institution, not the whole semicolon-separated line.",
+      "expected_affiliations": [
+        {
+          "text": "University College London",
+          "evidence_parts": [
+            {
+              "block_id": "native-23e3249e9a1e7541-p1-b5",
+              "page": 1,
+              "bbox": [
+                0.2468741423164318,
+                0.3315787652526239,
+                0.7531258078182445,
+                0.34617811260801373
+              ],
+              "text": "University College London",
+              "char_start": 24,
+              "char_end": 49
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-23e3249e9a1e7541-p1-b5",
+          "page": 1,
+          "bbox": [
+            0.2468741423164318,
+            0.3315787652526239,
+            0.7531258078182445,
+            0.34617811260801373
+          ],
+          "text": "University College London",
+          "char_start": 24,
+          "char_end": 49
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "rag-nyu",
+      "source": "data/samples/2005.11401v4.pdf",
+      "split": "development",
+      "note": "One explicitly marked institution, not the whole semicolon-separated line.",
+      "expected_affiliations": [
+        {
+          "text": "New York University",
+          "evidence_parts": [
+            {
+              "block_id": "native-23e3249e9a1e7541-p1-b5",
+              "page": 1,
+              "bbox": [
+                0.2468741423164318,
+                0.3315787652526239,
+                0.7531258078182445,
+                0.34617811260801373
+              ],
+              "text": "New York University",
+              "char_start": 52,
+              "char_end": 71
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-23e3249e9a1e7541-p1-b5",
+          "page": 1,
+          "bbox": [
+            0.2468741423164318,
+            0.3315787652526239,
+            0.7531258078182445,
+            0.34617811260801373
+          ],
+          "text": "New York University",
+          "char_start": 52,
+          "char_end": 71
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "graves-department-university",
+      "source": "data/corpus/1308.0850v1.pdf",
+      "split": "development",
+      "note": "Native PDF uses different blocks; department and university form one visible affiliation.",
+      "expected_affiliations": [
+        {
+          "text": "Department of Computer Science University of Toronto",
+          "evidence_parts": [
+            {
+              "block_id": "native-c421fefbd16c5131-p1-b2",
+              "page": 1,
+              "bbox": [
+                0.3597843195098677,
+                0.2753454844156901,
+                0.6389929079541973,
+                0.30805154280229047
+              ],
+              "text": "Department of Computer Science",
+              "char_start": 12,
+              "char_end": 42
+            },
+            {
+              "block_id": "native-c421fefbd16c5131-p1-b3",
+              "page": 1,
+              "bbox": [
+                0.3938382217307496,
+                0.31056770170577847,
+                0.6051051320593341,
+                0.34399764706390074
+              ],
+              "text": "University of Toronto",
+              "char_start": 0,
+              "char_end": 21
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-c421fefbd16c5131-p1-b2",
+          "page": 1,
+          "bbox": [
+            0.3597843195098677,
+            0.2753454844156901,
+            0.6389929079541973,
+            0.30805154280229047
+          ],
+          "text": "Department of Computer Science",
+          "char_start": 12,
+          "char_end": 42
+        },
+        {
+          "block_id": "native-c421fefbd16c5131-p1-b3",
+          "page": 1,
+          "bbox": [
+            0.3938382217307496,
+            0.31056770170577847,
+            0.6051051320593341,
+            0.34399764706390074
+          ],
+          "text": "University of Toronto",
+          "char_start": 0,
+          "char_end": 21
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "billion-google-address-stop",
+      "source": "data/corpus/1312.3005v1.pdf",
+      "split": "development",
+      "note": "Keep same-line address; do not absorb the next postal line.",
+      "expected_affiliations": [
+        {
+          "text": "Google, 1600 Amphitheatre Parkway",
+          "evidence_parts": [
+            {
+              "block_id": "native-32c65d36793cf148-p1-b4",
+              "page": 1,
+              "bbox": [
+                0.18764664145076976,
+                0.21380204865426727,
+                0.47898410971647776,
+                0.2339386988167811
+              ],
+              "text": "Google, 1600 Amphitheatre Parkway",
+              "char_start": 0,
+              "char_end": 33
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-32c65d36793cf148-p1-b4",
+          "page": 1,
+          "bbox": [
+            0.18764664145076976,
+            0.21380204865426727,
+            0.47898410971647776,
+            0.2339386988167811
+          ],
+          "text": "Google, 1600 Amphitheatre Parkway",
+          "char_start": 0,
+          "char_end": 33
+        },
+        {
+          "block_id": "native-32c65d36793cf148-p1-b5",
+          "page": 1,
+          "bbox": [
+            0.20352950750612744,
+            0.2313777075873481,
+            0.463124094445721,
+            0.2515143577498619
+          ],
+          "text": "Mountain View, CA 94043, USA",
+          "char_start": 0,
+          "char_end": 28
+        }
+      ],
+      "protected_texts": [
+        "Mountain View, CA 94043, USA"
+      ]
+    },
+    {
+      "id": "billion-edinburgh-address-stop",
+      "source": "data/corpus/1312.3005v1.pdf",
+      "split": "development",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "University of Edinburgh",
+          "evidence_parts": [
+            {
+              "block_id": "native-32c65d36793cf148-p1-b6",
+              "page": 1,
+              "bbox": [
+                0.5113727843839359,
+                0.17878649933169585,
+                0.8222570481643178,
+                0.25151428068527065
+              ],
+              "text": "University of Edinburgh",
+              "char_start": 15,
+              "char_end": 38
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-32c65d36793cf148-p1-b6",
+          "page": 1,
+          "bbox": [
+            0.5113727843839359,
+            0.17878649933169585,
+            0.8222570481643178,
+            0.25151428068527065
+          ],
+          "text": "University of Edinburgh",
+          "char_start": 15,
+          "char_end": 38
+        },
+        {
+          "block_id": "native-32c65d36793cf148-p1-b6",
+          "page": 1,
+          "bbox": [
+            0.5113727843839359,
+            0.17878649933169585,
+            0.8222570481643178,
+            0.25151428068527065
+          ],
+          "text": "10 Crichton Street, Room 4.19",
+          "char_start": 39,
+          "char_end": 68
+        },
+        {
+          "block_id": "native-32c65d36793cf148-p1-b6",
+          "page": 1,
+          "bbox": [
+            0.5113727843839359,
+            0.17878649933169585,
+            0.8222570481643178,
+            0.25151428068527065
+          ],
+          "text": "Edinburgh, EH8 9AB, United Kingdom",
+          "char_start": 69,
+          "char_end": 103
+        }
+      ],
+      "protected_texts": [
+        "10 Crichton Street, Room 4.19",
+        "Edinburgh, EH8 9AB, United Kingdom"
+      ]
+    },
+    {
+      "id": "luong-department-inline-university",
+      "source": "data/corpus/1508.04025v1.pdf",
+      "split": "development",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "Computer Science Department Stanford University, Stanford, CA, 94305",
+          "evidence_parts": [
+            {
+              "block_id": "native-baf0b2710ae48479-p1-b2",
+              "page": 1,
+              "bbox": [
+                0.20853752328568145,
+                0.13180400639984782,
+                0.7957942674139968,
+                0.16714908844501558
+              ],
+              "text": "Computer Science Department Stanford University, Stanford, CA, 94305",
+              "char_start": 50,
+              "char_end": 118
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-baf0b2710ae48479-p1-b2",
+          "page": 1,
+          "bbox": [
+            0.20853752328568145,
+            0.13180400639984782,
+            0.7957942674139968,
+            0.16714908844501558
+          ],
+          "text": "Computer Science Department Stanford University, Stanford, CA, 94305",
+          "char_start": 50,
+          "char_end": 118
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "sennrich-school-inline-university",
+      "source": "data/corpus/1508.07909v1.pdf",
+      "split": "development",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "School of Informatics, University of Edinburgh",
+          "evidence_parts": [
+            {
+              "block_id": "native-1c3665998df191f8-p1-b3",
+              "page": 1,
+              "bbox": [
+                0.17862743801540798,
+                0.15743847085972024,
+                0.7985850814121221,
+                0.19530213481248027
+              ],
+              "text": "School of Informatics, University of Edinburgh",
+              "char_start": 0,
+              "char_end": 46
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-1c3665998df191f8-p1-b3",
+          "page": 1,
+          "bbox": [
+            0.17862743801540798,
+            0.15743847085972024,
+            0.7985850814121221,
+            0.19530213481248027
+          ],
+          "text": "School of Informatics, University of Edinburgh",
+          "char_start": 0,
+          "char_end": 46
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "moe-google-before-contact",
+      "source": "data/corpus/1701.06538v1.pdf",
+      "split": "development",
+      "note": "Institution precedes a contact list on the same line; prefix marker is not part of the name.",
+      "expected_affiliations": [
+        {
+          "text": "Google Brain",
+          "evidence_parts": [
+            {
+              "block_id": "native-2567713d198a376b-p1-b4",
+              "page": 1,
+              "bbox": [
+                0.2557220708310994,
+                0.2101328300707268,
+                0.7442798988491881,
+                0.2382513874709004
+              ],
+              "text": "Google Brain",
+              "char_start": 1,
+              "char_end": 13
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-2567713d198a376b-p1-b4",
+          "page": 1,
+          "bbox": [
+            0.2557220708310994,
+            0.2101328300707268,
+            0.7442798988491881,
+            0.2382513874709004
+          ],
+          "text": "Google Brain",
+          "char_start": 1,
+          "char_end": 13
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "moe-jagiellonian-before-contact",
+      "source": "data/corpus/1701.06538v1.pdf",
+      "split": "development",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "Jagiellonian University, Cracow",
+          "evidence_parts": [
+            {
+              "block_id": "native-2567713d198a376b-p1-b4",
+              "page": 1,
+              "bbox": [
+                0.2557220708310994,
+                0.2101328300707268,
+                0.7442798988491881,
+                0.2382513874709004
+              ],
+              "text": "Jagiellonian University, Cracow",
+              "char_start": 72,
+              "char_end": 103
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-2567713d198a376b-p1-b4",
+          "page": 1,
+          "bbox": [
+            0.2557220708310994,
+            0.2101328300707268,
+            0.7442798988491881,
+            0.2382513874709004
+          ],
+          "text": "Jagiellonian University, Cracow",
+          "char_start": 72,
+          "char_end": 103
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "summarization-email-not-affiliation",
+      "source": "data/corpus/1705.04304v1.pdf",
+      "split": "development",
+      "note": "Do not infer Salesforce from email domains.",
+      "expected_affiliations": [],
+      "scope_spans": [
+        {
+          "block_id": "native-ccd17e2fa17f8569-p1-b2",
+          "page": 1,
+          "bbox": [
+            0.27166417226070116,
+            0.14836235680659424,
+            0.7389144256335347,
+            0.1793930887326492
+          ],
+          "text": "Romain Paulus, Caiming Xiong and Richard Socher\n{rpaulus,cxiong,rsocher}@salesforce.com\n",
+          "char_start": 0,
+          "char_end": 88
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "press-school-university",
+      "source": "data/corpus/1608.05859v1.pdf",
+      "split": "holdout",
+      "note": "Independent native cross-block continuation source.",
+      "expected_affiliations": [
+        {
+          "text": "The Blavatnik School of Computer Science Tel Aviv University",
+          "evidence_parts": [
+            {
+              "block_id": "native-f0d1f3513e0c73e9-p1-b2",
+              "page": 1,
+              "bbox": [
+                0.33274492251327614,
+                0.16759003533257377,
+                0.6720068937812755,
+                0.20530234442816842
+              ],
+              "text": "The Blavatnik School of Computer Science",
+              "char_start": 24,
+              "char_end": 64
+            },
+            {
+              "block_id": "native-f0d1f3513e0c73e9-p1-b3",
+              "page": 1,
+              "bbox": [
+                0.42588217741523693,
+                0.2028932475080394,
+                0.5795716927721609,
+                0.2230298976705532
+              ],
+              "text": "Tel Aviv University",
+              "char_start": 0,
+              "char_end": 19
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-f0d1f3513e0c73e9-p1-b2",
+          "page": 1,
+          "bbox": [
+            0.33274492251327614,
+            0.16759003533257377,
+            0.6720068937812755,
+            0.20530234442816842
+          ],
+          "text": "The Blavatnik School of Computer Science",
+          "char_start": 24,
+          "char_end": 64
+        },
+        {
+          "block_id": "native-f0d1f3513e0c73e9-p1-b3",
+          "page": 1,
+          "bbox": [
+            0.42588217741523693,
+            0.2028932475080394,
+            0.5795716927721609,
+            0.2230298976705532
+          ],
+          "text": "Tel Aviv University",
+          "char_start": 0,
+          "char_end": 19
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "layer-ba",
+      "source": "data/corpus/1607.06450v1.pdf",
+      "split": "holdout",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "University of Toronto",
+          "evidence_parts": [
+            {
+              "block_id": "native-c464f839fb8d59f7-p1-b1",
+              "page": 1,
+              "bbox": [
+                0.21129249123965993,
+                0.2034968366526594,
+                0.37281978831571694,
+                0.24344136016537446
+              ],
+              "text": "University of Toronto",
+              "char_start": 13,
+              "char_end": 34
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-c464f839fb8d59f7-p1-b1",
+          "page": 1,
+          "bbox": [
+            0.21129249123965993,
+            0.2034968366526594,
+            0.37281978831571694,
+            0.24344136016537446
+          ],
+          "text": "University of Toronto",
+          "char_start": 13,
+          "char_end": 34
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "layer-kiros",
+      "source": "data/corpus/1607.06450v1.pdf",
+      "split": "holdout",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "University of Toronto",
+          "evidence_parts": [
+            {
+              "block_id": "native-c464f839fb8d59f7-p1-b2",
+              "page": 1,
+              "bbox": [
+                0.417406892464831,
+                0.2034968366526594,
+                0.5789341646082261,
+                0.24344136016537446
+              ],
+              "text": "University of Toronto",
+              "char_start": 17,
+              "char_end": 38
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-c464f839fb8d59f7-p1-b2",
+          "page": 1,
+          "bbox": [
+            0.417406892464831,
+            0.2034968366526594,
+            0.5789341646082261,
+            0.24344136016537446
+          ],
+          "text": "University of Toronto",
+          "char_start": 17,
+          "char_end": 38
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "layer-hinton-two-institutions",
+      "source": "data/corpus/1607.06450v1.pdf",
+      "split": "holdout",
+      "note": "Two distinct institutions. Do not turn university plus Google into one continued institution.",
+      "expected_affiliations": [
+        {
+          "text": "University of Toronto",
+          "evidence_parts": [
+            {
+              "block_id": "native-c464f839fb8d59f7-p1-b3",
+              "page": 1,
+              "bbox": [
+                0.6356520309946896,
+                0.2034968366526594,
+                0.7765771205129187,
+                0.22982707168116714
+              ],
+              "text": "University of Toronto",
+              "char_start": 19,
+              "char_end": 40
+            }
+          ]
+        },
+        {
+          "text": "and Google Inc.",
+          "evidence_parts": [
+            {
+              "block_id": "native-c464f839fb8d59f7-p1-b4",
+              "page": 1,
+              "bbox": [
+                0.6235196979996426,
+                0.23088437860662286,
+                0.7850469950756995,
+                0.2570777083888198
+              ],
+              "text": "and Google Inc.",
+              "char_start": 0,
+              "char_end": 15
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-c464f839fb8d59f7-p1-b3",
+          "page": 1,
+          "bbox": [
+            0.6356520309946896,
+            0.2034968366526594,
+            0.7765771205129187,
+            0.22982707168116714
+          ],
+          "text": "University of Toronto",
+          "char_start": 19,
+          "char_end": 40
+        },
+        {
+          "block_id": "native-c464f839fb8d59f7-p1-b4",
+          "page": 1,
+          "bbox": [
+            0.6235196979996426,
+            0.23088437860662286,
+            0.7850469950756995,
+            0.2570777083888198
+          ],
+          "text": "and Google Inc.",
+          "char_start": 0,
+          "char_end": 15
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "chollet-corporate-period",
+      "source": "data/corpus/1610.02357v1.pdf",
+      "split": "holdout",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "Google, Inc.",
+          "evidence_parts": [
+            {
+              "block_id": "native-5a48d304e3026cd9-p1-b2",
+              "page": 1,
+              "bbox": [
+                0.4045048632652931,
+                0.24406774116284918,
+                0.5956511154673458,
+                0.27749893882057886
+              ],
+              "text": "Google, Inc.",
+              "char_start": 0,
+              "char_end": 12
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-5a48d304e3026cd9-p1-b2",
+          "page": 1,
+          "bbox": [
+            0.4045048632652931,
+            0.24406774116284918,
+            0.5956511154673458,
+            0.27749893882057886
+          ],
+          "text": "Google, Inc.",
+          "char_start": 0,
+          "char_end": 12
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "bytenet-contact-above",
+      "source": "data/corpus/1610.10099v1.pdf",
+      "split": "holdout",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "Google DeepMind, London, UK",
+          "evidence_parts": [
+            {
+              "block_id": "native-7edb302fc4e390be-p1-b4",
+              "page": 1,
+              "bbox": [
+                0.19263722538168915,
+                0.2214987783720999,
+                0.4193514655618107,
+                0.23407781967008956
+              ],
+              "text": "Google DeepMind, London, UK",
+              "char_start": 0,
+              "char_end": 27
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-7edb302fc4e390be-p1-b4",
+          "page": 1,
+          "bbox": [
+            0.19263722538168915,
+            0.2214987783720999,
+            0.4193514655618107,
+            0.23407781967008956
+          ],
+          "text": "Google DeepMind, London, UK",
+          "char_start": 0,
+          "char_end": 27
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "structured-ibm-marker",
+      "source": "data/corpus/1703.03130v1.pdf",
+      "split": "holdout",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "IBM Watson",
+          "evidence_parts": [
+            {
+              "block_id": "native-14acb4c846f46646-p1-b3",
+              "page": 1,
+              "bbox": [
+                0.18623845717486212,
+                0.1996518915349787,
+                0.6892423442765778,
+                0.2711328448671283
+              ],
+              "text": "IBM Watson",
+              "char_start": 1,
+              "char_end": 11
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-14acb4c846f46646-p1-b3",
+          "page": 1,
+          "bbox": [
+            0.18623845717486212,
+            0.1996518915349787,
+            0.6892423442765778,
+            0.2711328448671283
+          ],
+          "text": "IBM Watson",
+          "char_start": 1,
+          "char_end": 11
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "structured-mila-role-stop",
+      "source": "data/corpus/1703.03130v1.pdf",
+      "split": "holdout",
+      "note": "Keep native accent encoding; the following fellow role is not an institution continuation.",
+      "expected_affiliations": [
+        {
+          "text": "Montreal Institute for Learning Algorithms (MILA), Universit´e de Montr´eal",
+          "evidence_parts": [
+            {
+              "block_id": "native-14acb4c846f46646-p1-b3",
+              "page": 1,
+              "bbox": [
+                0.18623845717486212,
+                0.1996518915349787,
+                0.6892423442765778,
+                0.2711328448671283
+              ],
+              "text": "Montreal Institute for Learning Algorithms (MILA), Universit´e de Montr´eal",
+              "char_start": 13,
+              "char_end": 88
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-14acb4c846f46646-p1-b3",
+          "page": 1,
+          "bbox": [
+            0.18623845717486212,
+            0.1996518915349787,
+            0.6892423442765778,
+            0.2711328448671283
+          ],
+          "text": "Montreal Institute for Learning Algorithms (MILA), Universit´e de Montr´eal",
+          "char_start": 13,
+          "char_end": 88
+        },
+        {
+          "block_id": "native-14acb4c846f46646-p1-b3",
+          "page": 1,
+          "bbox": [
+            0.18623845717486212,
+            0.1996518915349787,
+            0.6892423442765778,
+            0.2711328448671283
+          ],
+          "text": "CIFAR Senior Fellow",
+          "char_start": 90,
+          "char_end": 109
+        }
+      ],
+      "protected_texts": [
+        "CIFAR Senior Fellow"
+      ]
+    },
+    {
+      "id": "factorization-left-column",
+      "source": "data/corpus/1703.10722v1.pdf",
+      "split": "holdout",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "NVIDIA",
+          "evidence_parts": [
+            {
+              "block_id": "native-c2a6639291631da1-p1-b2",
+              "page": 1,
+              "bbox": [
+                0.1862385569055096,
+                0.14773173284048985,
+                0.38158349429859834,
+                0.18745582272308042
+              ],
+              "text": "NVIDIA",
+              "char_start": 17,
+              "char_end": 23
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-c2a6639291631da1-p1-b2",
+          "page": 1,
+          "bbox": [
+            0.1862385569055096,
+            0.14773173284048985,
+            0.38158349429859834,
+            0.18745582272308042
+          ],
+          "text": "NVIDIA",
+          "char_start": 17,
+          "char_end": 23
+        }
+      ],
+      "protected_texts": []
+    },
+    {
+      "id": "factorization-right-column",
+      "source": "data/corpus/1703.10722v1.pdf",
+      "split": "holdout",
+      "note": "",
+      "expected_affiliations": [
+        {
+          "text": "NVIDIA",
+          "evidence_parts": [
+            {
+              "block_id": "native-c2a6639291631da1-p1-b3",
+              "page": 1,
+              "bbox": [
+                0.5097679686702155,
+                0.14773173284048985,
+                0.7051133797838797,
+                0.18745582272308042
+              ],
+              "text": "NVIDIA",
+              "char_start": 15,
+              "char_end": 21
+            }
+          ]
+        }
+      ],
+      "scope_spans": [
+        {
+          "block_id": "native-c2a6639291631da1-p1-b3",
+          "page": 1,
+          "bbox": [
+            0.5097679686702155,
+            0.14773173284048985,
+            0.7051133797838797,
+            0.18745582272308042
+          ],
+          "text": "NVIDIA",
+          "char_start": 15,
+          "char_end": 21
+        }
+      ],
+      "protected_texts": []
+    }
+  ],
+  "contract": {
+    "real_groups": 30,
+    "development_groups": 20,
+    "holdout_groups": 10,
+    "clear_positive_complete_recovery": 0.9,
+    "false_concatenations": 0,
+    "all_source_spans_valid": true,
+    "holdout_policy": "No threshold tuning on holdout; failure requires additional independent held-out sources."
+  },
+  "limits": [
+    "Two native cross-block hierarchy cases; single-line and boundary cases are reported separately.",
+    "No general OCR or affiliation-identity accuracy claim; synthetic layouts must be identified separately."
+  ]
+}
