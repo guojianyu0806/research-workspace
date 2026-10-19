@@ -11,7 +11,8 @@ import signal
 import pytest
 
 from research_workspace.worker_process import stop_worker
-from scripts.local_process_stats import alive, descendants
+from scripts.local_process_stats import descendants
+from scripts.retained_process_tree import OwnedTree
 
 
 def test_service_worker_startup_uses_null_stdin_and_stops_actual_tree(tmp_path,monkeypatch):
@@ -19,10 +20,10 @@ def test_service_worker_startup_uses_null_stdin_and_stops_actual_tree(tmp_path,m
     from research_workspace.worker import WorkerLock
     for name in ('RESEARCH_MODEL_BASE_URL','RESEARCH_MODEL','RESEARCH_MODEL_API_KEY'):
         monkeypatch.delenv(name,raising=False)
-    original=subprocess.Popen;launched=[]
+    original=subprocess.Popen;launched=[];trees=[]
     def launch(command,**kwargs):
         assert kwargs['stdin']==subprocess.DEVNULL
-        proc=original(command,**kwargs);launched.append(proc);return proc
+        proc=original(command,**kwargs);launched.append(proc);trees.append(OwnedTree(proc));return proc
     monkeypatch.setattr(api.subprocess,'Popen',launch)
     # taskkill is a different subprocess.run path. Do not intercept its stdio
     # with worker-specific assertions (also retain Popen context manager).
@@ -31,20 +32,22 @@ def test_service_worker_startup_uses_null_stdin_and_stops_actual_tree(tmp_path,m
         return launch(command,**kwargs)
     monkeypatch.setattr(api.subprocess,'Popen',worker_launch)
     app=api.create_app(tmp_path,start_worker=True)
-    owned=set()
     async def run():
         async with app.router.lifespan_context(app):
             assert len(launched)==2
             deadline=time.monotonic()+5
             while time.monotonic()<deadline:
-                owned.update(pid for p in launched for pid in descendants(p.pid))
-                if len(owned)>=4 or os.name!='nt':break
+                for tree in trees:tree.refresh()
+                if sum(len(t.observed) for t in trees)>=4 or os.name!='nt':break
                 await asyncio.sleep(.05)
             assert all(p.poll() is None for p in launched)
-    asyncio.run(run())
-    assert not any(alive(pid) for pid in owned)
-    with WorkerLock(tmp_path),WorkerLock(tmp_path/'.activity'):
-        pass
+    try:
+        asyncio.run(run())
+        assert not any(tree.living() for tree in trees)
+        with WorkerLock(tmp_path),WorkerLock(tmp_path/'.activity'):
+            pass
+    finally:
+        for tree in trees:tree.close()
 
 
 def test_stop_already_exited_worker_is_noop():
@@ -74,14 +77,14 @@ asyncio.run(main())
     env=os.environ.copy();env['RESEARCH_DATA_DIR']=str(workspace)
     for name in ('RESEARCH_MODEL_BASE_URL','RESEARCH_MODEL','RESEARCH_MODEL_API_KEY'):
         env.pop(name,None)
-    owned=set()
     with (tmp_path/'owner.log').open('wb') as log:
         owner=subprocess.Popen([sys.executable,'-c',code,str(workspace),str(ready)],
             env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log)
+        tree=OwnedTree(owner)
         try:
             deadline=time.monotonic()+25
             while time.monotonic()<deadline:
-                owned.update(descendants(owner.pid))
+                tree.refresh()
                 locked=[]
                 for directory in (workspace,workspace/'.activity'):
                     try:
@@ -93,16 +96,18 @@ asyncio.run(main())
                 time.sleep(.1)
             else:pytest.fail('Real API workers did not acquire both locks')
             pid=json.loads(ready.read_text())['pid']
+            assert pid in tree.observed and len(tree.observed)>=3
             # Kill only the actual API, deliberately bypassing graceful shutdown
             # and taskkill /T. The workers must observe their owner disappearing.
             os.kill(pid,signal.SIGTERM)
             owner.wait(timeout=10)
             deadline=time.monotonic()+10
-            while any(alive(p) for p in owned) and time.monotonic()<deadline:
+            while tree.living() and time.monotonic()<deadline:
                 time.sleep(.1)
-            assert not any(alive(p) for p in owned)
+            report=tree.report()
+            (tmp_path/'observed-processes.json').write_text(json.dumps(report,indent=2))
+            assert not tree.living(), report
             with WorkerLock(workspace),WorkerLock(workspace/'.activity'):pass
         finally:
             stop_worker(owner)
-            for pid in owned:
-                if alive(pid):os.kill(pid,signal.SIGTERM)
+            tree.close()
