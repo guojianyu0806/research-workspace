@@ -19,6 +19,18 @@ from freeze_local_acceptance import sha256, verify
 DATA = ROOT / 'tests/fixtures/local_acceptance/20261019-v1'
 
 
+def successful_search_p95_upper_bound(values, maximum_busy):
+    """Worst successful p95 if every possibly busy call was among the fastest.
+
+    Busy counts include other phases too, so this may overestimate successful
+    latency. It cannot improve a failing latency by counting fast busy replies.
+    """
+    remaining = sorted(values)[maximum_busy:]
+    if not remaining:
+        raise ValueError('Insufficient successful semantic latency evidence')
+    return remaining[int((len(remaining) - 1) * .95)]
+
+
 def audit(directory):
     directory = Path(directory).resolve()
     if not directory.is_relative_to(ROOT / 'artifacts/local-concurrency'):
@@ -76,6 +88,24 @@ def audit(directory):
         # records only its concurrent load actors.
         require(phase + ' raw actor activity',
                 {f'LocalActor{i:02}' for i in range(1, count + 1)} <= observed)
+    # The original request latency summary includes explicit busy responses.
+    # Recover semantic calls from the driver's sequential structure->search
+    # operation pair, then remove the maximum possible count of fast busy calls.
+    previous = {}; semantic_latencies = []
+    for row in raw:
+        before = previous.get(row['actor'])
+        if (row['phase'] in ('mixed_5_accounts', 'extended_10_accounts') and
+                row['path'] == '/api/search' and before and
+                before['method'] == 'GET' and before['path'].endswith('/structure')):
+            semantic_latencies.append(row['elapsed_ms'])
+        previous[row['actor']] = row
+    require('Raw semantic call count matches warm latency summary',
+            len(semantic_latencies) == report['metrics']['semantic_warm']['count'])
+    maximum_busy = sum(a['semantic_busy'] for a in actors)
+    bound = successful_search_p95_upper_bound(semantic_latencies, maximum_busy)
+    require('Successful semantic p95 conservative upper bound below 3 seconds', bound < 3000,
+            {'upper_bound_ms': bound, 'raw_calls': len(semantic_latencies),
+             'maximum_busy_calls_removed': maximum_busy})
     samples = json.loads((directory / 'memory.json').read_text())
     require('All memory samples sum actual owned process RSS', samples and all(
         row['rss_bytes'] == sum(row['processes'].values()) for row in samples))
