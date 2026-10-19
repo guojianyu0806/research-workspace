@@ -454,6 +454,10 @@
         metadata.append(el("p", "rm-muted", "从当前解析版本首页识别的候选，不自动修改目录作者。可分别核对姓名、机构和关联依据；未确认项不按邮箱域名补全。"));
         const organizations = new Map((front.affiliations || []).map(item => [item.id, item]));
         const methods = { explicit_affiliation_marker: "相同机构标记", inline_author_affiliation: "同一行明确列出姓名和机构", single_affiliation_in_author_block: "同一文本块的唯一机构", unique_nearby_column: "无歧义的相邻栏位" };
+        const organizationSources = (organization) => {
+          const parts = organization.evidence_parts?.length ? organization.evidence_parts : [organization.evidence];
+          return parts.map((part, index) => evidenceButton(part, parts.length === 1 ? "核对机构原文" : `核对机构原文 ${index + 1}/${parts.length}`));
+        };
         const list = el("ul", "rm-front-list");
         (front.authors || []).forEach(author => {
           const row = el("li", "rm-front-row");
@@ -465,7 +469,7 @@
             const organization = organizations.get(relation.affiliation_id);
             if (!organization) return;
             const affiliation = el("div", "rm-front-affiliation");
-            affiliation.append(el("span", "", organization.text), evidenceButton(organization.evidence, "核对机构原文"), el("span", "rm-muted", `关联候选：${methods[relation.method] || "需核对"}`));
+            affiliation.append(el("span", "", organization.text), ...organizationSources(organization), el("span", "rm-muted", `关联候选：${methods[relation.method] || "需核对"}`));
             info.append(affiliation);
           });
           row.append(info); list.append(row);
@@ -475,7 +479,7 @@
         const linked = new Set((front.relations || []).map(item => item.affiliation_id));
         (front.affiliations || []).filter(item => !linked.has(item.id)).forEach(item => {
           const row = el("div", "rm-front-affiliation");
-          row.append(el("span", "", `未关联机构候选：${item.text}`), evidenceButton(item.evidence, "核对机构原文")); metadata.append(row);
+          row.append(el("span", "", `未关联机构候选：${item.text}`), ...organizationSources(item)); metadata.append(row);
         });
         metadata.append(el("p", "rm-muted", front.audit?.source_spans_valid ? "来源审核：所有候选的字符范围与已保存原文一致；这不等于已人工确认作者身份或任职关系。" : "来源审核未通过，请直接核对原文。"));
         root.append(metadata);

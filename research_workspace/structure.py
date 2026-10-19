@@ -159,7 +159,7 @@ def extract_structure(blocks: list[dict], document_id: str, run_id: str) -> dict
         unavailable.append("author_affiliations_not_fully_resolved")
     if not references:
         unavailable.append("numbered_references_not_detected")
-    return {"document_id": document_id, "run_id": run_id, "method": "heuristic", "version": "structure-v3-front-matter",
+    return {"document_id": document_id, "run_id": run_id, "method": "heuristic", "version": "structure-v4-affiliation-parts",
             "headings": headings, "references": references, "citations": citations, "abstract": abstract,
             "front_matter": front_matter,
             "unavailable_fields": unavailable,
