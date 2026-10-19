@@ -1,0 +1,23 @@
+{
+  "version": "local-concurrency-v1",
+  "warmup_seconds": 300,
+  "mixed_seconds": 1800,
+  "extended_seconds": 900,
+  "initial_accounts": 5,
+  "extended_accounts": 10,
+  "browser_contexts": 5,
+  "actor_pause_seconds": 1.0,
+  "light_p95_ms": 1000,
+  "indexed_search_p95_ms": 3000,
+  "cancel_deadline_seconds": 5,
+  "peak_rss_bytes": 8589934592,
+  "idle_growth_bytes": 536870912,
+  "memory_rounds": 3,
+  "memory_load_seconds": 60,
+  "memory_idle_seconds": 30,
+  "nonexpected_5xx": 0,
+  "foreign_source_leaks": 0,
+  "missing_or_duplicate_accepted_runs": 0,
+  "network_policy": "loopback_only; no provider config; no subscriptions",
+  "scope": "Real HTTP, workers, PDFs and browser concurrency. No model-answer quality or external acceptance."
+}

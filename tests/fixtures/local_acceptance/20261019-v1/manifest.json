@@ -1,0 +1,2515 @@
+{
+  "version": "local-acceptance-20261019-v1",
+  "created_at": "2026-10-19T15:01:56.849929+00:00",
+  "source_revision": "16020aa33ccaf3f627c0c2ad85e8e5f7054d3639",
+  "public_files": [
+    {
+      "path": "data/samples/1706.03762v1.pdf",
+      "sha256": "0a9bff1be3575cf9fe26a4a3d3a9175bc791ecec90de8b9deba4cff75d2b9476",
+      "bytes": 2128686,
+      "pages": 15,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/samples/1706.03762v7.pdf",
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "bytes": 2215244,
+      "pages": 15,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/samples/1810.04805v2.pdf",
+      "sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "bytes": 775166,
+      "pages": 16,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/samples/2005.11401v4.pdf",
+      "sha256": "23e3249e9a1e75418d82efecab0ea8c4d033b89c93742f63208d47ce01f21233",
+      "bytes": 885323,
+      "pages": 19,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/samples/UnderstandingDeepLearning_02_09_26_C.pdf",
+      "sha256": "f8237d393163900fa8e43210e680a3f987b45ccac7750b372e156fae3df0bf32",
+      "bytes": 22344992,
+      "pages": 541,
+      "kind": "existing_public_pdf",
+      "native_text_observations": [
+        {
+          "page": 1,
+          "has_text": true
+        },
+        {
+          "page": 2,
+          "has_text": false
+        },
+        {
+          "page": 3,
+          "has_text": true
+        },
+        {
+          "page": 4,
+          "has_text": false
+        },
+        {
+          "page": 5,
+          "has_text": true
+        },
+        {
+          "page": 6,
+          "has_text": true
+        },
+        {
+          "page": 7,
+          "has_text": true
+        },
+        {
+          "page": 8,
+          "has_text": true
+        },
+        {
+          "page": 9,
+          "has_text": true
+        },
+        {
+          "page": 10,
+          "has_text": false
+        },
+        {
+          "page": 11,
+          "has_text": true
+        },
+        {
+          "page": 12,
+          "has_text": false
+        },
+        {
+          "page": 13,
+          "has_text": true
+        },
+        {
+          "page": 14,
+          "has_text": true
+        },
+        {
+          "page": 15,
+          "has_text": true
+        },
+        {
+          "page": 16,
+          "has_text": true
+        },
+        {
+          "page": 17,
+          "has_text": true
+        },
+        {
+          "page": 18,
+          "has_text": true
+        },
+        {
+          "page": 19,
+          "has_text": true
+        },
+        {
+          "page": 20,
+          "has_text": true
+        },
+        {
+          "page": 21,
+          "has_text": true
+        },
+        {
+          "page": 22,
+          "has_text": true
+        },
+        {
+          "page": 23,
+          "has_text": true
+        },
+        {
+          "page": 24,
+          "has_text": true
+        },
+        {
+          "page": 25,
+          "has_text": true
+        },
+        {
+          "page": 26,
+          "has_text": true
+        },
+        {
+          "page": 27,
+          "has_text": true
+        },
+        {
+          "page": 28,
+          "has_text": true
+        },
+        {
+          "page": 29,
+          "has_text": true
+        },
+        {
+          "page": 30,
+          "has_text": true
+        },
+        {
+          "page": 31,
+          "has_text": true
+        },
+        {
+          "page": 32,
+          "has_text": true
+        },
+        {
+          "page": 33,
+          "has_text": true
+        },
+        {
+          "page": 34,
+          "has_text": true
+        },
+        {
+          "page": 35,
+          "has_text": true
+        },
+        {
+          "page": 36,
+          "has_text": true
+        },
+        {
+          "page": 37,
+          "has_text": true
+        },
+        {
+          "page": 38,
+          "has_text": true
+        },
+        {
+          "page": 39,
+          "has_text": true
+        },
+        {
+          "page": 40,
+          "has_text": true
+        },
+        {
+          "page": 41,
+          "has_text": true
+        },
+        {
+          "page": 42,
+          "has_text": true
+        },
+        {
+          "page": 43,
+          "has_text": true
+        },
+        {
+          "page": 44,
+          "has_text": true
+        },
+        {
+          "page": 45,
+          "has_text": true
+        },
+        {
+          "page": 46,
+          "has_text": true
+        },
+        {
+          "page": 47,
+          "has_text": true
+        },
+        {
+          "page": 48,
+          "has_text": true
+        },
+        {
+          "page": 49,
+          "has_text": true
+        },
+        {
+          "page": 50,
+          "has_text": true
+        },
+        {
+          "page": 51,
+          "has_text": true
+        },
+        {
+          "page": 52,
+          "has_text": true
+        },
+        {
+          "page": 53,
+          "has_text": true
+        },
+        {
+          "page": 54,
+          "has_text": true
+        },
+        {
+          "page": 55,
+          "has_text": true
+        },
+        {
+          "page": 56,
+          "has_text": true
+        },
+        {
+          "page": 57,
+          "has_text": true
+        },
+        {
+          "page": 58,
+          "has_text": true
+        },
+        {
+          "page": 59,
+          "has_text": true
+        },
+        {
+          "page": 60,
+          "has_text": true
+        },
+        {
+          "page": 61,
+          "has_text": true
+        },
+        {
+          "page": 62,
+          "has_text": true
+        },
+        {
+          "page": 63,
+          "has_text": true
+        },
+        {
+          "page": 64,
+          "has_text": true
+        },
+        {
+          "page": 65,
+          "has_text": true
+        },
+        {
+          "page": 66,
+          "has_text": true
+        },
+        {
+          "page": 67,
+          "has_text": true
+        },
+        {
+          "page": 68,
+          "has_text": true
+        },
+        {
+          "page": 69,
+          "has_text": true
+        },
+        {
+          "page": 70,
+          "has_text": true
+        },
+        {
+          "page": 71,
+          "has_text": true
+        },
+        {
+          "page": 72,
+          "has_text": true
+        },
+        {
+          "page": 73,
+          "has_text": true
+        },
+        {
+          "page": 74,
+          "has_text": true
+        },
+        {
+          "page": 75,
+          "has_text": true
+        },
+        {
+          "page": 76,
+          "has_text": true
+        },
+        {
+          "page": 77,
+          "has_text": true
+        },
+        {
+          "page": 78,
+          "has_text": true
+        },
+        {
+          "page": 79,
+          "has_text": true
+        },
+        {
+          "page": 80,
+          "has_text": true
+        },
+        {
+          "page": 81,
+          "has_text": true
+        },
+        {
+          "page": 82,
+          "has_text": true
+        },
+        {
+          "page": 83,
+          "has_text": true
+        },
+        {
+          "page": 84,
+          "has_text": true
+        },
+        {
+          "page": 85,
+          "has_text": true
+        },
+        {
+          "page": 86,
+          "has_text": true
+        },
+        {
+          "page": 87,
+          "has_text": true
+        },
+        {
+          "page": 88,
+          "has_text": true
+        },
+        {
+          "page": 89,
+          "has_text": true
+        },
+        {
+          "page": 90,
+          "has_text": true
+        },
+        {
+          "page": 91,
+          "has_text": true
+        },
+        {
+          "page": 92,
+          "has_text": true
+        },
+        {
+          "page": 93,
+          "has_text": true
+        },
+        {
+          "page": 94,
+          "has_text": true
+        },
+        {
+          "page": 95,
+          "has_text": true
+        },
+        {
+          "page": 96,
+          "has_text": true
+        },
+        {
+          "page": 97,
+          "has_text": true
+        },
+        {
+          "page": 98,
+          "has_text": true
+        },
+        {
+          "page": 99,
+          "has_text": true
+        },
+        {
+          "page": 100,
+          "has_text": true
+        },
+        {
+          "page": 101,
+          "has_text": true
+        },
+        {
+          "page": 102,
+          "has_text": true
+        },
+        {
+          "page": 103,
+          "has_text": true
+        },
+        {
+          "page": 104,
+          "has_text": true
+        },
+        {
+          "page": 105,
+          "has_text": true
+        },
+        {
+          "page": 106,
+          "has_text": true
+        },
+        {
+          "page": 107,
+          "has_text": true
+        },
+        {
+          "page": 108,
+          "has_text": true
+        },
+        {
+          "page": 109,
+          "has_text": true
+        },
+        {
+          "page": 110,
+          "has_text": true
+        },
+        {
+          "page": 111,
+          "has_text": true
+        },
+        {
+          "page": 112,
+          "has_text": true
+        },
+        {
+          "page": 113,
+          "has_text": true
+        },
+        {
+          "page": 114,
+          "has_text": true
+        },
+        {
+          "page": 115,
+          "has_text": true
+        },
+        {
+          "page": 116,
+          "has_text": true
+        },
+        {
+          "page": 117,
+          "has_text": true
+        },
+        {
+          "page": 118,
+          "has_text": true
+        },
+        {
+          "page": 119,
+          "has_text": true
+        },
+        {
+          "page": 120,
+          "has_text": true
+        },
+        {
+          "page": 121,
+          "has_text": true
+        },
+        {
+          "page": 122,
+          "has_text": true
+        },
+        {
+          "page": 123,
+          "has_text": true
+        },
+        {
+          "page": 124,
+          "has_text": true
+        },
+        {
+          "page": 125,
+          "has_text": true
+        },
+        {
+          "page": 126,
+          "has_text": true
+        },
+        {
+          "page": 127,
+          "has_text": true
+        },
+        {
+          "page": 128,
+          "has_text": true
+        },
+        {
+          "page": 129,
+          "has_text": true
+        },
+        {
+          "page": 130,
+          "has_text": true
+        },
+        {
+          "page": 131,
+          "has_text": true
+        },
+        {
+          "page": 132,
+          "has_text": true
+        },
+        {
+          "page": 133,
+          "has_text": true
+        },
+        {
+          "page": 134,
+          "has_text": true
+        },
+        {
+          "page": 135,
+          "has_text": true
+        },
+        {
+          "page": 136,
+          "has_text": true
+        },
+        {
+          "page": 137,
+          "has_text": true
+        },
+        {
+          "page": 138,
+          "has_text": true
+        },
+        {
+          "page": 139,
+          "has_text": true
+        },
+        {
+          "page": 140,
+          "has_text": true
+        },
+        {
+          "page": 141,
+          "has_text": true
+        },
+        {
+          "page": 142,
+          "has_text": true
+        },
+        {
+          "page": 143,
+          "has_text": true
+        },
+        {
+          "page": 144,
+          "has_text": true
+        },
+        {
+          "page": 145,
+          "has_text": true
+        },
+        {
+          "page": 146,
+          "has_text": true
+        },
+        {
+          "page": 147,
+          "has_text": true
+        },
+        {
+          "page": 148,
+          "has_text": true
+        },
+        {
+          "page": 149,
+          "has_text": true
+        },
+        {
+          "page": 150,
+          "has_text": true
+        },
+        {
+          "page": 151,
+          "has_text": true
+        },
+        {
+          "page": 152,
+          "has_text": true
+        },
+        {
+          "page": 153,
+          "has_text": true
+        },
+        {
+          "page": 154,
+          "has_text": true
+        },
+        {
+          "page": 155,
+          "has_text": true
+        },
+        {
+          "page": 156,
+          "has_text": true
+        },
+        {
+          "page": 157,
+          "has_text": true
+        },
+        {
+          "page": 158,
+          "has_text": true
+        },
+        {
+          "page": 159,
+          "has_text": true
+        },
+        {
+          "page": 160,
+          "has_text": true
+        },
+        {
+          "page": 161,
+          "has_text": true
+        },
+        {
+          "page": 162,
+          "has_text": true
+        },
+        {
+          "page": 163,
+          "has_text": true
+        },
+        {
+          "page": 164,
+          "has_text": true
+        },
+        {
+          "page": 165,
+          "has_text": true
+        },
+        {
+          "page": 166,
+          "has_text": true
+        },
+        {
+          "page": 167,
+          "has_text": true
+        },
+        {
+          "page": 168,
+          "has_text": true
+        },
+        {
+          "page": 169,
+          "has_text": true
+        },
+        {
+          "page": 170,
+          "has_text": true
+        },
+        {
+          "page": 171,
+          "has_text": true
+        },
+        {
+          "page": 172,
+          "has_text": true
+        },
+        {
+          "page": 173,
+          "has_text": true
+        },
+        {
+          "page": 174,
+          "has_text": true
+        },
+        {
+          "page": 175,
+          "has_text": true
+        },
+        {
+          "page": 176,
+          "has_text": true
+        },
+        {
+          "page": 177,
+          "has_text": true
+        },
+        {
+          "page": 178,
+          "has_text": true
+        },
+        {
+          "page": 179,
+          "has_text": true
+        },
+        {
+          "page": 180,
+          "has_text": true
+        },
+        {
+          "page": 181,
+          "has_text": true
+        },
+        {
+          "page": 182,
+          "has_text": true
+        },
+        {
+          "page": 183,
+          "has_text": true
+        },
+        {
+          "page": 184,
+          "has_text": true
+        },
+        {
+          "page": 185,
+          "has_text": true
+        },
+        {
+          "page": 186,
+          "has_text": true
+        },
+        {
+          "page": 187,
+          "has_text": true
+        },
+        {
+          "page": 188,
+          "has_text": true
+        },
+        {
+          "page": 189,
+          "has_text": true
+        },
+        {
+          "page": 190,
+          "has_text": true
+        },
+        {
+          "page": 191,
+          "has_text": true
+        },
+        {
+          "page": 192,
+          "has_text": true
+        },
+        {
+          "page": 193,
+          "has_text": true
+        },
+        {
+          "page": 194,
+          "has_text": true
+        },
+        {
+          "page": 195,
+          "has_text": true
+        },
+        {
+          "page": 196,
+          "has_text": true
+        },
+        {
+          "page": 197,
+          "has_text": true
+        },
+        {
+          "page": 198,
+          "has_text": true
+        },
+        {
+          "page": 199,
+          "has_text": true
+        },
+        {
+          "page": 200,
+          "has_text": true
+        },
+        {
+          "page": 201,
+          "has_text": true
+        },
+        {
+          "page": 202,
+          "has_text": true
+        },
+        {
+          "page": 203,
+          "has_text": true
+        },
+        {
+          "page": 204,
+          "has_text": true
+        },
+        {
+          "page": 205,
+          "has_text": true
+        },
+        {
+          "page": 206,
+          "has_text": true
+        },
+        {
+          "page": 207,
+          "has_text": true
+        },
+        {
+          "page": 208,
+          "has_text": true
+        },
+        {
+          "page": 209,
+          "has_text": true
+        },
+        {
+          "page": 210,
+          "has_text": true
+        },
+        {
+          "page": 211,
+          "has_text": true
+        },
+        {
+          "page": 212,
+          "has_text": true
+        },
+        {
+          "page": 213,
+          "has_text": true
+        },
+        {
+          "page": 214,
+          "has_text": true
+        },
+        {
+          "page": 215,
+          "has_text": true
+        },
+        {
+          "page": 216,
+          "has_text": true
+        },
+        {
+          "page": 217,
+          "has_text": true
+        },
+        {
+          "page": 218,
+          "has_text": true
+        },
+        {
+          "page": 219,
+          "has_text": true
+        },
+        {
+          "page": 220,
+          "has_text": true
+        },
+        {
+          "page": 221,
+          "has_text": true
+        },
+        {
+          "page": 222,
+          "has_text": true
+        },
+        {
+          "page": 223,
+          "has_text": true
+        },
+        {
+          "page": 224,
+          "has_text": true
+        },
+        {
+          "page": 225,
+          "has_text": true
+        },
+        {
+          "page": 226,
+          "has_text": true
+        },
+        {
+          "page": 227,
+          "has_text": true
+        },
+        {
+          "page": 228,
+          "has_text": true
+        },
+        {
+          "page": 229,
+          "has_text": true
+        },
+        {
+          "page": 230,
+          "has_text": true
+        },
+        {
+          "page": 231,
+          "has_text": true
+        },
+        {
+          "page": 232,
+          "has_text": true
+        },
+        {
+          "page": 233,
+          "has_text": true
+        },
+        {
+          "page": 234,
+          "has_text": true
+        },
+        {
+          "page": 235,
+          "has_text": true
+        },
+        {
+          "page": 236,
+          "has_text": true
+        },
+        {
+          "page": 237,
+          "has_text": true
+        },
+        {
+          "page": 238,
+          "has_text": true
+        },
+        {
+          "page": 239,
+          "has_text": true
+        },
+        {
+          "page": 240,
+          "has_text": true
+        },
+        {
+          "page": 241,
+          "has_text": true
+        },
+        {
+          "page": 242,
+          "has_text": true
+        },
+        {
+          "page": 243,
+          "has_text": true
+        },
+        {
+          "page": 244,
+          "has_text": true
+        },
+        {
+          "page": 245,
+          "has_text": true
+        },
+        {
+          "page": 246,
+          "has_text": true
+        },
+        {
+          "page": 247,
+          "has_text": true
+        },
+        {
+          "page": 248,
+          "has_text": true
+        },
+        {
+          "page": 249,
+          "has_text": true
+        },
+        {
+          "page": 250,
+          "has_text": true
+        },
+        {
+          "page": 251,
+          "has_text": true
+        },
+        {
+          "page": 252,
+          "has_text": true
+        },
+        {
+          "page": 253,
+          "has_text": true
+        },
+        {
+          "page": 254,
+          "has_text": true
+        },
+        {
+          "page": 255,
+          "has_text": true
+        },
+        {
+          "page": 256,
+          "has_text": true
+        },
+        {
+          "page": 257,
+          "has_text": true
+        },
+        {
+          "page": 258,
+          "has_text": true
+        },
+        {
+          "page": 259,
+          "has_text": true
+        },
+        {
+          "page": 260,
+          "has_text": true
+        },
+        {
+          "page": 261,
+          "has_text": true
+        },
+        {
+          "page": 262,
+          "has_text": true
+        },
+        {
+          "page": 263,
+          "has_text": true
+        },
+        {
+          "page": 264,
+          "has_text": true
+        },
+        {
+          "page": 265,
+          "has_text": true
+        },
+        {
+          "page": 266,
+          "has_text": true
+        },
+        {
+          "page": 267,
+          "has_text": true
+        },
+        {
+          "page": 268,
+          "has_text": true
+        },
+        {
+          "page": 269,
+          "has_text": true
+        },
+        {
+          "page": 270,
+          "has_text": true
+        },
+        {
+          "page": 271,
+          "has_text": true
+        },
+        {
+          "page": 272,
+          "has_text": true
+        },
+        {
+          "page": 273,
+          "has_text": true
+        },
+        {
+          "page": 274,
+          "has_text": true
+        },
+        {
+          "page": 275,
+          "has_text": true
+        },
+        {
+          "page": 276,
+          "has_text": true
+        },
+        {
+          "page": 277,
+          "has_text": true
+        },
+        {
+          "page": 278,
+          "has_text": true
+        },
+        {
+          "page": 279,
+          "has_text": true
+        },
+        {
+          "page": 280,
+          "has_text": true
+        },
+        {
+          "page": 281,
+          "has_text": true
+        },
+        {
+          "page": 282,
+          "has_text": true
+        },
+        {
+          "page": 283,
+          "has_text": true
+        },
+        {
+          "page": 284,
+          "has_text": true
+        },
+        {
+          "page": 285,
+          "has_text": true
+        },
+        {
+          "page": 286,
+          "has_text": true
+        },
+        {
+          "page": 287,
+          "has_text": true
+        },
+        {
+          "page": 288,
+          "has_text": true
+        },
+        {
+          "page": 289,
+          "has_text": true
+        },
+        {
+          "page": 290,
+          "has_text": true
+        },
+        {
+          "page": 291,
+          "has_text": true
+        },
+        {
+          "page": 292,
+          "has_text": true
+        },
+        {
+          "page": 293,
+          "has_text": true
+        },
+        {
+          "page": 294,
+          "has_text": true
+        },
+        {
+          "page": 295,
+          "has_text": true
+        },
+        {
+          "page": 296,
+          "has_text": true
+        },
+        {
+          "page": 297,
+          "has_text": true
+        },
+        {
+          "page": 298,
+          "has_text": true
+        },
+        {
+          "page": 299,
+          "has_text": true
+        },
+        {
+          "page": 300,
+          "has_text": true
+        },
+        {
+          "page": 301,
+          "has_text": true
+        },
+        {
+          "page": 302,
+          "has_text": true
+        },
+        {
+          "page": 303,
+          "has_text": true
+        },
+        {
+          "page": 304,
+          "has_text": true
+        },
+        {
+          "page": 305,
+          "has_text": true
+        },
+        {
+          "page": 306,
+          "has_text": true
+        },
+        {
+          "page": 307,
+          "has_text": true
+        },
+        {
+          "page": 308,
+          "has_text": true
+        },
+        {
+          "page": 309,
+          "has_text": true
+        },
+        {
+          "page": 310,
+          "has_text": true
+        },
+        {
+          "page": 311,
+          "has_text": true
+        },
+        {
+          "page": 312,
+          "has_text": true
+        },
+        {
+          "page": 313,
+          "has_text": true
+        },
+        {
+          "page": 314,
+          "has_text": true
+        },
+        {
+          "page": 315,
+          "has_text": true
+        },
+        {
+          "page": 316,
+          "has_text": true
+        },
+        {
+          "page": 317,
+          "has_text": true
+        },
+        {
+          "page": 318,
+          "has_text": true
+        },
+        {
+          "page": 319,
+          "has_text": true
+        },
+        {
+          "page": 320,
+          "has_text": true
+        },
+        {
+          "page": 321,
+          "has_text": true
+        },
+        {
+          "page": 322,
+          "has_text": true
+        },
+        {
+          "page": 323,
+          "has_text": true
+        },
+        {
+          "page": 324,
+          "has_text": true
+        },
+        {
+          "page": 325,
+          "has_text": true
+        },
+        {
+          "page": 326,
+          "has_text": true
+        },
+        {
+          "page": 327,
+          "has_text": true
+        },
+        {
+          "page": 328,
+          "has_text": true
+        },
+        {
+          "page": 329,
+          "has_text": true
+        },
+        {
+          "page": 330,
+          "has_text": true
+        },
+        {
+          "page": 331,
+          "has_text": true
+        },
+        {
+          "page": 332,
+          "has_text": true
+        },
+        {
+          "page": 333,
+          "has_text": true
+        },
+        {
+          "page": 334,
+          "has_text": true
+        },
+        {
+          "page": 335,
+          "has_text": true
+        },
+        {
+          "page": 336,
+          "has_text": true
+        },
+        {
+          "page": 337,
+          "has_text": true
+        },
+        {
+          "page": 338,
+          "has_text": true
+        },
+        {
+          "page": 339,
+          "has_text": true
+        },
+        {
+          "page": 340,
+          "has_text": true
+        },
+        {
+          "page": 341,
+          "has_text": true
+        },
+        {
+          "page": 342,
+          "has_text": true
+        },
+        {
+          "page": 343,
+          "has_text": true
+        },
+        {
+          "page": 344,
+          "has_text": true
+        },
+        {
+          "page": 345,
+          "has_text": true
+        },
+        {
+          "page": 346,
+          "has_text": true
+        },
+        {
+          "page": 347,
+          "has_text": true
+        },
+        {
+          "page": 348,
+          "has_text": true
+        },
+        {
+          "page": 349,
+          "has_text": true
+        },
+        {
+          "page": 350,
+          "has_text": true
+        },
+        {
+          "page": 351,
+          "has_text": true
+        },
+        {
+          "page": 352,
+          "has_text": true
+        },
+        {
+          "page": 353,
+          "has_text": true
+        },
+        {
+          "page": 354,
+          "has_text": true
+        },
+        {
+          "page": 355,
+          "has_text": true
+        },
+        {
+          "page": 356,
+          "has_text": true
+        },
+        {
+          "page": 357,
+          "has_text": true
+        },
+        {
+          "page": 358,
+          "has_text": true
+        },
+        {
+          "page": 359,
+          "has_text": true
+        },
+        {
+          "page": 360,
+          "has_text": true
+        },
+        {
+          "page": 361,
+          "has_text": true
+        },
+        {
+          "page": 362,
+          "has_text": true
+        },
+        {
+          "page": 363,
+          "has_text": true
+        },
+        {
+          "page": 364,
+          "has_text": true
+        },
+        {
+          "page": 365,
+          "has_text": true
+        },
+        {
+          "page": 366,
+          "has_text": true
+        },
+        {
+          "page": 367,
+          "has_text": true
+        },
+        {
+          "page": 368,
+          "has_text": true
+        },
+        {
+          "page": 369,
+          "has_text": true
+        },
+        {
+          "page": 370,
+          "has_text": true
+        },
+        {
+          "page": 371,
+          "has_text": true
+        },
+        {
+          "page": 372,
+          "has_text": true
+        },
+        {
+          "page": 373,
+          "has_text": true
+        },
+        {
+          "page": 374,
+          "has_text": true
+        },
+        {
+          "page": 375,
+          "has_text": true
+        },
+        {
+          "page": 376,
+          "has_text": true
+        },
+        {
+          "page": 377,
+          "has_text": true
+        },
+        {
+          "page": 378,
+          "has_text": true
+        },
+        {
+          "page": 379,
+          "has_text": true
+        },
+        {
+          "page": 380,
+          "has_text": true
+        },
+        {
+          "page": 381,
+          "has_text": true
+        },
+        {
+          "page": 382,
+          "has_text": true
+        },
+        {
+          "page": 383,
+          "has_text": true
+        },
+        {
+          "page": 384,
+          "has_text": true
+        },
+        {
+          "page": 385,
+          "has_text": true
+        },
+        {
+          "page": 386,
+          "has_text": true
+        },
+        {
+          "page": 387,
+          "has_text": true
+        },
+        {
+          "page": 388,
+          "has_text": true
+        },
+        {
+          "page": 389,
+          "has_text": true
+        },
+        {
+          "page": 390,
+          "has_text": true
+        },
+        {
+          "page": 391,
+          "has_text": true
+        },
+        {
+          "page": 392,
+          "has_text": true
+        },
+        {
+          "page": 393,
+          "has_text": true
+        },
+        {
+          "page": 394,
+          "has_text": true
+        },
+        {
+          "page": 395,
+          "has_text": true
+        },
+        {
+          "page": 396,
+          "has_text": true
+        },
+        {
+          "page": 397,
+          "has_text": true
+        },
+        {
+          "page": 398,
+          "has_text": true
+        },
+        {
+          "page": 399,
+          "has_text": true
+        },
+        {
+          "page": 400,
+          "has_text": true
+        },
+        {
+          "page": 401,
+          "has_text": true
+        },
+        {
+          "page": 402,
+          "has_text": true
+        },
+        {
+          "page": 403,
+          "has_text": true
+        },
+        {
+          "page": 404,
+          "has_text": true
+        },
+        {
+          "page": 405,
+          "has_text": true
+        },
+        {
+          "page": 406,
+          "has_text": true
+        },
+        {
+          "page": 407,
+          "has_text": true
+        },
+        {
+          "page": 408,
+          "has_text": true
+        },
+        {
+          "page": 409,
+          "has_text": true
+        },
+        {
+          "page": 410,
+          "has_text": true
+        },
+        {
+          "page": 411,
+          "has_text": true
+        },
+        {
+          "page": 412,
+          "has_text": true
+        },
+        {
+          "page": 413,
+          "has_text": true
+        },
+        {
+          "page": 414,
+          "has_text": true
+        },
+        {
+          "page": 415,
+          "has_text": true
+        },
+        {
+          "page": 416,
+          "has_text": true
+        },
+        {
+          "page": 417,
+          "has_text": true
+        },
+        {
+          "page": 418,
+          "has_text": true
+        },
+        {
+          "page": 419,
+          "has_text": true
+        },
+        {
+          "page": 420,
+          "has_text": true
+        },
+        {
+          "page": 421,
+          "has_text": true
+        },
+        {
+          "page": 422,
+          "has_text": true
+        },
+        {
+          "page": 423,
+          "has_text": true
+        },
+        {
+          "page": 424,
+          "has_text": true
+        },
+        {
+          "page": 425,
+          "has_text": true
+        },
+        {
+          "page": 426,
+          "has_text": true
+        },
+        {
+          "page": 427,
+          "has_text": true
+        },
+        {
+          "page": 428,
+          "has_text": true
+        },
+        {
+          "page": 429,
+          "has_text": true
+        },
+        {
+          "page": 430,
+          "has_text": true
+        },
+        {
+          "page": 431,
+          "has_text": true
+        },
+        {
+          "page": 432,
+          "has_text": true
+        },
+        {
+          "page": 433,
+          "has_text": true
+        },
+        {
+          "page": 434,
+          "has_text": true
+        },
+        {
+          "page": 435,
+          "has_text": true
+        },
+        {
+          "page": 436,
+          "has_text": true
+        },
+        {
+          "page": 437,
+          "has_text": true
+        },
+        {
+          "page": 438,
+          "has_text": true
+        },
+        {
+          "page": 439,
+          "has_text": true
+        },
+        {
+          "page": 440,
+          "has_text": true
+        },
+        {
+          "page": 441,
+          "has_text": true
+        },
+        {
+          "page": 442,
+          "has_text": true
+        },
+        {
+          "page": 443,
+          "has_text": true
+        },
+        {
+          "page": 444,
+          "has_text": true
+        },
+        {
+          "page": 445,
+          "has_text": true
+        },
+        {
+          "page": 446,
+          "has_text": true
+        },
+        {
+          "page": 447,
+          "has_text": true
+        },
+        {
+          "page": 448,
+          "has_text": true
+        },
+        {
+          "page": 449,
+          "has_text": true
+        },
+        {
+          "page": 450,
+          "has_text": true
+        },
+        {
+          "page": 451,
+          "has_text": true
+        },
+        {
+          "page": 452,
+          "has_text": true
+        },
+        {
+          "page": 453,
+          "has_text": true
+        },
+        {
+          "page": 454,
+          "has_text": true
+        },
+        {
+          "page": 455,
+          "has_text": true
+        },
+        {
+          "page": 456,
+          "has_text": true
+        },
+        {
+          "page": 457,
+          "has_text": true
+        },
+        {
+          "page": 458,
+          "has_text": true
+        },
+        {
+          "page": 459,
+          "has_text": true
+        },
+        {
+          "page": 460,
+          "has_text": true
+        },
+        {
+          "page": 461,
+          "has_text": true
+        },
+        {
+          "page": 462,
+          "has_text": true
+        },
+        {
+          "page": 463,
+          "has_text": true
+        },
+        {
+          "page": 464,
+          "has_text": true
+        },
+        {
+          "page": 465,
+          "has_text": true
+        },
+        {
+          "page": 466,
+          "has_text": true
+        },
+        {
+          "page": 467,
+          "has_text": true
+        },
+        {
+          "page": 468,
+          "has_text": true
+        },
+        {
+          "page": 469,
+          "has_text": true
+        },
+        {
+          "page": 470,
+          "has_text": true
+        },
+        {
+          "page": 471,
+          "has_text": true
+        },
+        {
+          "page": 472,
+          "has_text": true
+        },
+        {
+          "page": 473,
+          "has_text": true
+        },
+        {
+          "page": 474,
+          "has_text": true
+        },
+        {
+          "page": 475,
+          "has_text": true
+        },
+        {
+          "page": 476,
+          "has_text": true
+        },
+        {
+          "page": 477,
+          "has_text": true
+        },
+        {
+          "page": 478,
+          "has_text": true
+        },
+        {
+          "page": 479,
+          "has_text": true
+        },
+        {
+          "page": 480,
+          "has_text": true
+        },
+        {
+          "page": 481,
+          "has_text": true
+        },
+        {
+          "page": 482,
+          "has_text": true
+        },
+        {
+          "page": 483,
+          "has_text": true
+        },
+        {
+          "page": 484,
+          "has_text": true
+        },
+        {
+          "page": 485,
+          "has_text": true
+        },
+        {
+          "page": 486,
+          "has_text": true
+        },
+        {
+          "page": 487,
+          "has_text": true
+        },
+        {
+          "page": 488,
+          "has_text": true
+        },
+        {
+          "page": 489,
+          "has_text": true
+        },
+        {
+          "page": 490,
+          "has_text": true
+        },
+        {
+          "page": 491,
+          "has_text": true
+        },
+        {
+          "page": 492,
+          "has_text": true
+        },
+        {
+          "page": 493,
+          "has_text": true
+        },
+        {
+          "page": 494,
+          "has_text": true
+        },
+        {
+          "page": 495,
+          "has_text": true
+        },
+        {
+          "page": 496,
+          "has_text": true
+        },
+        {
+          "page": 497,
+          "has_text": true
+        },
+        {
+          "page": 498,
+          "has_text": true
+        },
+        {
+          "page": 499,
+          "has_text": true
+        },
+        {
+          "page": 500,
+          "has_text": true
+        },
+        {
+          "page": 501,
+          "has_text": true
+        },
+        {
+          "page": 502,
+          "has_text": true
+        },
+        {
+          "page": 503,
+          "has_text": true
+        },
+        {
+          "page": 504,
+          "has_text": true
+        },
+        {
+          "page": 505,
+          "has_text": true
+        },
+        {
+          "page": 506,
+          "has_text": true
+        },
+        {
+          "page": 507,
+          "has_text": true
+        },
+        {
+          "page": 508,
+          "has_text": true
+        },
+        {
+          "page": 509,
+          "has_text": true
+        },
+        {
+          "page": 510,
+          "has_text": true
+        },
+        {
+          "page": 511,
+          "has_text": true
+        },
+        {
+          "page": 512,
+          "has_text": true
+        },
+        {
+          "page": 513,
+          "has_text": true
+        },
+        {
+          "page": 514,
+          "has_text": true
+        },
+        {
+          "page": 515,
+          "has_text": true
+        },
+        {
+          "page": 516,
+          "has_text": true
+        },
+        {
+          "page": 517,
+          "has_text": true
+        },
+        {
+          "page": 518,
+          "has_text": true
+        },
+        {
+          "page": 519,
+          "has_text": true
+        },
+        {
+          "page": 520,
+          "has_text": true
+        },
+        {
+          "page": 521,
+          "has_text": true
+        },
+        {
+          "page": 522,
+          "has_text": true
+        },
+        {
+          "page": 523,
+          "has_text": true
+        },
+        {
+          "page": 524,
+          "has_text": true
+        },
+        {
+          "page": 525,
+          "has_text": true
+        },
+        {
+          "page": 526,
+          "has_text": true
+        },
+        {
+          "page": 527,
+          "has_text": true
+        },
+        {
+          "page": 528,
+          "has_text": true
+        },
+        {
+          "page": 529,
+          "has_text": true
+        },
+        {
+          "page": 530,
+          "has_text": true
+        },
+        {
+          "page": 531,
+          "has_text": true
+        },
+        {
+          "page": 532,
+          "has_text": true
+        },
+        {
+          "page": 533,
+          "has_text": true
+        },
+        {
+          "page": 534,
+          "has_text": true
+        },
+        {
+          "page": 535,
+          "has_text": true
+        },
+        {
+          "page": 536,
+          "has_text": true
+        },
+        {
+          "page": 537,
+          "has_text": true
+        },
+        {
+          "page": 538,
+          "has_text": true
+        },
+        {
+          "page": 539,
+          "has_text": true
+        },
+        {
+          "page": 540,
+          "has_text": true
+        },
+        {
+          "page": 541,
+          "has_text": true
+        }
+      ]
+    },
+    {
+      "path": "data/corpus/1308.0850v1.pdf",
+      "sha256": "c421fefbd16c513197fa5c0359f9717ec29e813ecba12f0781a179f6142deef8",
+      "bytes": 3508242,
+      "pages": 43,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1312.3005v1.pdf",
+      "sha256": "32c65d36793cf14888907ed454ae05e170b59c6772462a1034165458105db756",
+      "bytes": 61238,
+      "pages": 6,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1508.04025v1.pdf",
+      "sha256": "baf0b2710ae484792e12434a69ab6ea948ba429c47c2d66203cd6e987606d33c",
+      "bytes": 365155,
+      "pages": 11,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1508.07909v1.pdf",
+      "sha256": "1c3665998df191f8a63488eff25beb7313ce27137d8f3a153b00ce94a51d0f60",
+      "bytes": 219664,
+      "pages": 11,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1511.06114v1.pdf",
+      "sha256": "7976e5377fc73404b567608b049b12d5ac43b5e0bda0adffa8e10b0724b5caf9",
+      "bytes": 149220,
+      "pages": 9,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1601.06733v1.pdf",
+      "sha256": "d2792f0bdbad84291d77e6032f67c6f2bae7dc6c4700c87aea2613b7629d913d",
+      "bytes": 1160879,
+      "pages": 10,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1602.02410v1.pdf",
+      "sha256": "e0d04ff757a9c495a7e6156e621be7dd08351b95a056fd0bc3da06673f24d827",
+      "bytes": 329606,
+      "pages": 11,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1607.06450v1.pdf",
+      "sha256": "c464f839fb8d59f7fde92f9b4caa67c2d1f2f196b88f93fb60502249df0aaef7",
+      "bytes": 612446,
+      "pages": 14,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1608.05859v1.pdf",
+      "sha256": "f0d1f3513e0c73e9695bfa41536d0cbb2a26bc6c8b93fc974b911a74b8f1ac93",
+      "bytes": 88583,
+      "pages": 6,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1609.08144v1.pdf",
+      "sha256": "6c04898c80c2e2aa1276e053a7c434186416bae73f098b1f14c0197c19ef49b0",
+      "bytes": 1673492,
+      "pages": 23,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1610.02357v1.pdf",
+      "sha256": "5a48d304e3026cd953cf0ba6a49d0dc90d1798509eb0d64e1442c83d1588ec28",
+      "bytes": 947524,
+      "pages": 14,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1610.10099v1.pdf",
+      "sha256": "7edb302fc4e390be4dbbd91c579b9754bc04076d60694781e5fa4839df7b293c",
+      "bytes": 2136811,
+      "pages": 11,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1701.06538v1.pdf",
+      "sha256": "2567713d198a376b65b92f0c60b9f58c8c5f66755530b92203533a17c4ec4b8e",
+      "bytes": 544288,
+      "pages": 19,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1703.03130v1.pdf",
+      "sha256": "14acb4c846f46646fca07c4b3d2263d509792fe627c8f84a2108a5d0189bab5f",
+      "bytes": 3703137,
+      "pages": 15,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1703.10722v1.pdf",
+      "sha256": "c2a6639291631da107b82d54a6095014e5ae7a4cc28e1324bf676b738c92a11e",
+      "bytes": 532125,
+      "pages": 5,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1705.03122v1.pdf",
+      "sha256": "0e316c263772211b2bb49624f664bcadeae0ece34c6eb2d3e45d9677c801ec9b",
+      "bytes": 658272,
+      "pages": 15,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1705.04304v1.pdf",
+      "sha256": "ccd17e2fa17f8569a878f82b61a85658b1f5228bb4c129d334338330f8b8e57b",
+      "bytes": 166768,
+      "pages": 10,
+      "kind": "existing_public_pdf"
+    },
+    {
+      "path": "data/corpus/1808.04444v1.pdf",
+      "sha256": "9b6e1e8b7041930cff2b8839aa7b77caf21f18e046b7ae373694550f74eda442",
+      "bytes": 750214,
+      "pages": 11,
+      "kind": "existing_public_pdf"
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "LocalActor01",
+      "marker": "PRIVATE_ACCOUNT_01_SENTINEL_7AC2",
+      "pdf": "account-01.pdf",
+      "pdf_sha256": "7c4befde4590f572e2b89d3a7c6c2e2f84ca0061b90097320a6e643962f893c8",
+      "pages": 8,
+      "csv": "account-01.csv",
+      "csv_sha256": "ab1f44826e8057716efa4597676559210b3c21e99ffcb55eaf5bbfcc914454d6",
+      "expected_values": [
+        1,
+        2
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor02",
+      "marker": "PRIVATE_ACCOUNT_02_SENTINEL_7AC2",
+      "pdf": "account-02.pdf",
+      "pdf_sha256": "b21ec885e7dfc80fdedc157b7e3570746271329866c945f885a3e6bf808b5455",
+      "pages": 8,
+      "csv": "account-02.csv",
+      "csv_sha256": "43dce6b164a5fb5500c45fdeb5b2fcbdd273393cddcd5cf5eb1cb3f3021f704e",
+      "expected_values": [
+        2,
+        3
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor03",
+      "marker": "PRIVATE_ACCOUNT_03_SENTINEL_7AC2",
+      "pdf": "account-03.pdf",
+      "pdf_sha256": "6681df8b9084bc18372727f240f74ace1e2c7e13f065f1d026d15640989ab0d1",
+      "pages": 8,
+      "csv": "account-03.csv",
+      "csv_sha256": "060db0c91d0592e3e38a97e41c7262921de45095370c5f494dd9a8a6e7fbb9bb",
+      "expected_values": [
+        3,
+        4
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor04",
+      "marker": "PRIVATE_ACCOUNT_04_SENTINEL_7AC2",
+      "pdf": "account-04.pdf",
+      "pdf_sha256": "4609e02dad444bad7c93a7e501ed5f45312a077104a22baab6d436b4dac1339a",
+      "pages": 8,
+      "csv": "account-04.csv",
+      "csv_sha256": "9f155af10dcde3cde2ab722f80ac12bbfcba85b42307ad825047b0f79ef9d311",
+      "expected_values": [
+        4,
+        5
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor05",
+      "marker": "PRIVATE_ACCOUNT_05_SENTINEL_7AC2",
+      "pdf": "account-05.pdf",
+      "pdf_sha256": "3067a487bcd7b5143f098164ef03d213f478b7d2c3005ef3b9b0c596b84a5f5a",
+      "pages": 8,
+      "csv": "account-05.csv",
+      "csv_sha256": "99fe73fd94397733602eec521f9a83374983badf25f2e9a0b421626cdcfb9476",
+      "expected_values": [
+        5,
+        6
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor06",
+      "marker": "PRIVATE_ACCOUNT_06_SENTINEL_7AC2",
+      "pdf": "account-06.pdf",
+      "pdf_sha256": "f0db31a104af1057145addf014575478c81e17a0007dc66b5d95393c1165b00d",
+      "pages": 8,
+      "csv": "account-06.csv",
+      "csv_sha256": "a8d75604dfc347fd410b40e03fbfee0c5a91399e90dbfe42043659523210e142",
+      "expected_values": [
+        6,
+        7
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor07",
+      "marker": "PRIVATE_ACCOUNT_07_SENTINEL_7AC2",
+      "pdf": "account-07.pdf",
+      "pdf_sha256": "8377b996c2010258ecec57a587b8fa994432bcf53ce82ddc5437a6124572df24",
+      "pages": 8,
+      "csv": "account-07.csv",
+      "csv_sha256": "676eaa89648972b094074e2ac4a4eb82bad0ee5e050fe24e1d9de38dc05e521c",
+      "expected_values": [
+        7,
+        8
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor08",
+      "marker": "PRIVATE_ACCOUNT_08_SENTINEL_7AC2",
+      "pdf": "account-08.pdf",
+      "pdf_sha256": "1a3ad9222e1c9fa40605b086ef7a50e2367f80476883648ea8ffe437f37dc29e",
+      "pages": 8,
+      "csv": "account-08.csv",
+      "csv_sha256": "330cf609101d3030bddaca3e327532f3d140c107c3f87b8ffc0fbf23a7ffd0fb",
+      "expected_values": [
+        8,
+        9
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor09",
+      "marker": "PRIVATE_ACCOUNT_09_SENTINEL_7AC2",
+      "pdf": "account-09.pdf",
+      "pdf_sha256": "3ae6bd3be25283d9c5a657579298bac75b3060bc4b913a32cea59b12ee41951c",
+      "pages": 8,
+      "csv": "account-09.csv",
+      "csv_sha256": "566648a8aff7196e4fab893652e4358aaf397d2aaa0be14e6d18ff28e51130a6",
+      "expected_values": [
+        9,
+        10
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    },
+    {
+      "name": "LocalActor10",
+      "marker": "PRIVATE_ACCOUNT_10_SENTINEL_7AC2",
+      "pdf": "account-10.pdf",
+      "pdf_sha256": "ec93c9b26c4f0e51fcc16443fd76801b71fe6e0b6c0b1b0fc4e54caf34050264",
+      "pages": 8,
+      "csv": "account-10.csv",
+      "csv_sha256": "1ee6cbda84f801128c2eb76c41b3f2819d5b463c66386074680ad445c42257fd",
+      "expected_values": [
+        10,
+        11
+      ],
+      "historical_quote": "Stable historical source value = 42."
+    }
+  ],
+  "shared": {
+    "pdf": "shared.pdf",
+    "sha256": "f61c773fb55f39ee6b5d8dcf64872c6dd0598ba27cc94b4cbf58b5b31554e3e6"
+  },
+  "book": {
+    "path": "data/samples/UnderstandingDeepLearning_02_09_26_C.pdf",
+    "sha256": "f8237d393163900fa8e43210e680a3f987b45ccac7750b372e156fae3df0bf32",
+    "pages": 541,
+    "native_blank_pages": [
+      2,
+      4,
+      10,
+      12
+    ]
+  },
+  "source_observation_scope": "Raw native-text presence is page coverage evidence, not OCR/content accuracy gold.",
+  "future_annotations": {
+    "formula_regions": {
+      "required": 60,
+      "status": "not_yet_frozen"
+    },
+    "matrix_regions": {
+      "required": 24,
+      "status": "not_yet_frozen"
+    },
+    "table_regions": {
+      "required": 24,
+      "status": "not_yet_frozen"
+    },
+    "chart_regions": {
+      "required": 24,
+      "status": "not_yet_frozen"
+    },
+    "affiliation_groups": {
+      "required": 30,
+      "status": "not_yet_frozen"
+    }
+  },
+  "fixture_scope": "Frozen input/expected facts for concurrency S0/S1; future parsing-quality gold remains separate."
+}
