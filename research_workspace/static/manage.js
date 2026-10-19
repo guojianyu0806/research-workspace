@@ -447,6 +447,39 @@
       const counts = el("div", "rm-structure-counts");
       counts.append(el("span", "rm-badge", `${data.headings?.length || 0} 个标题`), el("span", "rm-badge", `${data.references?.length || 0} 条书目`), el("span", "rm-badge", `${data.citations?.length || 0} 处数字引用`));
       root.append(counts);
+      if (data.front_matter) {
+        const metadata = el("details", "rm-card rm-front-matter");
+        const front = data.front_matter;
+        metadata.append(el("summary", "", `作者与机构 · ${front.authors?.length || 0} 位作者候选 · ${front.audit?.unresolved_author_count || 0} 位机构未确认`));
+        metadata.append(el("p", "rm-muted", "从当前解析版本首页识别的候选，不自动修改目录作者。可分别核对姓名、机构和关联依据；未确认项不按邮箱域名补全。"));
+        const organizations = new Map((front.affiliations || []).map(item => [item.id, item]));
+        const methods = { explicit_affiliation_marker: "相同机构标记", inline_author_affiliation: "同一行明确列出姓名和机构", single_affiliation_in_author_block: "同一文本块的唯一机构", unique_nearby_column: "无歧义的相邻栏位" };
+        const list = el("ul", "rm-front-list");
+        (front.authors || []).forEach(author => {
+          const row = el("li", "rm-front-row");
+          const info = el("div", "rm-front-info");
+          info.append(el("strong", "", author.name), evidenceButton(author.evidence, "核对姓名原文"));
+          const relations = (front.relations || []).filter(item => item.author_id === author.id);
+          if (!relations.length) info.append(el("p", "rm-muted", "机构未确认 · 请核对原文"));
+          relations.forEach(relation => {
+            const organization = organizations.get(relation.affiliation_id);
+            if (!organization) return;
+            const affiliation = el("div", "rm-front-affiliation");
+            affiliation.append(el("span", "", organization.text), evidenceButton(organization.evidence, "核对机构原文"), el("span", "rm-muted", `关联候选：${methods[relation.method] || "需核对"}`));
+            info.append(affiliation);
+          });
+          row.append(info); list.append(row);
+        });
+        metadata.append(list);
+        if (!front.authors?.length) metadata.append(el("p", "rm-muted", "未识别到可靠作者候选。请在资料与版本中人工填写；无明确首页边界时不扫描正文猜测作者。"));
+        const linked = new Set((front.relations || []).map(item => item.affiliation_id));
+        (front.affiliations || []).filter(item => !linked.has(item.id)).forEach(item => {
+          const row = el("div", "rm-front-affiliation");
+          row.append(el("span", "", `未关联机构候选：${item.text}`), evidenceButton(item.evidence, "核对机构原文")); metadata.append(row);
+        });
+        metadata.append(el("p", "rm-muted", front.audit?.source_spans_valid ? "来源审核：所有候选的字符范围与已保存原文一致；这不等于已人工确认作者身份或任职关系。" : "来源审核未通过，请直接核对原文。"));
+        root.append(metadata);
+      }
       const layout = el("div", "rm-structure-layout");
       const outline = el("nav", "rm-card rm-outline");
       outline.setAttribute("aria-label", "论文标题树");

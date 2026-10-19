@@ -151,12 +151,17 @@ def extract_structure(blocks: list[dict], document_id: str, run_id: str) -> dict
             abstract = {"text": " ".join(line["text"] for line in collected),
                         "evidence": [_anchor(line["block"], line["start"], line["end"]) for line in collected],
                         "method": "abstract_heading_heuristic", "truncated": truncated}
-    unavailable = ["author_affiliations", "latex_formulas", "table_cell_structure", "figure_structure",
+    from .front_matter import extract_front_matter
+    front_matter = extract_front_matter(lines, _anchor)
+    unavailable = ["latex_formulas", "table_cell_structure", "figure_structure",
                    "complex_or_cross_line_author_year_alignment"]
+    if not front_matter["authors"] or front_matter["audit"]["unresolved_author_count"]:
+        unavailable.append("author_affiliations_not_fully_resolved")
     if not references:
         unavailable.append("numbered_references_not_detected")
-    return {"document_id": document_id, "run_id": run_id, "method": "heuristic", "version": "structure-v2-author-year",
+    return {"document_id": document_id, "run_id": run_id, "method": "heuristic", "version": "structure-v3-front-matter",
             "headings": headings, "references": references, "citations": citations, "abstract": abstract,
+            "front_matter": front_matter,
             "unavailable_fields": unavailable,
             "limitations": ["标题与参考文献使用规则识别，可能漏检或误判，需核对原文。",
                             "位置精度为已保存的文本块；字符偏移帮助定位块内内容，不声称精确字形坐标。",
