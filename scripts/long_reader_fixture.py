@@ -21,6 +21,7 @@ def main():
     before=main_snapshot();manifest=json.loads((DEFAULT/'manifest.json').read_text(encoding='utf-8'))
     names=['research_workspace/jobs.py','research_workspace/translation_pages.py','research_workspace/advanced_api.py',
            'research_workspace/static/index.html','scripts/long_reader_fixture.py','scripts/long_reader_smoke.cjs',
+           'scripts/freeze_long_reading.py','tests/fixtures/long_reading/20261020-v1/manifest.json',
            *[str(p.relative_to(ROOT)).replace('\\','/') for p in (ROOT/'research_workspace/static').glob('*.js')],
            *[str(p.relative_to(ROOT)).replace('\\','/') for p in (ROOT/'research_workspace/static').glob('*.css')]]
     hashes={name:sha256(ROOT/name) for name in names}

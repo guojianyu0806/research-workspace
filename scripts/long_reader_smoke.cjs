@@ -7,7 +7,7 @@ async function main(){
  const child=spawn(path.join(root,'.venv','Scripts','python.exe'),['-u',path.join(__dirname,'long_reader_fixture.py')],{cwd:root,windowsHide:true,stdio:['pipe','pipe','pipe']});
  let ready,browser,context,page,stderr='',failure;
  child.stderr.on('data',data=>stderr+=data);
- const report={checks:[],positions:[],requests:[],errors:[],external:[],scope:'Actual API and task/bilingual UI; saved content compatibility and synthetic capacity, no model quality or actual PDF reader claim.'};
+ const report={checks:[],positions:[],native_scrolls:[],reflows:[],requests:[],errors:[],external:[],scope:'Actual API and task/bilingual UI; saved content compatibility and synthetic capacity, no model quality or actual PDF reader claim.'};
  const check=(name,passed,detail)=>{report.checks.push({name,passed:Boolean(passed),...(detail===undefined?{}:{detail})});assert.ok(passed,name);};
  try{
   ready=await new Promise((resolve,reject)=>{let text='';const timer=setTimeout(()=>reject(Error('Fixture startup timeout')),30000);child.stdout.on('data',data=>{text+=data;const end=text.indexOf('\n');if(end<0)return;clearTimeout(timer);try{resolve(JSON.parse(text.slice(0,end)));}catch{reject(Error('Invalid fixture frame'));}});child.once('exit',code=>{clearTimeout(timer);reject(Error('Fixture exit '+code));});});
@@ -40,13 +40,21 @@ async function main(){
     if(!block)return false;
     return Math.abs(pane.scrollTop-block.offsetTop-fraction*block.getBoundingClientRect().height)<=pane.clientHeight*.1;
    }),{ordinal,fraction});
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  }
+  async function sample(ordinal,fraction){
+   return page.evaluate(({ordinal,fraction})=>Object.fromEntries(['source','translation'].map(side=>{
+    const pane=document.querySelector(`.rb-panel-${side} .rb-scroll`),block=pane.querySelector(`[data-ordinal="${ordinal}"]`);
+    return[side,{ordinal:Number(block.dataset.ordinal),dom:pane.querySelectorAll('.rb-block').length,
+     error:Math.abs(pane.scrollTop-block.offsetTop-fraction*block.getBoundingClientRect().height),height:pane.clientHeight}];
+   })),{ordinal,fraction});
   }
   async function jump(job,ordinal,side,fraction=.37){
    check(`${job.id} ${side} jump ${ordinal} accepted`,await page.evaluate(({id,side,fraction})=>testReader.syncTo(id,{side,fraction}),{id:job.block_ids[ordinal],side,fraction}));
    await settle(ordinal,fraction);
-   const value=await page.evaluate(ordinal=>Object.fromEntries(['source','translation'].map(side=>{const pane=document.querySelector(`.rb-panel-${side} .rb-scroll`),block=pane.querySelector(`[data-ordinal="${ordinal}"]`);return[side,{dom:pane.querySelectorAll('.rb-block').length,error:Math.abs(pane.scrollTop-block.offsetTop-.37*block.getBoundingClientRect().height),height:pane.clientHeight}];})),ordinal);
+   const value=await sample(ordinal,fraction);
    check(`${job.id} ${side} DOM bounded ${ordinal}`,value.source.dom<=120&&value.translation.dom<=120);
-   report.positions.push({case:job.id,side,ordinal,...value});
+   report.positions.push({case:job.id,side,ordinal,fraction,...value});
   }
   const long=ready.jobs.find(j=>j.id==='mixed-5000');await mount(long);
   const begin=await page.evaluate(()=>performance.now());
@@ -57,6 +65,7 @@ async function main(){
    // A native scroll event drives synchronization independently of syncTo.
    await page.evaluate(({ordinal,side})=>{const pane=document.querySelector(`.rb-panel-${side} .rb-scroll`),block=pane.querySelector(`[data-ordinal="${ordinal}"]`);pane.dispatchEvent(new Event('pointerdown'));pane.scrollTop=block.offsetTop+block.getBoundingClientRect().height*.61;},{ordinal,side});
    await settle(ordinal,.61);
+   report.native_scrolls.push({case:long.id,side,ordinal,fraction:.61,...await sample(ordinal,.61)});
    if(i%50===49)console.log(JSON.stringify({phase:'bidirectional-jumps',side,completed:i+1}));
   }
   const end=await page.evaluate(()=>performance.now());
@@ -65,9 +74,11 @@ async function main(){
   await jump(long,899,'source');
   await page.evaluate(()=>{for(const text of document.querySelectorAll('.rb-text')){text.style.fontSize='21px';text.style.lineHeight='1.7';}});await settle(899,.37);
   check('font reflow retains same block and fraction',true);
+  report.reflows.push({kind:'font',ordinal:899,fraction:.37,...await sample(899,.37)});
   await page.evaluate(async()=>{const block=document.querySelector('.rb-panel-source [data-ordinal="899"]'),image=new Image(),url=URL.createObjectURL(new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="gray"/></svg>'],{type:'image/svg+xml'}));image.src=url;image.style.width='100%';image.style.height='600px';block.append(image);try{await image.decode();}finally{URL.revokeObjectURL(url);}});
   await settle(899,.37);check('late image reflow retains same block and fraction',true);
-  for(const width of [1024,760,390,1440]){await page.setViewportSize({width,height:1000});await settle(899,.37);check(`viewport ${width} anchor retained`,true);}
+  report.reflows.push({kind:'image',ordinal:899,fraction:.37,...await sample(899,.37)});
+  for(const width of [1024,760,390,1440]){await page.setViewportSize({width,height:1000});await settle(899,.37);check(`viewport ${width} anchor retained`,true);report.reflows.push({kind:'viewport-'+width,ordinal:899,fraction:.37,...await sample(899,.37)});if(width===390)await page.screenshot({path:path.join(ready.output,'long-mobile.png')});}
   await page.locator('.rb-panel-source [data-ordinal="899"] .rb-evidence').evaluate(button=>button.click());
   check('source callback exact block',await page.evaluate(id=>testEvidence.at(-1)?.block_id===id,long.block_ids[899]));
   await page.evaluate(()=>testTasks.resume());await settle(899,.37);check('source return restores reading anchor',true);
