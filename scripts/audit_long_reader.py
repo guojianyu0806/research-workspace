@@ -9,7 +9,7 @@ import sys
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def audit(directory,regression):
+def audit(directory,regression,expected_tests=1154):
     directory=Path(directory).resolve();regression=Path(regression).resolve()
     if not directory.is_relative_to(ROOT/'artifacts/long-reader'):raise ValueError('Expected long-reader artifacts')
     report=json.loads((directory/'report.json').read_text(encoding='utf-8'))
@@ -37,12 +37,15 @@ def audit(directory,regression):
     for name,value in completion['runtime_sha256'].items():check('current runtime '+name,hashlib.sha256((ROOT/name).read_bytes()).hexdigest()==value)
     summary=json.loads((regression/'summary.json').read_text(encoding='utf-8'))
     manifest=json.loads((regression/'manifest.json').read_text(encoding='utf-8'))
-    check('full 1154-test regression',summary['passed'] and summary['tests']==1154 and not(summary['failures'] or summary['errors'] or summary['skipped']))
+    expected_tests=int(expected_tests)
+    check(f'full {expected_tests}-test regression',expected_tests>=1154 and summary['passed'] and summary['tests']==manifest['expected_tests']==expected_tests
+          and all(summary['checks'].values()) and not(summary['failures'] or summary['errors'] or summary['skipped']))
     for name,value in manifest['source_sha256'].items():check('regression fingerprint '+name,hashlib.sha256((ROOT/name).read_bytes()).hexdigest()==value)
     path=directory/('independent-audit-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'.json')
-    with path.open('x',encoding='utf-8') as stream:json.dump(dict(passed=True,checks=checks,regression=str(regression.relative_to(ROOT)),
+    with path.open('x',encoding='utf-8') as stream:json.dump(dict(passed=True,checks=checks,regression=str(regression.relative_to(ROOT)),expected_tests=expected_tests,
+        verification_script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         scope='Measured DOM positions, protocol behavior and current fingerprints; no actual PDF reader/translation quality claim.'),stream,ensure_ascii=False,indent=2)
     print(json.dumps(dict(output=str(path),passed=True,checks=len(checks))),flush=True)
 
 
-if __name__=='__main__':audit(sys.argv[1],sys.argv[2])
+if __name__=='__main__':audit(*sys.argv[1:])
