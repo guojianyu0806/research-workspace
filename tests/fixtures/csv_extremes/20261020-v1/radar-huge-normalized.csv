@@ -1,0 +1,4 @@
+metric,A,B
+one,-1e308,1e308
+two,0,0
+three,1e308,-1e308

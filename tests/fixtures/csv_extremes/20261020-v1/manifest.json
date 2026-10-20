@@ -1,0 +1,1038 @@
+{
+  "version": "csv-extremes-20261020-v1",
+  "created_at": "2026-10-20T00:05:58.348711+00:00",
+  "scope": "Synthetic boundary contracts; not measured experiments or official competition data.",
+  "cases": [
+    {
+      "id": "utf8",
+      "encoding": "utf-8",
+      "headers": [
+        "标签",
+        "数值"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "标签",
+        "y": [
+          "数值"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "utf8",
+        "units": {}
+      },
+      "expected": {},
+      "path": "utf8.csv",
+      "sha256": "960d3a611402ef9ec6578958118c539292a25fc1bda53035fbd736e3c8840177",
+      "bytes": 26
+    },
+    {
+      "id": "bom",
+      "encoding": "utf-8-sig",
+      "headers": [
+        "标签",
+        "数值"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "标签",
+        "y": [
+          "数值"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "bom",
+        "units": {}
+      },
+      "expected": {},
+      "path": "bom.csv",
+      "sha256": "f35e5125bc555e30c06e0fc76c4bb44959e2b79e21bdd7f0b61f399184b81d05",
+      "bytes": 29
+    },
+    {
+      "id": "gb18030",
+      "encoding": "gb18030",
+      "headers": [
+        "标签",
+        "数值"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "标签",
+        "y": [
+          "数值"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "gb18030",
+        "units": {}
+      },
+      "expected": {},
+      "path": "gb18030.csv",
+      "sha256": "f45dd604c35dd364e7d08bb58ef2b37bde60aad80d2f683c3416322aead29cd5",
+      "bytes": 20
+    },
+    {
+      "id": "quoted-comma",
+      "encoding": "utf-8",
+      "headers": [
+        "label",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "label",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "quoted-comma",
+        "units": {}
+      },
+      "expected": {},
+      "path": "quoted-comma.csv",
+      "sha256": "7a44ed0c70bb067d1abf8d023b015faeffdd68f3181e9a67fe9c61b499999751",
+      "bytes": 24
+    },
+    {
+      "id": "quoted-newline",
+      "encoding": "utf-8",
+      "headers": [
+        "label",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "label",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "quoted-newline",
+        "units": {}
+      },
+      "expected": {},
+      "path": "quoted-newline.csv",
+      "sha256": "25d6663eda69b9d781f6ad57174d8bff5d22c2293bbd2d18cef5869d236a6f50",
+      "bytes": 37
+    },
+    {
+      "id": "duplicate-header",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "x"
+      ],
+      "row_count": 2,
+      "import_accepted": false,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "x"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "duplicate-header",
+        "units": {}
+      },
+      "expected": {},
+      "path": "duplicate-header.csv",
+      "sha256": "34985a6fa59feed2b6d580bd5ecdf0c1ea1c158c74165a27ebe28bef7255b690",
+      "bytes": 12
+    },
+    {
+      "id": "missing-reject",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 3,
+      "import_accepted": true,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "missing-reject",
+        "units": {}
+      },
+      "expected": {},
+      "path": "missing-reject.csv",
+      "sha256": "a45d48166aa6f754fabb5ef9c57cd691936f67dcc9b46403f9c584c04390d53b",
+      "bytes": 19
+    },
+    {
+      "id": "missing-drop",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 3,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "drop",
+        "title": "missing-drop",
+        "units": {}
+      },
+      "expected": {
+        "labels": [
+          "a",
+          "c"
+        ],
+        "values": [
+          [
+            1,
+            3
+          ]
+        ],
+        "dropped": [
+          3
+        ]
+      },
+      "path": "missing-drop.csv",
+      "sha256": "a45d48166aa6f754fabb5ef9c57cd691936f67dcc9b46403f9c584c04390d53b",
+      "bytes": 19
+    },
+    {
+      "id": "nonnumeric",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "nonnumeric",
+        "units": {}
+      },
+      "expected": {},
+      "path": "nonnumeric.csv",
+      "sha256": "50393842e6ff9d5ab2aa1c1b4b280092ef614ce082fc6dcdb2c5d20cd5756ec8",
+      "bytes": 18
+    },
+    {
+      "id": "negative",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "bar",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "negative",
+        "units": {}
+      },
+      "expected": {
+        "values": [
+          [
+            -9,
+            -1
+          ]
+        ]
+      },
+      "path": "negative.csv",
+      "sha256": "59e99eb9a5b6e487a0a936f389ce34aa2a39898fb3442531f4b1e4ee5a408921",
+      "bytes": 18
+    },
+    {
+      "id": "all-zero",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "bar",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "all-zero",
+        "units": {}
+      },
+      "expected": {
+        "values": [
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "path": "all-zero.csv",
+      "sha256": "88ec18279420667e512ca0096750fd8aaca5f09095f03f985a97367e15e1734a",
+      "bytes": 16
+    },
+    {
+      "id": "constant-normalized",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": true,
+        "missing": "reject",
+        "title": "constant-normalized",
+        "units": {}
+      },
+      "expected": {
+        "values": [
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "path": "constant-normalized.csv",
+      "sha256": "e2fa46fe5db9601eaa0870c782915d9dc8921a501ef303ff9575e7e1d6bc212a",
+      "bytes": 16
+    },
+    {
+      "id": "huge-normalized",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 3,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": true,
+        "missing": "reject",
+        "title": "huge-normalized",
+        "units": {}
+      },
+      "expected": {
+        "values": [
+          [
+            0,
+            0.5,
+            1
+          ]
+        ]
+      },
+      "path": "huge-normalized.csv",
+      "sha256": "637523e72d10a26976d6bbc47a6e0ea4f0b845979b31271fd99b8a2244129273",
+      "bytes": 29
+    },
+    {
+      "id": "huge-raw",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 3,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "huge-raw",
+        "units": {}
+      },
+      "expected": {
+        "values": [
+          [
+            -1e+308,
+            0,
+            1e+308
+          ]
+        ]
+      },
+      "path": "huge-raw.csv",
+      "sha256": "637523e72d10a26976d6bbc47a6e0ea4f0b845979b31271fd99b8a2244129273",
+      "bytes": 29
+    },
+    {
+      "id": "subnormal-normalized",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 3,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": true,
+        "missing": "reject",
+        "title": "subnormal-normalized",
+        "units": {}
+      },
+      "expected": {
+        "values": [
+          [
+            0,
+            0.5,
+            1
+          ]
+        ]
+      },
+      "path": "subnormal-normalized.csv",
+      "sha256": "c675c1cc92cdf8e6c52460b023600ee2a76f7ac2b74f083f93e0edef4bef61ef",
+      "bytes": 30
+    },
+    {
+      "id": "long-chinese",
+      "encoding": "utf-8",
+      "headers": [
+        "模型完整名称",
+        "第1个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+        "第2个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+        "第3个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+        "第4个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+        "第5个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+        "第6个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明"
+      ],
+      "row_count": 3,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "模型完整名称",
+        "y": [
+          "第1个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+          "第2个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+          "第3个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+          "第4个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+          "第5个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明",
+          "第6个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "这是完整图表标题用于检查换行与边界而非裁切这是完整图表标题用于检查换行与边界而非裁切这是完整图表标题用于检查换行与边界而非裁切这是完整图表标题用于检查换行与边界而非裁切这是完整图表标题用于检查换行与边界而非裁切这是完整图表标题用于检查换行与边界而非裁切这是完整图表标题用于检查换行与边界而非裁切",
+        "units": {
+          "第1个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明": "每秒处理样本数量和完整单位说明每秒处理样本数量和完整单位说明",
+          "第2个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明": "每秒处理样本数量和完整单位说明每秒处理样本数量和完整单位说明",
+          "第3个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明": "每秒处理样本数量和完整单位说明每秒处理样本数量和完整单位说明",
+          "第4个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明": "每秒处理样本数量和完整单位说明每秒处理样本数量和完整单位说明",
+          "第5个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明": "每秒处理样本数量和完整单位说明每秒处理样本数量和完整单位说明",
+          "第6个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明个数值系列与完整实验说明": "每秒处理样本数量和完整单位说明每秒处理样本数量和完整单位说明"
+        }
+      },
+      "expected": {},
+      "path": "long-chinese.csv",
+      "sha256": "91798c596b63d41fe60470177275da3bbdb96d9078d82ed3b682352c312312d0",
+      "bytes": 2467
+    },
+    {
+      "id": "six-series",
+      "encoding": "utf-8",
+      "headers": [
+        "label",
+        "series0",
+        "series1",
+        "series2",
+        "series3",
+        "series4",
+        "series5"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "bar",
+        "x": "label",
+        "y": [
+          "series0",
+          "series1",
+          "series2",
+          "series3",
+          "series4",
+          "series5"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "six-series",
+        "units": {}
+      },
+      "expected": {},
+      "path": "six-series.csv",
+      "sha256": "8d707f77d0f01e6ae35b846181d9dfdbad5b15e1aabd3ac8226918d07bba1b46",
+      "bytes": 82
+    },
+    {
+      "id": "rows-500",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 500,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "rows-500",
+        "units": {}
+      },
+      "expected": {},
+      "path": "rows-500.csv",
+      "sha256": "dd6456642f4ee7f0b01d47200a2f6088ee5058cd68adb28d8de469fefb4af4c9",
+      "bytes": 3788
+    },
+    {
+      "id": "rows-501",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 501,
+      "import_accepted": true,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "rows-501",
+        "units": {}
+      },
+      "expected": {},
+      "path": "rows-501.csv",
+      "sha256": "34c47d5fbb8549295a7c10e656b1e9fcee5fe0ceda3f27d54acba54488707cd4",
+      "bytes": 3796
+    },
+    {
+      "id": "rows-10000",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 10000,
+      "import_accepted": true,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "rows-10000",
+        "units": {}
+      },
+      "expected": {},
+      "path": "rows-10000.csv",
+      "sha256": "5dc0bfb868bbf023f8d9652c363e9b70916fa53c814120167302de37775e636e",
+      "bytes": 97788
+    },
+    {
+      "id": "rows-10001",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 10001,
+      "import_accepted": false,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "rows-10001",
+        "units": {}
+      },
+      "expected": {},
+      "path": "rows-10001.csv",
+      "sha256": "64b868e14a7b018bd892683715cab7684344c4e89b6f748e8225bcd29e401071",
+      "bytes": 97800
+    },
+    {
+      "id": "columns-60",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c23",
+        "c24",
+        "c25",
+        "c26",
+        "c27",
+        "c28",
+        "c29",
+        "c30",
+        "c31",
+        "c32",
+        "c33",
+        "c34",
+        "c35",
+        "c36",
+        "c37",
+        "c38",
+        "c39",
+        "c40",
+        "c41",
+        "c42",
+        "c43",
+        "c44",
+        "c45",
+        "c46",
+        "c47",
+        "c48",
+        "c49",
+        "c50",
+        "c51",
+        "c52",
+        "c53",
+        "c54",
+        "c55",
+        "c56",
+        "c57",
+        "c58",
+        "c59"
+      ],
+      "row_count": 1,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "c1",
+          "c2",
+          "c3",
+          "c4",
+          "c5",
+          "c6"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "columns-60",
+        "units": {}
+      },
+      "expected": {},
+      "path": "columns-60.csv",
+      "sha256": "889c7d956509d8bfdfdf2c46b5d292301f293b63f8fd9292a3f82d75fe4df1af",
+      "bytes": 349
+    },
+    {
+      "id": "columns-61",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c23",
+        "c24",
+        "c25",
+        "c26",
+        "c27",
+        "c28",
+        "c29",
+        "c30",
+        "c31",
+        "c32",
+        "c33",
+        "c34",
+        "c35",
+        "c36",
+        "c37",
+        "c38",
+        "c39",
+        "c40",
+        "c41",
+        "c42",
+        "c43",
+        "c44",
+        "c45",
+        "c46",
+        "c47",
+        "c48",
+        "c49",
+        "c50",
+        "c51",
+        "c52",
+        "c53",
+        "c54",
+        "c55",
+        "c56",
+        "c57",
+        "c58",
+        "c59",
+        "c60"
+      ],
+      "row_count": 1,
+      "import_accepted": false,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "c1",
+          "c2",
+          "c3",
+          "c4",
+          "c5",
+          "c6"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "columns-61",
+        "units": {}
+      },
+      "expected": {},
+      "path": "columns-61.csv",
+      "sha256": "861c640c566eb02fabd1140a13285ea294ac85c407dea46b83d3500c68565d7c",
+      "bytes": 355
+    },
+    {
+      "id": "markup-as-data",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "<img src=x onerror=alert(1)> & no execution",
+        "units": {}
+      },
+      "expected": {},
+      "path": "markup-as-data.csv",
+      "sha256": "b3b8b176bef4354399b28d90a23bcc5c5e39e671065d6e7a5c2b5bc544fb5996",
+      "bytes": 43
+    },
+    {
+      "id": "unclosed-quote",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": false,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "unclosed-quote",
+        "units": {}
+      },
+      "expected": {},
+      "path": "unclosed-quote.csv",
+      "sha256": "42c61469b17d9efeb9885b0a6464eb0b35f0879ea809c977bd76f9273f10f61c",
+      "bytes": 22
+    },
+    {
+      "id": "nonfinite",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 4,
+      "import_accepted": true,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "nonfinite",
+        "units": {}
+      },
+      "expected": {},
+      "path": "nonfinite.csv",
+      "sha256": "8b154b3a54564ed947558263099d20abb2430bae9e05cb54dfd287075d968ed1",
+      "bytes": 37
+    },
+    {
+      "id": "nul-control",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 1,
+      "import_accepted": false,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "nul-control",
+        "units": {}
+      },
+      "expected": {},
+      "path": "nul-control.csv",
+      "sha256": "8d11e0393fa170e7a70b45250fd98e37a075afaa5209f7a8bbb900826ad3fae7",
+      "bytes": 14
+    },
+    {
+      "id": "radar-huge-normalized",
+      "encoding": "utf-8",
+      "headers": [
+        "metric",
+        "A",
+        "B"
+      ],
+      "row_count": 3,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "radar3d",
+        "x": "metric",
+        "y": [
+          "A",
+          "B"
+        ],
+        "normalize": true,
+        "missing": "reject",
+        "title": "radar-huge-normalized",
+        "units": {}
+      },
+      "expected": {
+        "values": [
+          [
+            0,
+            0.5,
+            1
+          ],
+          [
+            1,
+            0.5,
+            0
+          ]
+        ]
+      },
+      "path": "radar-huge-normalized.csv",
+      "sha256": "a013bcf43c271e768dca6d44b7964c5552dd693b45b1373c2077bf4508d656ed",
+      "bytes": 55
+    },
+    {
+      "id": "subnormal-raw",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": true,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "reject",
+        "title": "subnormal-raw",
+        "units": {}
+      },
+      "expected": {
+        "values": [
+          [
+            0,
+            5e-324
+          ]
+        ]
+      },
+      "path": "subnormal-raw.csv",
+      "sha256": "4dcfe35652b86831a56c10ec75407c79abc727843eb55fb95076c6b8621defa2",
+      "bytes": 21
+    },
+    {
+      "id": "all-missing",
+      "encoding": "utf-8",
+      "headers": [
+        "x",
+        "value"
+      ],
+      "row_count": 2,
+      "import_accepted": true,
+      "chart_accepted": false,
+      "options": {
+        "kind": "line",
+        "x": "x",
+        "y": [
+          "value"
+        ],
+        "normalize": false,
+        "missing": "drop",
+        "title": "all-missing",
+        "units": {}
+      },
+      "expected": {},
+      "path": "all-missing.csv",
+      "sha256": "b31644003cdb5101960a45c5c6622a2f5fc0481e0a12c2ac6e87e15405a072e6",
+      "bytes": 14
+    }
+  ],
+  "browser_widths": [
+    1440,
+    1024,
+    760,
+    390
+  ],
+  "gates": {
+    "no_silent_row_truncation": true,
+    "max_import_rows": 10000,
+    "max_plot_rows": 500,
+    "finite_numeric_geometry": true,
+    "full_text_accessible": true,
+    "min_font_css_px": 14,
+    "standalone_export_identical": true,
+    "cross_account_access": false
+  }
+}

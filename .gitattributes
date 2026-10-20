@@ -8,3 +8,4 @@
 *.ps1 text eol=crlf
 *.pdf binary
 tests/fixtures/local_acceptance/** -text whitespace=cr-at-eol
+tests/fixtures/csv_extremes/** -text whitespace=cr-at-eol
