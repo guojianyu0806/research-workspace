@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import math
+from .chart_numeric import unit_fraction
 
 
 def radar_geometry(labels, series, *, normalize, yaw, elevation):
@@ -23,7 +24,7 @@ def radar_geometry(labels, series, *, normalize, yaw, elevation):
     for si, item in enumerate(series):
         item['original_values'] = list(item['values'])
         if normalize:
-            item['values'] = [(v-a['original_min'])/(a['original_max']-a['original_min'])
+            item['values'] = [unit_fraction(v, a['original_min'], a['original_max'])
                               if not a['constant'] else .5 for v, a in zip(item['values'], axes)]
         item['z'] = 1.4 * si / (len(series)-1)
         item['points_3d'] = [{'x': v*math.cos(a['angle_radians']), 'y': v*math.sin(a['angle_radians']), 'z': item['z']}

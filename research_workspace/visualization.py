@@ -8,10 +8,12 @@ import io
 import inspect
 import json
 import math
+import re
 from pathlib import Path
 from uuid import uuid4
 
 from .library import Library, _now
+from .chart_numeric import unit_fraction, finite_lerp
 
 COLORS = ['#165f63', '#b96928', '#547ab0', '#9871a5', '#749353', '#b45263']
 
@@ -40,9 +42,9 @@ def render_chart(spec: dict) -> str:
     low, high = min([0] + values), max([0] + values)
     if low == high:
         high = low + 1
-    y = lambda v: bottom - (v - low) / (high - low) * (bottom - top)
+    y = lambda v: bottom - unit_fraction(v, low, high) * (bottom - top)
     for step in range(6):
-        value = low + (high - low) * step / 5
+        value = finite_lerp(low, high, step / 5)
         sy = y(value)
         parts.extend([f'<path d="M{left} {sy:.2f}H{right}" stroke="#dce4e9"/>',
                       f'<text x="80" y="{sy + 4:.2f}" text-anchor="end" font-size="12">{value:.4g}</text>'])
@@ -119,7 +121,9 @@ def describe_series(labels,series,kind):
             elif all(b>=a for a,b in zip(values,values[1:])):trend='沿CSV记录顺序单调不降'
             elif all(b<=a for a,b in zip(values,values[1:])):trend='沿CSV记录顺序单调不升'
             else:trend='沿CSV记录顺序有升降波动'
-            descriptions.append(f'{s["name"]}{trend}，首条{values[0]:.6g}、末条{values[-1]:.6g}，首末差{values[-1]-values[0]:.6g}')
+            delta = values[-1]-values[0]
+            difference = f'首末差{delta:.6g}' if math.isfinite(delta) else '首末差超出浮点表示范围，请核对首末原值'
+            descriptions.append(f'{s["name"]}{trend}，首条{values[0]:.6g}、末条{values[-1]:.6g}，{difference}')
         elif kind=='bar':
             high=max(values);low=min(values)
             def categories(value):
@@ -152,7 +156,14 @@ class DataStudio:
                 text = content.decode(encoding)
             except UnicodeDecodeError as exc:
                 raise ValueError('CSV编码应为UTF-8或GB18030。') from exc
-        reader = csv.reader(io.StringIO(text))
+        if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', text):
+            raise ValueError('CSV包含不支持的控制字符或无效Unicode字符。')
+        def records():
+            try:
+                yield from csv.reader(io.StringIO(text), strict=True)
+            except csv.Error as exc:
+                raise ValueError('CSV引号或字段格式无效，请检查源文件。') from exc
+        reader = iter(records())
         try:
             headers = [h.strip() for h in next(reader)]
         except StopIteration as exc:
@@ -227,10 +238,11 @@ class DataStudio:
         for index, name in enumerate(y):
             values = [r[1][index] for r in valid]
             original_min, original_max = min(values), max(values)
+            original_values = list(values)
             if normalize and kind != 'radar3d':
-                delta = original_max-original_min
-                values = [(v-original_min)/delta if delta else 0 for v in values]
+                values = [unit_fraction(v, original_min, original_max) for v in values]
             series.append({'name':name,'unit':str(units.get(name,''))[:40], 'values':values,
+                           'original_values':original_values,
                            'original_min':original_min,'original_max':original_max})
         spec = {'kind':kind, 'title':str(title or f'{x} 与 {", ".join(y)}')[:150], 'x':x,
                 'labels':[r[0] for r in valid], 'series':series}
@@ -253,7 +265,7 @@ class DataStudio:
             if description:item['caption']+='按图中绘图数值描述：'+description+'。顺序或类别关系不自动构成时间趋势。'
         item['caption_version']='descriptive-v2'
         with self.library._connection() as db:
-            db.execute('INSERT INTO charts VALUES(?,?,?,?)',(item['id'],dataset_id,item['created_at'],json.dumps(item,ensure_ascii=False)))
+            db.execute('INSERT INTO charts VALUES(?,?,?,?)',(item['id'],dataset_id,item['created_at'],json.dumps(item,ensure_ascii=False,allow_nan=False)))
         return item
 
     def get_chart(self, chart_id):
@@ -270,7 +282,7 @@ class DataStudio:
         return ('# Standalone Python 3; standard library only.\n'
                 '# Fixed rendering template: no user-supplied Python is executed.\n'
                 'import html\nimport math\nimport json\nfrom pathlib import Path\n'
-                +f'COLORS = {COLORS!r}\n\n'+inspect.getsource(render_radar)+'\n'+renderer+'\n'
+                +f'COLORS = {COLORS!r}\n\n'+inspect.getsource(unit_fraction)+'\n'+inspect.getsource(finite_lerp)+'\n'+inspect.getsource(render_radar)+'\n'+renderer+'\n'
                 f'spec = json.loads({json.dumps(spec,ensure_ascii=False)!r})\n'
                 'with Path("chart.svg").open("x", encoding="utf-8") as stream:\n'
                 '    stream.write(render_chart(spec))\n')
