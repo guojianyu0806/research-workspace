@@ -346,8 +346,10 @@
     const params = new URLSearchParams();
     if (runId) params.set("run_id", runId);
     const suffix = params.size ? `?${params}` : "";
-    api(`/api/documents/${encodeURIComponent(id)}/pages/${page}${suffix}`).then((result) => {
+    let pageGeometry = null;
+    const metadata = api(`/api/documents/${encodeURIComponent(id)}/pages/${page}${suffix}`).then((result) => {
       if (request !== pageRequest) return;
+      pageGeometry = result;
       state.pageHasText = Boolean(result.text?.trim() || result.blocks?.some((block) => block.text?.trim()));
       renderReaderHeading();
     }).catch(() => {
@@ -355,6 +357,7 @@
       if (request === pageRequest) state.pageHasText = null;
     });
 
+    let scale = 2;
     const image = new Image();
     image.onload = () => {
       if (request !== pageRequest) return;
@@ -362,6 +365,7 @@
       ui.pageImage.alt = `${documentName(doc)}，第 ${page} 页原文`;
       ui.pageImage.width = image.naturalWidth;
       ui.pageImage.height = image.naturalHeight;
+      ui.pageImage.dataset.renderScale = String(scale);
       ui.pageLoading.hidden = true;
       ui.paperPage.hidden = false;
       renderHighlight();
@@ -375,11 +379,28 @@
         });
       }
     };
-    image.onerror = () => {
+    image.onerror = async () => {
       if (request !== pageRequest) return;
+      // Text availability must not delay ordinary image reading. Geometry is
+      // needed only after a failed large render, with a bounded wait if pending.
+      if (!pageGeometry) {
+        let timeout;
+        await Promise.race([metadata, new Promise(resolve => { timeout = setTimeout(resolve, 250); })]);
+        clearTimeout(timeout);
+        if (request !== pageRequest) return;
+      }
+      const area = Number(pageGeometry?.width) * Number(pageGeometry?.height);
+      if (Number.isFinite(area) && area > 0 && area * scale * scale > 16000000) {
+        const next = [1, .5, .25].find(value => value < scale && area * value * value <= 16000000);
+        if (next !== undefined) {
+          scale = next;
+          image.src = `/api/documents/${encodeURIComponent(id)}/pages/${page}/image?scale=${scale}`;
+          return;
+        }
+        ui.pageErrorText.textContent = "原页尺寸超过本机安全渲染上限，降低至最小倍率仍无法打开；原PDF和已提取内容保留。";
+      } else ui.pageErrorText.textContent = "这一页暂时无法打开。请确认服务可用后重试。";
       ui.pageLoading.hidden = true;
       ui.pageError.hidden = false;
-      ui.pageErrorText.textContent = "这一页暂时无法打开。请确认服务可用后重试。";
     };
     image.src = `/api/documents/${encodeURIComponent(id)}/pages/${page}/image?scale=2`;
   }

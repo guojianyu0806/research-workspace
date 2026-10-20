@@ -256,7 +256,7 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
         return library.get_page(document_id, page, run_id=run_id)
 
     @app.get("/api/documents/{document_id}/pages/{page}/image")
-    def page_image(document_id: str, page: int, scale: float = Query(1.25, ge=0.5, le=2.0),library:Library=Depends(library_for)):
+    def page_image(document_id: str, page: int, scale: float = Query(1.25, ge=0.25, le=2.0),library:Library=Depends(library_for)):
         return Response(library.render_page(document_id, page, scale=scale), media_type="image/png")
 
     @app.get("/api/search")
