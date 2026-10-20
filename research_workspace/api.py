@@ -29,7 +29,7 @@ from .advanced_api import build_router, library_for
 from .intelligence import IntelligenceService
 from .model_settings import router as model_settings_router
 from .enhancements_api import router as enhancements_router
-from .worker_process import stop_worker
+from .worker_process import stop_worker,start_worker_process
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
@@ -109,14 +109,14 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
                     if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_jobs'").fetchone():
                         if db.execute("SELECT 1 FROM research_jobs WHERE status IN ('queued','running') LIMIT 1").fetchone():
                             raise ValueError('请先等待或取消正在排队和执行的研究任务，再更换模型配置。')
-            if activity_worker is not None and activity_worker.poll() is None:
+            if activity_worker is not None:
                 stop_worker(activity_worker)
             os.environ['RESEARCH_MODEL_BASE_URL'] = 'https://api.deepseek.com'
             os.environ['RESEARCH_MODEL'] = model
             os.environ['RESEARCH_MODEL_API_KEY'] = api_key
             if start_worker:
                 with (directory / 'worker.log').open('ab') as output:
-                    activity_worker = subprocess.Popen(
+                    activity_worker = start_worker_process(
                         [sys.executable,'-m','research_workspace.activity_worker','--data-dir',str(directory),'--parent-pid',str(os.getpid())],
                         cwd=PROJECT_ROOT,stdin=subprocess.DEVNULL,stdout=output,stderr=output,
                         creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0,
@@ -128,12 +128,12 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
         logfile = None
         if start_worker:
             logfile = (directory / "worker.log").open("ab")
-            worker = subprocess.Popen(
+            worker = start_worker_process(
                 [sys.executable, "-m", "research_workspace.worker", "--data-dir", str(directory), "--parent-pid", str(os.getpid())],
                 cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL, stdout=logfile, stderr=logfile,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
-            activity_worker = subprocess.Popen(
+            activity_worker = start_worker_process(
                 [sys.executable, '-m', 'research_workspace.activity_worker', '--data-dir', str(directory), '--parent-pid', str(os.getpid())],
                 cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL, stdout=logfile, stderr=logfile,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
@@ -141,11 +141,15 @@ def create_app(data_dir: Path | str | None = None, *, start_worker: bool = True,
         try:
             yield
         finally:
-            for child in (worker, activity_worker):
-                if child is not None and child.poll() is None:
-                    stop_worker(child)
-            if logfile:
-                logfile.close()
+            failures=[]
+            try:
+                for child in (worker, activity_worker):
+                    if child is not None:
+                        try:stop_worker(child)
+                        except Exception as error:failures.append(error)
+            finally:
+                if logfile:logfile.close()
+            if failures:raise RuntimeError('后台worker未全部确认退出。') from failures[0]
 
     app = FastAPI(title="研序 Research Workspace", version=__version__, lifespan=lifespan,
                   docs_url=None, redoc_url=None)

@@ -9,6 +9,27 @@ import threading
 import time
 
 
+def start_worker_process(command,**kwargs):
+    """Retain worker ancestry while launchers are still alive on Windows."""
+    process=subprocess.Popen(command,**kwargs)
+    if os.name!='nt':return process
+    from .process_lifecycle import WindowsProcessTree
+    tree=WindowsProcessTree(process);lock=threading.RLock();stop=threading.Event()
+    process._workspace_tree=tree;process._workspace_tree_lock=lock;process._workspace_watch_stop=stop
+    process._workspace_watch_error=None
+    with lock:tree.refresh()
+    def observe():
+        while not stop.wait(.02):
+            try:
+                with lock:tree.refresh()
+                process._workspace_watch_error=None
+            except OSError as error:
+                process._workspace_watch_error=error
+    thread=threading.Thread(target=observe,name='worker-tree-observer',daemon=True)
+    process._workspace_watch_thread=thread;thread.start()
+    return process
+
+
 def guard_parent(parent_pid):
     """Exit this worker if its owning API dies, preserving committed checkpoints.
 
@@ -49,15 +70,27 @@ def guard_parent(parent_pid):
 
 
 def stop_worker(process):
-    if process is None or process.poll() is not None:
+    if process is None:
         return
     if os.name=='nt':
-        result=subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],
-            stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW,timeout=10,check=False)
-        if result.returncode and process.poll() is None:
-            raise RuntimeError('后台worker进程树未能停止，请保留当前配置并重试。')
+        from .process_lifecycle import WindowsProcessTree
+        tree=getattr(process,'_workspace_tree',None)
+        if tree is not None:
+            event=getattr(process,'_workspace_watch_stop',None)
+            if event is not None:
+                event.set();process._workspace_watch_thread.join(timeout=5)
+                if process._workspace_watch_thread.is_alive():raise RuntimeError('后台worker进程观察未结束，未确认关闭成功。')
+        else:tree=WindowsProcessTree(process)
+        try:tree.stop(timeout=5)
+        except Exception:
+            # Preserve original ownership for an explicit retry; do not discard
+            # identities while some original process might still be running.
+            process._workspace_tree=tree
+            raise
+        else:
+            tree.close();process._workspace_tree=None
     else:
+        if process.poll() is not None:return
         process.terminate()
     try:
         process.wait(timeout=5)

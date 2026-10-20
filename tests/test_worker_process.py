@@ -10,7 +10,7 @@ import signal
 
 import pytest
 
-from research_workspace.worker_process import stop_worker
+from research_workspace.worker_process import stop_worker,start_worker_process
 from scripts.local_process_stats import descendants
 from scripts.retained_process_tree import OwnedTree
 
@@ -43,7 +43,9 @@ def test_service_worker_startup_uses_null_stdin_and_stops_actual_tree(tmp_path,m
             assert all(p.poll() is None for p in launched)
     try:
         asyncio.run(run())
-        assert not any(tree.living() for tree in trees)
+        reports=[tree.report() for tree in trees]
+        (tmp_path/'observed-shutdown.json').write_text(json.dumps(reports,indent=2))
+        assert not any(p['running'] for tree in reports for p in tree['observed']),reports
         with WorkerLock(tmp_path),WorkerLock(tmp_path/'.activity'):
             pass
     finally:
@@ -54,6 +56,35 @@ def test_stop_already_exited_worker_is_noop():
     proc=subprocess.Popen([sys.executable,'-c','pass'],stdin=subprocess.DEVNULL)
     proc.wait(timeout=10)
     stop_worker(proc)
+
+
+@pytest.mark.skipif(os.name!='nt',reason='Windows process objects and launcher lifecycle')
+def test_stop_exited_managed_launcher_reaps_original_child_before_returning(tmp_path):
+    child_ready=tmp_path/'child.json';release=tmp_path/'release'
+    child_code="import os,sys,time;from pathlib import Path;Path(sys.argv[1]).write_text(str(os.getpid()));time.sleep(120)"
+    code="""
+import subprocess,sys,time
+from pathlib import Path
+subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+while not Path(sys.argv[3]).exists():time.sleep(.02)
+"""
+    proc=start_worker_process([sys.executable,'-c',code,child_code,str(child_ready),str(release)],
+                          stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    tree=OwnedTree(proc)
+    try:
+        deadline=time.monotonic()+15
+        while not child_ready.exists() and time.monotonic()<deadline:
+            tree.refresh();time.sleep(.02)
+        assert child_ready.exists();tree.refresh()
+        assert int(child_ready.read_text()) in tree.observed
+        release.write_text('exit')
+        proc.wait(timeout=10)
+        assert tree.living(), 'Original child must still be running after launcher exits'
+        stop_worker(proc)
+        report=tree.report();(tmp_path/'orphan-reaped.json').write_text(json.dumps(report,indent=2))
+        assert not any(p['running'] for p in report['observed']),report
+    finally:
+        tree.close()
 
 
 def test_process_tree_discovery_is_bounded_and_transitive():

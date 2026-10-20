@@ -21,6 +21,7 @@ def main(*, input_directory=DEFAULT, manifest_loader=verify, family='csv-extreme
     before=main_snapshot();manifest=manifest_loader()
     names=['research_workspace/visualization.py','research_workspace/chart_numeric.py','research_workspace/chart_layout.py',
            'research_workspace/radar.py','research_workspace/figure_layout.py','research_workspace/advanced_api.py',
+           'research_workspace/api.py','research_workspace/worker_process.py','research_workspace/process_lifecycle.py',
            'research_workspace/static/research.js','research_workspace/static/research.css']
     hashes={name:sha256(ROOT/name) for name in names}
     for name in ('RESEARCH_MODEL_BASE_URL','RESEARCH_MODEL','RESEARCH_MODEL_API_KEY'):os.environ.pop(name,None)

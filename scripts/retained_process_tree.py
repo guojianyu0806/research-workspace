@@ -59,7 +59,9 @@ class ObservedProcess:
             return
         if os.name == 'nt':
             if not self.kernel.TerminateProcess(self.handle, 15):
-                raise OSError(self.ctypes.get_last_error())
+                error=self.ctypes.get_last_error()
+                if error!=5 or self.kernel.WaitForSingleObject(self.handle,5000)!=0:
+                    raise OSError(error)
         else:
             os.kill(self.pid, signal.SIGTERM)
 
