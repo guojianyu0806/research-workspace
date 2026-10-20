@@ -27,6 +27,15 @@
   };
   const json = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const pathFor = (id) => `/api/documents/${encodeURIComponent(id)}`;
+  // CSS zoom never raises the raster allocation. Old page APIs without geometry
+  // retain their previous scale; the server still enforces its pixel limit.
+  function previewScaleFor(page, preferred) {
+    if (page.width == null || page.height == null) return preferred;
+    const width = page.width, height = page.height, area = width * height;
+    if (typeof width !== "number" || typeof height !== "number" || !Number.isFinite(area)
+        || width <= 0 || height <= 0) return null;
+    return [preferred, 1, .5, .25].find(scale => scale <= preferred && area * scale * scale <= 16000000) ?? null;
+  }
   const statusName = (value) => ({ queued: "等待解析", running: "解析中", completed: "解析完成", partial: "部分内容可用", needs_ocr: "尚无可提取文字", failed: "解析失败", cancelled: "已取消" })[value] || "尚未解析";
 
   function mount(container, options = {}) {
@@ -683,8 +692,13 @@
       });
       function loadImage() {
         loaded = false; image.hidden = true; highlight.hidden = true; retry.hidden = true;
+        const scale = previewScaleFor(result, 1.5);
+        if (scale === null) {
+          status.textContent = "原页尺寸超出安全预览范围，正文和原PDF仍然保留。";
+          return;
+        }
         status.textContent = "正在加载原页大图…";
-        image.src = `${pathFor(doc.id)}/pages/${result.page}/image?scale=1.5`;
+        image.src = `${pathFor(doc.id)}/pages/${result.page}/image?scale=${scale}`;
       }
       zoom.addEventListener("change", () => resize(true));
       const observer = new ResizeObserver(() => resize());
@@ -774,7 +788,8 @@
           highlight.style.left = `${box[0] * 100}%`; highlight.style.top = `${box[1] * 100}%`;
           highlight.style.width = `${(box[2] - box[0]) * 100}%`; highlight.style.height = `${(box[3] - box[1]) * 100}%`;
         }
-        status.textContent = failed ? "缩略图加载失败，可重试或使用“定位原文”。" : !loaded ? "正在加载原页缩略图…" : !activeBlock ? "本页暂无可定位文本块。" : valid ? "点击小图就地放大，关闭后继续读这段文字。" : "此文本块缺少可靠坐标，请放大原页核对。";
+        status.textContent = previewScaleFor(result, .5) === null ? "原页尺寸超出安全预览范围，正文和原PDF仍然保留。"
+          : failed ? "缩略图加载失败，可重试或使用“定位原文”。" : !loaded ? "正在加载原页缩略图…" : !activeBlock ? "本页暂无可定位文本块。" : valid ? "点击小图就地放大，关闭后继续读这段文字。" : "此文本块缺少可靠坐标，请放大原页核对。";
       }
       image.addEventListener("load", () => {
         loaded = true; failed = false; retry.hidden = true; image.hidden = false;
@@ -785,8 +800,14 @@
         loaded = false; failed = true; retry.hidden = false; image.hidden = true; imageButton.hidden = true; renderHighlight();
       });
       function loadImage() {
+        const scale = previewScaleFor(result, .5);
+        if (scale === null) {
+          loaded = false; failed = true; image.hidden = true; imageButton.hidden = true; retry.hidden = true;
+          renderHighlight();
+          return;
+        }
         loaded = false; failed = false; retry.hidden = true; image.hidden = false; imageButton.hidden = false; renderHighlight();
-        image.src = `${pathFor(doc.id)}/pages/${result.page}/image?scale=0.5`;
+        image.src = `${pathFor(doc.id)}/pages/${result.page}/image?scale=${scale}`;
       }
       loadImage();
       return {
