@@ -157,6 +157,32 @@ def test_nonstandard_json_reports_index_error_without_altering_saved_result(stor
     assert original_records(store,job_id)==before
 
 
+def test_old_clean_index_is_rebuilt_without_modifying_history(store):
+    blocks=synthetic_blocks(1);blocks[0]['bbox']=[.2,.2,.2,.5];job_id=make_job(store,blocks)
+    first=store.translation_page(job_id);before=original_records(store,job_id)
+    with store.library._connection() as db:
+        db.execute("UPDATE translation_page_meta SET dirty=0,index_version='translation-pages-v1' WHERE job_id=?",(job_id,))
+        db.execute('UPDATE translation_page_blocks SET anchor_valid=1 WHERE job_id=?',(job_id,))
+    current=store.translation_page(job_id)
+    assert current['revision']>first['revision'] and current['index_version']=='translation-pages-v2'
+    assert not current['record_metadata'][0]['anchor_valid'] and current['blocks']==blocks
+    with pytest.raises(TranslationRevisionChanged):store.translation_page(job_id,revision=first['revision'])
+    assert original_records(store,job_id)==before
+
+
+def test_existing_v1_schema_migrates_under_concurrent_open(store):
+    blocks=synthetic_blocks(2);job_id=make_job(store,blocks)
+    first=store.translation_page(job_id);before=original_records(store,job_id)
+    # Remove only the newly introduced derived-column to reproduce a v1 database.
+    with store.library._connection() as db:
+        db.execute('ALTER TABLE translation_page_meta DROP COLUMN index_version')
+    def reopen(_):return JobStore(store.library).translation_page(job_id)
+    with ThreadPoolExecutor(max_workers=5) as pool:pages=list(pool.map(reopen,range(10)))
+    assert all(page['blocks']==blocks and page['revision']>first['revision'] for page in pages)
+    assert len({page['revision'] for page in pages})==1
+    assert original_records(store,job_id)==before
+
+
 def test_parallel_first_reads_and_unrelated_updates_keep_one_consistent_revision(store):
     blocks=synthetic_blocks(5000);job_id=make_job(store,blocks)
     other=make_job(store,[])

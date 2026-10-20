@@ -2,6 +2,7 @@
 import json
 import math
 
+INDEX_VERSION='translation-pages-v2'
 
 class TranslationRevisionChanged(Exception):
     pass
@@ -11,7 +12,7 @@ def create_schema(db):
     db.executescript('''
         CREATE TABLE IF NOT EXISTS translation_page_meta(
           job_id TEXT PRIMARY KEY,revision INTEGER NOT NULL DEFAULT 1,dirty INTEGER NOT NULL DEFAULT 1,
-          source_kind TEXT,total INTEGER NOT NULL DEFAULT 0,header TEXT,error TEXT);
+          source_kind TEXT,total INTEGER NOT NULL DEFAULT 0,header TEXT,error TEXT,index_version TEXT);
         CREATE TABLE IF NOT EXISTS translation_page_blocks(
           job_id TEXT,ordinal INTEGER,block_id TEXT,payload TEXT,source_chars INTEGER,translation_chars INTEGER,
           source_newlines INTEGER,translation_newlines INTEGER,anchor_valid INTEGER,missing_translation INTEGER,
@@ -35,6 +36,12 @@ def create_schema(db):
           DELETE FROM translation_page_blocks WHERE job_id=OLD.id;
         END;
     ''')
+    # Existing workspaces can retain v1 derived rows across a code upgrade.
+    # Migrate only this rebuildable index, never historical model responses.
+    if 'index_version' not in {row['name'] for row in db.execute('PRAGMA table_info(translation_page_meta)')}:
+        db.execute('BEGIN IMMEDIATE')
+        if 'index_version' not in {row['name'] for row in db.execute('PRAGMA table_info(translation_page_meta)')}:
+            db.execute('ALTER TABLE translation_page_meta ADD COLUMN index_version TEXT')
 
 
 def header_row(db,job_id):
@@ -60,7 +67,9 @@ def _state(value,header):
 def ensure_index(db,job):
     if job['kind']!='translate':raise ValueError('此任务不是文献分段翻译。')
     job_id=job['id'];meta=db.execute('SELECT * FROM translation_page_meta WHERE job_id=?',(job_id,)).fetchone()
-    if meta is not None and not meta['dirty']:return dict(meta)
+    if meta is not None and not meta['dirty'] and meta['index_version']==INDEX_VERSION:return dict(meta)
+    if meta is not None and meta['index_version']!=INDEX_VERSION:
+        db.execute('UPDATE translation_page_meta SET dirty=1,revision=revision+1 WHERE job_id=?',(job_id,))
     db.execute('INSERT OR IGNORE INTO translation_page_meta(job_id) VALUES(?)',(job_id,))
     payload=json.loads(job['payload']);source_kind='items';error=None
     header={k:payload[k] for k in ('document_id','run_id','target_language') if k in payload}
@@ -97,8 +106,8 @@ def ensure_index(db,job):
         db.execute('INSERT INTO translation_page_blocks VALUES(?,?,?,?,?,?,?,?,?,?)',
                    (job_id,ordinal,block_id,raw,*_state(value,header)))
         total+=1
-    db.execute('UPDATE translation_page_meta SET dirty=0,source_kind=?,total=?,header=?,error=? WHERE job_id=?',
-               (source_kind,total,json.dumps(header,ensure_ascii=False),error,job_id))
+    db.execute('UPDATE translation_page_meta SET dirty=0,source_kind=?,total=?,header=?,error=?,index_version=? WHERE job_id=?',
+               (source_kind,total,json.dumps(header,ensure_ascii=False),error,INDEX_VERSION,job_id))
     return dict(db.execute('SELECT * FROM translation_page_meta WHERE job_id=?',(job_id,)).fetchone())
 
 
@@ -111,7 +120,7 @@ def summary(db,job):
                 source_kind=meta['source_kind'],invalid_block_count=invalid,missing_translation_count=missing,
                 duplicate_id_count=len(duplicates),ambiguous_anchor_count=sum(r['count'] for r in duplicates),
                 duplicate_block_ids=[r['block_id'] for r in duplicates[:20]],
-                index_error=meta['error'],paging_supported=True)
+                index_error=meta['error'],index_version=meta['index_version'],paging_supported=True)
 
 
 def page(library,job_id,*,offset=0,limit=100,revision=None,block_id=None,include_index=False):
