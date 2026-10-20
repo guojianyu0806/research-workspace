@@ -7,7 +7,7 @@ from statistics import median
 from .formula_geometry import _parse, Unsupported, union, pymupdf_flags
 from .native_math_fonts import recover_glyph_names
 
-VERSION = 'native-matrix-geometry-v1'
+VERSION = 'native-matrix-geometry-v2'
 
 
 def extract_native_matrices(page):
@@ -78,14 +78,17 @@ def extract_native_matrices(page):
                 for c,entry in enumerate(row):
                     value=_parse(entry,[])['latex']
                     cells.append({'row':r,'column':c,'latex':value,'original_text':''.join(g.get('native_text',g['char']) for g in sorted(entry,key=lambda g:g['box'][0])),
-                        'raw_bbox':union(entry),'needs_review':True})
+                        'raw_bbox':union(entry),'needs_review':True,
+                        'glyph_mapping_audit':[g['glyph_mapping'] for g in entry if g.get('glyph_mapping')]})
             latex=r'\begin{bmatrix}'+r' \\ '.join(' & '.join(c['latex'] for c in cells if c['row']==r) for r in range(len(columns)))+r'\end{bmatrix}'
         except Unsupported as error:latex=None;reason=str(error)
         result.append({'raw_bbox':box,'latex':latex,'row_count':len(columns) if latex else None,
             'column_count':len(columns[0]) if latex else None,'cells':cells,
             'original_text':page.get_text('text',clip=box).strip(),'method':VERSION,
             'status':'transcribed_needs_review' if latex else 'unsupported_geometry','needs_review':True,
-            'conversion':reason or 'complete_rectangular_entries','bracket_audit':[g['glyph_mapping'] for g in own if g.get('glyph_mapping')],
+            'conversion':reason or 'complete_rectangular_entries',
+            'bracket_audit':[g['glyph_mapping'] for g in own if g.get('glyph_mapping') and g['char'] in '⎡⎣⎤⎦⎢⎥'],
+            'glyph_mapping_audit':[g['glyph_mapping'] for g in own if g.get('glyph_mapping')],
             'glyph_count':len(own)})
     return result,{'version':VERSION,'status':'analyzed','model_calls':0,'matrix_count':len(result),
         'rejected_delimiters':rejected,'truncated':len(pairs)>16,'glyph_mapping_count':len(mappings)}

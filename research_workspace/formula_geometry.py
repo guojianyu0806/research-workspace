@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from statistics import median
 
-VERSION='native-math-geometry-v2'
+VERSION='native-math-geometry-v3'
 SYMBOLS=dict(zip('αβγδεζηθικλμνξοπρστυφχψω',
     ['\\'+s for s in ['alpha','beta','gamma','delta','epsilon','zeta','eta','theta','iota','kappa','lambda','mu','nu','xi','omicron','pi','rho','sigma','tau','upsilon','phi','chi','psi','omega']]))
 SYMBOLS.update({'∈':r'\in','∉':r'\notin','≤':r'\leq','≥':r'\geq','≠':r'\neq','≈':r'\approx',

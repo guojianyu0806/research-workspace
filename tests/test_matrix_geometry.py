@@ -17,7 +17,13 @@ def test_real_permutation_and_scripted_matrix():
         assert [[c['latex'] for c in matrix['cells'] if c['row']==r] for r in range(3)]==[['0','1','0'],['0','0','1'],['1','0','0']]
         assert len(matrix['bracket_audit'])==4 and audit['model_calls']==0
         values,_=extract_native_matrices(pdf[461]);matrix=next(m for m in values if m['column_count']==3)
-        assert [c['latex'].replace(' ','') for c in matrix['cells']]==[r'\varphi_{'+str(r)+str(c)+'}' for r in range(1,4) for c in range(1,4)]
+        assert [c['latex'].replace(' ','') for c in matrix['cells']]==[r'\phi_{'+str(r)+str(c)+'}' for r in range(1,4) for c in range(1,4)]
+        assert len(matrix['bracket_audit'])==4
+        for cell in matrix['cells']:
+            assert cell['original_text'].startswith('ϕ')
+            assert len(cell['glyph_mapping_audit'])==1
+            mapping=cell['glyph_mapping_audit'][0]
+            assert mapping['glyph_name']=='phi' and mapping['native_text']=='ϕ' and mapping['mapped_text']=='φ'
         nested,_=extract_native_matrices(pdf[61])
         assert any(m['latex'] is None and m['conversion']=='nested_matrix_requires_review' for m in nested)
     assert SOURCE.read_bytes()==original
@@ -46,4 +52,8 @@ def test_matrix_entries_keep_document_run_and_rotated_regions(tmp_path,monkeypat
         for item in [matrix,*matrix['cells']]:
             e=item['evidence'];assert e['document_id']==doc['id'] and e['run_id']==run and e['page']==1
             assert e['bbox']==item['bbox'] and all(0<=x<=1 for x in e['bbox'])
+            if item in matrix['cells'] and r'\phi' in item['latex']:
+                assert item['glyph_mapping_audit'][0]['glyph_name']=='phi'
+    exported=__import__('json').loads(LayoutService(lib).export_page_structure(doc['id'],1,run))
+    assert exported['matrices']==result['matrices']
     assert lib.get_page(doc['id'],1,run)==before and lib._source_path(doc['id']).read_bytes()==data

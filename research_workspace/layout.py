@@ -17,7 +17,7 @@ import pymupdf
 from .library import Library, LibraryError, MUPDF_LOCK
 
 
-LAYOUT_VERSION = 'local-layout-v14-initial-equations'
+LAYOUT_VERSION = 'local-layout-v15-verified-phi'
 _AFFILIATION = re.compile(r'\b(?:university|institute|department|laboratory|college|school|research center)\b|大学|学院|研究所|实验室',re.I)
 _SECTION = re.compile(r'^(?:\d+(?:\.\d+){0,3}\.?\s+\S|abstract\b|introduction\b|conclusions?\b|references\b|摘要|结论|参考文献)',re.I)
 _APPENDIX = re.compile(r'^(?:appendi(?:x|ces)(?:\s|:|$)|附录)',re.I)

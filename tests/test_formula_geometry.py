@@ -40,7 +40,7 @@ def test_fraction_positions_and_versioned_evidence(tmp_path, monkeypatch, rotati
     run = doc['current_run']['id']
     saved_before = lib.get_page(doc['id'], 1, run)
     result = LayoutService(lib).analyze_page(doc['id'], 1, run)
-    formulas = [f for f in result['formulas'] if f.get('method') == 'native-math-geometry-v2']
+    formulas = [f for f in result['formulas'] if f.get('method') == 'native-math-geometry-v3']
     assert len(formulas) == 1
     formula = formulas[0]
     assert compact(formula['latex']) == r'x=\frac{a+b}{c}'
@@ -113,15 +113,18 @@ def test_aligned_rows_recover_completely_while_mixed_prose_remains_unsupported()
         values = extract_display_formulas(pdf[31])[0]
         continued = [f for f in values if f['conversion'] == 'complete_aligned_rows_with_glyph_coverage']
         assert len(continued) == 1 and len(continued[0]['source_rows']) == 2
-        assert compact(continued[0]['latex']) == r'\begin{aligned}y&=f[x,\boldsymbol{\varphi}]\\&=\varphi_{0}+\varphi_{1}x.\end{aligned}'
+        assert compact(continued[0]['latex']) == r'\begin{aligned}y&=f[x,\boldsymbol{\phi}]\\&=\phi_{0}+\phi_{1}x.\end{aligned}'
         values = extract_display_formulas(pdf[38])[0]
         prose = [f for f in values if f['conversion'] == 'prose_mixed_with_math']
         assert prose and all(f['latex'] is None for f in prose)
         values = extract_display_formulas(pdf[32])[0]
         assert len(values)==1
-        assert compact(values[0]['latex']) == r'\begin{aligned}L[\boldsymbol{\varphi}]&=\sum_{i=1}^{I}(f[x_{i},\boldsymbol{\varphi}]-y_{i})^{2}\\&=\sum_{i=1}^{I}(\varphi_{0}+\varphi_{1}x_{i}-y_{i})^{2}.\end{aligned}'
+        assert compact(values[0]['latex']) == r'\begin{aligned}L[\boldsymbol{\phi}]&=\sum_{i=1}^{I}(f[x_{i},\boldsymbol{\phi}]-y_{i})^{2}\\&=\sum_{i=1}^{I}(\phi_{0}+\phi_{1}x_{i}-y_{i})^{2}.\end{aligned}'
         mappings=[g['glyph_mapping'] for g in values[0]['glyphs'] if g.get('glyph_mapping')]
-        assert len(mappings)==2 and all(m['glyph_name']=='summationdisplay' and m['native_text']=='X' and m['mapped_text']=='∑' for m in mappings)
+        sums=[m for m in mappings if m['glyph_name']=='summationdisplay']
+        phis=[m for m in mappings if m['glyph_name']=='phi']
+        assert len(sums)==2 and all(m['native_text']=='X' and m['mapped_text']=='∑' for m in sums)
+        assert len(phis)==4 and all(m['native_text']=='ϕ' and m['mapped_text']=='φ' for m in phis)
         assert not any(compact(f['latex'])=='i=1' for f in values)
         values,audit=extract_display_formulas(pdf[71])
         product=next(f for f in values if f['latex'] and r'\prod' in f['latex'])

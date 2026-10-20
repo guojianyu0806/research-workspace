@@ -6,6 +6,7 @@ Never infer a summation symbol just because a font is called CMEX.
 """
 from collections import defaultdict
 import hashlib
+import re
 import pymupdf
 
 NAMES={
@@ -17,12 +18,25 @@ NAMES={
     'bracketrighttp':'⎤','bracketrightbt':'⎦','bracketrightex':'⎥',
 }
 
+# TeX OML distinguishes phi (slot 0x1e) from varphi (0x27). Some PDF
+# extractors label the actual CMMI/CMMIB glyph named phi as U+03D5. Retain
+# that observation in the audit, and normalize only a trace-verified glyph.
+# This is deliberately not a global Unicode substitution or a guessed map
+# for every Greek variant / every font that happens to contain "CM".
+OML_NAMES={'phi':'φ'}
+
+
+def _names_for_font(name):
+    if re.fullmatch(r'CMMI(?:B)?\d+',name):return OML_NAMES
+    if 'CMEX' in name:return NAMES
+    return {}
+
 
 def recover_glyph_names(page,glyphs):
     resources=defaultdict(list)
     for row in page.get_fonts(full=True):
         name=row[3].split('+')[-1]
-        if 'CMEX' in name:resources[name].append(row[0])
+        if _names_for_font(name):resources[name].append(row[0])
     fonts={};audit=[]
     for name,refs in resources.items():
         refs=set(refs)
@@ -47,9 +61,10 @@ def recover_glyph_names(page,glyphs):
         if not 0<=gid<font.glyph_count:continue
         try:name=pymupdf.mupdf.fz_get_glyph_name2(font.this,gid)
         except (RuntimeError,ValueError):continue
-        if name not in NAMES:continue
-        g['native_text']=g['char'];g['char']=NAMES[name]
+        names=_names_for_font(g['font'])
+        if name not in names:continue
+        g['native_text']=g['char'];g['char']=names[name]
         g['glyph_mapping']={'method':'embedded_font_glyph_name','glyph_id':gid,'glyph_name':name,
-            'font_xref':ref,'font_sha256':digest,'native_text':g['native_text'],'mapped_text':g['char']}
+            'font_name':g['font'],'font_xref':ref,'font_sha256':digest,'native_text':g['native_text'],'mapped_text':g['char']}
         audit.append(g['glyph_mapping'])
     return audit
