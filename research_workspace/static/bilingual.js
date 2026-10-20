@@ -265,8 +265,14 @@
     if (document.fonts?.addEventListener) listen(document.fonts, "loadingdone", schedule);
     document.fonts?.ready.then(() => { if (alive()) schedule(); });
     const controller = {
-      getPosition() { return destroyed ? null : suspended ? suspendedAnchor : total ? { ...(lastAnchor || position(lastSide)), side: lastSide,
-        source_key: options.sourceKey, ambiguous_block_id: identity.get((lastAnchor || position(lastSide)).block_id) === -1 } : null; },
+      getPosition() {
+        if (destroyed || !total) return null;
+        if (suspended) return suspendedAnchor;
+        const anchor = lastAnchor || position(lastSide);
+        return { ...anchor, side: lastSide, source_key: options.sourceKey,
+          ambiguous_block_id: typeof anchor.block_id !== "string" || !anchor.block_id
+            || identity.get(anchor.block_id) !== anchor.ordinal };
+      },
       syncTo(blockId, settings = {}) {
         if (!alive() || !total) return false;
         if (settings.source_key !== undefined && settings.source_key !== options.sourceKey) return false;

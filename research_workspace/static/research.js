@@ -803,8 +803,18 @@
     });
     for (const [control, action] of [[cancel, "cancel"], [retry, "retry"]]) life.on(control, "click", async () => {
       const id = state.selectedJob?.id; if (!id) return; control.disabled = true;
-      try { const response = await life.api(`/api/research/tasks/${encodeURIComponent(id)}/${action}`, { method: "POST" }); if (life.alive && state.selectedJob?.id === id) { displayJob(response.job); schedulePoll(); } }
-      catch (error) { life.show(error.message, true); }
+      const paged = state.selectedJob?.kind === "translate";
+      let applied = false;
+      try {
+        let response = await life.api(`/api/research/tasks/${encodeURIComponent(id)}/${action}${paged ? "?include_result=false" : ""}`, { method: "POST" });
+        applied = true;
+        if (!life.alive || state.selectedJob?.id !== id) return;
+        // Keep the existing reading controller until its new summary/page is
+        // ready. Older servers returning full bodies retain compatibility.
+        if (paged && response.job?.items_deferred) response = await readTask(id);
+        if (life.alive && state.selectedJob?.id === id) { displayJob(response.job); schedulePoll(); }
+      }
+      catch (error) { life.show(applied ? `${action === "cancel" ? "取消" : "重试"}请求已提交，进度读取失败：${error.message} 可刷新后继续查看。` : error.message, true); }
       finally { if (life.alive) control.disabled = action === "retry" ? !state.configured : Boolean(state.selectedJob?.cancel_requested); }
     });
     life.own(() => state.bilingual?.destroy());

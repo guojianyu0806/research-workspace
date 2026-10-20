@@ -131,11 +131,11 @@ class JobStore:
         with self.library._connection() as db:
             db.execute('INSERT INTO research_job_events(job_id,stage,message,created_at) VALUES(?,?,?,?)',(job_id,stage,message,_now()))
 
-    def cancel(self,job_id):
+    def cancel(self,job_id,*,include_result=True):
         with self.library._connection() as db:
             self._exists(db,job_id)
             db.execute("UPDATE research_jobs SET cancel_requested=1,status=CASE WHEN status='queued' THEN 'cancelled' ELSE status END,updated_at=? WHERE id=? AND status IN ('queued','running')",(_now(),job_id))
-        return self.get(job_id)
+        return self.get(job_id,include_result=include_result)
 
     @staticmethod
     def _exists(db,job_id):
@@ -157,7 +157,7 @@ class JobStore:
             count = db.execute("SELECT COUNT(*) FROM research_job_items WHERE job_id=? AND item_key NOT IN ('review_validation','grounding_validation') AND item_key NOT LIKE 'diagnostic:%'",(job_id,)).fetchone()[0]
             db.execute('UPDATE research_jobs SET progress=?,total=?,updated_at=? WHERE id=?',(count,total,_now(),job_id))
 
-    def retry(self,job_id):
+    def retry(self,job_id,*,include_result=True):
         with self.library._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             self._exists(db,job_id)
@@ -172,7 +172,7 @@ class JobStore:
         if changed:
             self.clear_stream(job_id)
             self.event(job_id,'retry','已按用户操作重新排队；保留成功检查点。中断时未保存的调用可能已计费，重试可能产生重复费用。')
-        return self.get(job_id)
+        return self.get(job_id,include_result=include_result)
 
     def recover(self):
         message = '执行进程已中断，外部模型调用结果未知。已保存的翻译进度保留；任务不会自动重放。明确重试后才继续，未保存的调用可能产生重复费用。'

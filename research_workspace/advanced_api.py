@@ -484,13 +484,13 @@ def build_router():
         except TranslationRevisionChanged as error:raise HTTPException(409,str(error)) from None
 
     @router.post('/research/tasks/{job_id}/cancel')
-    def cancel(job_id:str,library:Library=Depends(library_for)):
-        return {'job':JobStore(library).cancel(job_id)}
+    def cancel(job_id:str,include_result:bool=True,library:Library=Depends(library_for)):
+        return {'job':JobStore(library).cancel(job_id,include_result=include_result)}
 
     @router.post('/research/tasks/{job_id}/retry')
-    def retry(job_id:str,request:Request,library:Library=Depends(library_for)):
+    def retry(job_id:str,request:Request,include_result:bool=True,library:Library=Depends(library_for)):
         with request.app.state.model_settings_lock:
-            return {'job':JobStore(library).retry(job_id)}
+            return {'job':JobStore(library).retry(job_id,include_result=include_result)}
 
     @router.get('/research/tasks/{job_id}/events')
     async def events(job_id:str,request:Request,library:Library=Depends(library_for)):
