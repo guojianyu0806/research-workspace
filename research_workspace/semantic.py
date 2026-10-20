@@ -138,14 +138,22 @@ class SemanticIndex:
                     if not row:raise ValueError('Not cached')
                     vectors[cache_key]=self._vector(np.frombuffer(row[0],dtype='<f4'),dimension);hits+=1
                 except ValueError:pending.append((cache_key,text))
-            for start in range(0,len(pending),32):
+            # Reuse exact encoder inputs within this request, while persisting
+            # each source key separately. This never merges documents or users.
+            keys_by_text={}
+            for key,text in pending:keys_by_text.setdefault(text,[]).append(key)
+            # Dynamic padding should not make short headers pay for long prose.
+            unique_pending=sorted(keys_by_text,key=lambda text:(len(text),text))
+            for start in range(0,len(unique_pending),32):
                 await IntelligenceService._check_cancel(check_cancel)
-                batch=pending[start:start+32]
-                values=await asyncio.to_thread(self.encoder,[text for _,text in batch],False)
+                batch=unique_pending[start:start+32]
+                values=await asyncio.to_thread(self.encoder,batch,False)
                 if len(values)!=len(batch):raise ValueError('Embedding batch count mismatch')
-                for (cache_key,text),value in zip(batch,values):
-                    vector=self._vector(value,dimension);vectors[cache_key]=vector
-                    db.execute('INSERT OR REPLACE INTO vectors VALUES(?,?)',(cache_key,vector.astype('<f4').tobytes()))
+                for text,value in zip(batch,values):
+                    vector=self._vector(value,dimension)
+                    for cache_key in keys_by_text[text]:
+                        vectors[cache_key]=vector
+                        db.execute('INSERT OR REPLACE INTO vectors VALUES(?,?)',(cache_key,vector.astype('<f4').tobytes()))
                 db.commit()
         await IntelligenceService._check_cancel(check_cancel)
         values=await asyncio.to_thread(self.encoder,queries[:13],True)
@@ -160,6 +168,8 @@ class SemanticIndex:
         ordered=sorted(ranked.values(),key=lambda b:(-b.score,b.document_id,b.page,b.block_id))
         return ordered[:limit],{**status,'status':'applied','network_used':False,'cache_hits':hits,
             'new_chunks':len(pending),'source_blocks':len(blocks),'chunks':len(entries),
+            'encoded_texts':len(unique_pending),'reused_identical_chunks':len(pending)-len(unique_pending),
+            'batch_policy':'exact-text-dedup-length-buckets-v1',
             'query_count':len(values),'truncated_blocks':sum(len(b.text)>5800 for b in blocks),
             'max_source_chars_per_block':5800,'language_policy':'English corpus; bilingual expansion supplies English queries',
             'selection_policy':'RRF ranking signal only; facts must still quote original canonical evidence'}

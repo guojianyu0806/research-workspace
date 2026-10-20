@@ -37,6 +37,42 @@ def test_semantic_cache_is_version_text_model_and_workspace_bound(tmp_path):
     _,sixth=asyncio.run(changed.rank(['dog'],blocks));assert sixth['cache_hits']==0
 
 
+def test_repeated_text_shares_computation_but_preserves_every_source_and_workspace(tmp_path):
+    encoder=Encoder();lib=Library(tmp_path/'alice')
+    texts=['canine '+('x'*((i%9+1)*60)) for i in range(90)]+['canine','CANINE',' canine']
+    blocks=[block(str(i),text) for i,text in enumerate(texts)]
+    index=SemanticIndex(lib,encoder=encoder,fingerprint='bounded',dimensions=2)
+    ranked,meta=asyncio.run(index.rank(['dog'],blocks,limit=100))
+    encoded=[text for batch,query in encoder.calls if not query for text in batch]
+    assert set(encoded)==set(texts) and len(encoded)==len(set(texts))
+    assert [len(text) for text in encoded]==sorted(len(text) for text in encoded)
+    assert meta['new_chunks']==len(texts) and meta['encoded_texts']==len(set(texts))
+    assert meta['reused_identical_chunks']==len(texts)-len(set(texts))
+    assert {item.block_id for item in ranked}=={b.block_id for b in blocks}
+    assert all(item.text==texts[int(item.block_id)] for item in ranked)
+    import sqlite3
+    with sqlite3.connect(lib.data_dir/'semantic.sqlite3') as db:assert db.execute('SELECT COUNT(*) FROM vectors').fetchone()[0]==len(texts)
+    encoder.calls.clear();_,again=asyncio.run(index.rank(['dog'],blocks))
+    assert again['cache_hits']==len(texts) and again['encoded_texts']==0
+    assert all(query for _,query in encoder.calls)
+    encoder.calls.clear()
+    other=SemanticIndex(Library(tmp_path/'bob'),encoder=encoder,fingerprint='bounded',dimensions=2)
+    _,fresh=asyncio.run(other.rank(['dog'],blocks))
+    assert fresh['cache_hits']==0 and fresh['encoded_texts']==len(set(texts))
+
+
+def test_cancel_after_an_encoding_batch_keeps_only_real_completed_source_records(tmp_path):
+    encoder=Encoder();lib=Library(tmp_path)
+    index=SemanticIndex(lib,encoder=encoder,fingerprint='cancel',dimensions=2)
+    blocks=[block(str(i),'canine '+str(i)) for i in range(70)]
+    def cancel():
+        if encoder.calls:raise TaskCancelled()
+    with pytest.raises(TaskCancelled):asyncio.run(index.rank(['dog'],blocks,check_cancel=cancel))
+    import sqlite3
+    with sqlite3.connect(lib.data_dir/'semantic.sqlite3') as db:assert db.execute('SELECT COUNT(*) FROM vectors').fetchone()[0]==32
+    assert len(encoder.calls)==1 and not encoder.calls[0][1]
+
+
 @pytest.mark.parametrize('vector',[[float('nan'),0],[0,0],[1,2,3]])
 def test_invalid_vectors_are_never_cached_or_used(tmp_path,vector):
     index=SemanticIndex(Library(tmp_path),encoder=lambda texts,query:[vector]*len(texts),fingerprint='invalid',dimensions=2)
