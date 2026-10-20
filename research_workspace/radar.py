@@ -36,6 +36,9 @@ def radar_geometry(labels, series, *, normalize, yaw, elevation):
 
 
 def render_radar(spec, colors):
+    if spec.get('layout_version') == 'radar-v2':
+        from .figure_layout import render_radar_v2
+        return render_radar_v2(spec, colors)
     geo, series = spec['radar'], spec['series']
     yaw, elevation = [math.radians(geo['camera'][key]) for key in ('yaw_degrees', 'elevation_degrees')]
 

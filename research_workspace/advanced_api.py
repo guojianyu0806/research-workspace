@@ -118,6 +118,7 @@ class ChartInput(StrictInput):
 class DiagramInput(StrictInput):
     nodes: list[dict] = Field(min_length=1,max_length=30)
     edges: list[dict] = Field(default_factory=list,max_length=100)
+    layout_version: Literal['diagram-v1','diagram-v2'] = 'diagram-v2'
 
 
 def task_markdown(job):
@@ -626,11 +627,14 @@ def build_router():
 
     @router.post('/diagrams')
     def diagram(body:DiagramInput,library:Library=Depends(library_for)):
-        return Response(render_diagram(body.nodes,body.edges),media_type='image/svg+xml')
+        return Response(render_diagram(body.nodes,body.edges,layout_version=body.layout_version),media_type='image/svg+xml')
 
     @router.post('/diagrams/script')
     def diagram_script(body:DiagramInput,library:Library=Depends(library_for)):
-        return {'filename':'architecture.py','script':export_diagram_script(body.nodes,body.edges),
+        from .figure_layout import diagram_layout
+        layout=diagram_layout(body.nodes,body.edges) if body.layout_version=='diagram-v2' else None
+        return {'filename':'architecture.py','script':export_diagram_script(body.nodes,body.edges,layout_version=body.layout_version),
+            'layout_version':body.layout_version,'layout':{'width':layout['width'],'height':layout['height']} if layout else {'width':1000},
             'runtime':'Python 3 standard library','output':'architecture.svg','overwrite_existing':False}
 
     return router

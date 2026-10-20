@@ -78,7 +78,7 @@ def render_chart(spec: dict) -> str:
     return ''.join(parts)
 
 
-def render_diagram(nodes: list[dict], edges: list[dict]) -> str:
+def _render_diagram_v1(nodes: list[dict], edges: list[dict]) -> str:
     if not 1 <= len(nodes) <= 30 or len(edges) > 100:
         raise ValueError('结构图需要1至30个节点，最多100条连接。')
     ids = [str(n['id']) for n in nodes]
@@ -103,16 +103,33 @@ def render_diagram(nodes: list[dict], edges: list[dict]) -> str:
     return ''.join(parts)
 
 
-def export_diagram_script(nodes: list[dict], edges: list[dict]) -> str:
-    render_diagram(nodes,edges)  # Apply the same validation as the displayed SVG.
-    data=json.dumps({'nodes':nodes,'edges':edges},ensure_ascii=False)
+def render_diagram(nodes: list[dict], edges: list[dict], *, layout_version='diagram-v2') -> str:
+    from .figure_layout import validate_diagram, render_diagram_v2
+    validate_diagram(nodes,edges)
+    if layout_version == 'diagram-v1':
+        return _render_diagram_v1(nodes,edges)
+    if layout_version != 'diagram-v2':
+        raise ValueError('不支持的结构图布局版本。')
+    return render_diagram_v2(nodes,edges)
+
+
+def _figure_layout_sources():
+    from . import chart_layout, figure_layout
+    return (inspect.getsource(chart_layout).replace('from .chart_numeric import unit_fraction, finite_lerp\n','')+'\n'
+            +inspect.getsource(figure_layout).replace('from .chart_layout import wrap_text, svg_text\n','')+'\n')
+
+
+def export_diagram_script(nodes: list[dict], edges: list[dict], *, layout_version='diagram-v2') -> str:
+    render_diagram(nodes,edges,layout_version=layout_version)
+    data=json.dumps({'nodes':nodes,'edges':edges,'layout_version':layout_version},ensure_ascii=False)
+    renderer=inspect.getsource(render_diagram).replace('    from .figure_layout import validate_diagram, render_diagram_v2\n','')
     return ('# Standalone Python 3; standard library only.\n'
         '# Fixed rendering template; labels are data, never executable code.\n'
         'import html\nimport math\nimport json\nfrom pathlib import Path\n\n'
-        +inspect.getsource(render_diagram)+'\n'
+        +_figure_layout_sources()+inspect.getsource(_render_diagram_v1)+'\n'+renderer+'\n'
         +f'spec=json.loads({data!r})\n'
-        +'with Path("architecture.svg").open("x",encoding="utf-8") as stream:\n'
-        +'    stream.write(render_diagram(spec["nodes"],spec["edges"]))\n')
+        +'with Path("architecture.svg").open("x",encoding="utf-8",newline="\\n") as stream:\n'
+        +'    stream.write(render_diagram(spec["nodes"],spec["edges"],layout_version=spec["layout_version"]))\n')
 
 
 def describe_series(labels,series,kind):
@@ -262,6 +279,10 @@ class DataStudio:
         if kind == 'radar3d':
             from .radar import radar_geometry
             spec['radar'] = radar_geometry(spec['labels'], series, normalize=normalize, yaw=yaw, elevation=elevation)
+            from .figure_layout import radar_layout
+            spec['layout_version'] = 'radar-v2'
+            layout = radar_layout(spec)
+            spec['layout'] = {key:layout[key] for key in ('width','height','font_size')}
         else:
             from .chart_layout import cartesian_layout
             spec['layout_version'] = 'cartesian-v2'
@@ -275,7 +296,7 @@ class DataStudio:
                 'caption':f'{spec["title"]}。横轴为{x}，保留CSV原行顺序，共{len(valid)}条有效记录。'+ '；'.join(descriptions)+'。该图未进行显著性检验，不表示因果关系。',
                 'template_version':'svg-chart-v2'}
         if kind == 'radar3d':
-            item['template_version'] = 'svg-radar3d-v1'
+            item['template_version'] = 'svg-radar3d-v2'
             item['transformations']['normalization_scope'] = spec['radar']['normalization']
             item['caption'] = (f'{spec["title"]}。{len(valid)}个指标映射为极角轴，半径为0至1，高度层对应{len(series)}个系列的类别顺序。'
                                + ('每个指标在所选系列间进行Min–Max归一化；常数指标半径设为0.5。' if normalize else '输入数值已在0至1之间，未归一化。')
@@ -298,13 +319,12 @@ class DataStudio:
     def export_script(self, chart_id):
         spec = self.get_chart(chart_id)['spec']
         from .radar import render_radar
-        from . import chart_layout
         renderer=inspect.getsource(render_chart).replace('        from .radar import render_radar\n','').replace('        from .chart_layout import render_cartesian_chart\n','')
-        layout_source=inspect.getsource(chart_layout).replace('from .chart_numeric import unit_fraction, finite_lerp\n','')
+        radar_renderer=inspect.getsource(render_radar).replace('        from .figure_layout import render_radar_v2\n','')
         return ('# Standalone Python 3; standard library only.\n'
                 '# Fixed rendering template: no user-supplied Python is executed.\n'
                 'import html\nimport math\nimport json\nfrom pathlib import Path\n'
-                +f'COLORS = {COLORS!r}\n\n'+inspect.getsource(unit_fraction)+'\n'+inspect.getsource(finite_lerp)+'\n'+layout_source+'\n'+inspect.getsource(render_radar)+'\n'+renderer+'\n'
+                +f'COLORS = {COLORS!r}\n\n'+inspect.getsource(unit_fraction)+'\n'+inspect.getsource(finite_lerp)+'\n'+_figure_layout_sources()+'\n'+radar_renderer+'\n'+renderer+'\n'
                 f'spec = json.loads({json.dumps(spec,ensure_ascii=False)!r})\n'
                 'with Path("chart.svg").open("x", encoding="utf-8", newline="\\n") as stream:\n'
                 '    stream.write(render_chart(spec))\n')
