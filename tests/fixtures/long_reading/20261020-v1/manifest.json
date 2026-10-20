@@ -1,0 +1,100 @@
+{
+  "version": "long-reading-20261020-v1",
+  "cases": [
+    {
+      "id": "mixed-1000",
+      "kind": "synthetic",
+      "count": 1000,
+      "variant": "mixed",
+      "canonical_sha256": "48829dda820f8786e8d8bde814d4e460c254ffcdc1e7602ed7a57ec9eea991c6",
+      "missing_translations": 0,
+      "duplicate_ids": 0,
+      "wrong_run_count": 0
+    },
+    {
+      "id": "mixed-5000",
+      "kind": "synthetic",
+      "count": 5000,
+      "variant": "mixed",
+      "canonical_sha256": "1be9960eee6127e7902613b1c7ff2cb1f1ab0cfc663b0036a9dcfc320f2f6f80",
+      "missing_translations": 0,
+      "duplicate_ids": 0,
+      "wrong_run_count": 0
+    },
+    {
+      "id": "missing-5000",
+      "kind": "synthetic",
+      "count": 5000,
+      "variant": "missing",
+      "canonical_sha256": "ae1751c586f75fba2a9a940bad752d567966ee68f210b583914ff841c8a3c797",
+      "missing_translations": 136,
+      "duplicate_ids": 0,
+      "wrong_run_count": 0
+    },
+    {
+      "id": "duplicate-1000",
+      "kind": "synthetic",
+      "count": 1000,
+      "variant": "duplicate",
+      "canonical_sha256": "905ee8383f45f1859357f2287a06443f563c0007347fb367c3bb4234216cb0d9",
+      "missing_translations": 0,
+      "duplicate_ids": 1,
+      "wrong_run_count": 0
+    },
+    {
+      "id": "wrong-run-1000",
+      "kind": "synthetic",
+      "count": 1000,
+      "variant": "wrong-run",
+      "canonical_sha256": "b9243056490359747c7616bf213721bbd0b05a45c04d50e4c0b2f71cfefa0a6c",
+      "missing_translations": 0,
+      "duplicate_ids": 0,
+      "wrong_run_count": 1
+    }
+  ],
+  "generator_sha256": "d0134e702996e675d05c738c61ffa6c424e629aa03d2ace5efe738abe078cfe0",
+  "scope": "Synthetic capacity/position cases; saved historical translation for compatibility, no new model quality claims.",
+  "saved_translation": {
+    "path": "artifacts/long-reading-source/20261020T010224571652Z/saved-107.json",
+    "sha256": "4d055b8a7bb7c1232c69b45731693e58c5d137c8172bf2fcb4b0eb0f19eba448",
+    "blocks": 107,
+    "pages": 6,
+    "original_result_sha256": "ccc6df3c05aa289e2d8b8843135f692b4d88afc206c670dc109a0ede7bafcb9f",
+    "source_task_sha256": "e01650f7c28ed409cd403c9f5dfe0fd60828b24bbfdd4ff2a3e6cb4f1a528fef",
+    "pdf_filename": "1312.3005v1.pdf",
+    "pdf_sha256": "32c65d36793cf14888907ed454ae05e170b59c6772462a1034165458105db756"
+  },
+  "book": {
+    "path": "data/samples/UnderstandingDeepLearning_02_09_26_C.pdf",
+    "sha256": "f8237d393163900fa8e43210e680a3f987b45ccac7750b372e156fae3df0bf32",
+    "pages": 541,
+    "reading_pages": [
+      1,
+      2,
+      4,
+      10,
+      12,
+      73,
+      271,
+      399,
+      541
+    ],
+    "blank_physical_pages": [
+      2,
+      4,
+      10,
+      12
+    ],
+    "rotated_large_image_cases": "pending source review"
+  },
+  "gates": {
+    "max_body_dom_per_column": 120,
+    "per_direction_jumps": 100,
+    "max_settled_position_error_viewport": 0.1,
+    "max_scroll_long_task_ms": 200,
+    "max_api_page_blocks": 200,
+    "full_export_unchanged": true
+  },
+  "model_calls": 0,
+  "main_unchanged": true
+}
