@@ -56,6 +56,7 @@ class MultilingualIndex:
                 encoder = _shared_encoder
         self.encoder = encoder
         self.path = library.data_dir / 'multilingual.sqlite3'
+        self._plan_cache = None
 
     @contextmanager
     def _connection(self):
@@ -93,6 +94,12 @@ class MultilingualIndex:
         sources = sorted([[b.document_id, b.run_id, b.block_id, b.page, b.text, b.bbox] for b in blocks])
         scope = digest(['multilingual-scope-v1', status['fingerprint'], sorted({b.document_id for b in blocks})])
         snapshot = digest(['multilingual-snapshot-v1', status['fingerprint'], sources])
+        if self._plan_cache and self._plan_cache[0] == snapshot:
+            # One private snapshot per index instance. Rebind current canonical
+            # objects so title/filename changes cannot return stale metadata.
+            current = {block.block_id: block for block in blocks}
+            entries = [(key, current[bid], text, source) for key, bid, text, source in self._plan_cache[1]]
+            return status, scope, snapshot, entries
         entries = []
         for block in sorted(blocks, key=lambda b: (b.document_id, b.run_id, b.page, b.block_id)):
             covered = 0
@@ -111,6 +118,7 @@ class MultilingualIndex:
                     raise ValueError('Multilingual chunk budget exceeded; no partial publication')
             if covered != len(block.text):
                 raise ValueError('Uncovered source tail')
+        self._plan_cache = (snapshot, [(key, block.block_id, text, source) for key, block, text, source in entries])
         return status, scope, snapshot, entries
 
     def _ready(self, db, snapshot, status, keys):
@@ -141,7 +149,18 @@ class MultilingualIndex:
                 db.execute('BEGIN IMMEDIATE')
                 existing = self._ready(db, snapshot, status, keys)
                 if existing:
-                    return dict(existing, status='ready', cache_reused=True, cache_hits=len(keys), new_chunks=0, encoded_texts=0)
+                    healthy = True
+                    for key, _, _, source in entries:
+                        row = db.execute('SELECT vector,source,model FROM chunk_vectors WHERE cache_key=?', (key,)).fetchone()
+                        try:
+                            if not row or row['source'] != canonical(source) or row['model'] != status['fingerprint']:
+                                raise ValueError('Missing original member')
+                            SemanticIndex._vector(np.frombuffer(row['vector'], dtype='<f4'), status['dimensions'])
+                        except ValueError:
+                            healthy = False
+                            break
+                    if healthy:
+                        return dict(existing, status='ready', cache_reused=True, cache_hits=len(keys), new_chunks=0, encoded_texts=0)
                 lease = db.execute('SELECT owner,expires_at FROM leases WHERE scope=?', (scope,)).fetchone()
                 if lease and lease['expires_at'] > time.time():
                     raise IndexBusy('Another process holds the build lease')
@@ -198,7 +217,7 @@ class MultilingualIndex:
                     if not row:
                         raise ValueError('Missing completed vector')
                     SemanticIndex._vector(np.frombuffer(row[0], dtype='<f4'), status['dimensions'])
-                db.execute('INSERT INTO generations VALUES(?,?,?,?,?)',
+                db.execute('INSERT OR REPLACE INTO generations VALUES(?,?,?,?,?)',
                     (snapshot, scope, status['fingerprint'], canonical(payload), time.time()))
                 db.execute('INSERT OR REPLACE INTO active_scopes VALUES(?,?)', (scope, snapshot))
             return dict(payload, status='ready', cache_reused=False)

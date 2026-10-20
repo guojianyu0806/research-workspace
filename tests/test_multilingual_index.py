@@ -71,6 +71,28 @@ def test_exact_text_computation_reused_without_coalescing_source_identity(tmp_pa
     assert {b.block_id for b in asyncio.run(index.rank(['dog'], blocks, limit=100))[0]} == {b.block_id for b in blocks}
 
 
+def test_private_plan_cache_avoids_retokenization_but_rebinds_current_metadata(tmp_path):
+    encoder = Encoder()
+    calls = []
+    original = encoder.split
+    def observed(text):
+        calls.append(text)
+        return original(text)
+    encoder.split = observed
+    index = module.MultilingualIndex(Library(tmp_path), encoder=encoder)
+    source = block('same', 'canine source')
+    index.prepare([source])
+    calls.clear()
+    current = source.model_copy(update={'document_title': 'Current title', 'filename': 'renamed.pdf'})
+    hits, _ = rank(index, [current])
+    assert hits[0].document_title == 'Current title' and hits[0].filename == 'renamed.pdf'
+    assert calls == ['dog']
+    calls.clear()
+    altered = source.model_copy(update={'text': 'changed canine source'})
+    assert rank(index, [altered])[1]['status'] == 'index_not_built'
+    assert altered.text in calls
+
+
 def test_cache_is_workspace_model_run_text_and_geometry_bound(tmp_path):
     lib = Library(tmp_path/'alice')
     encoder = Encoder()

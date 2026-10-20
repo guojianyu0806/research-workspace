@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import shutil
 import sys
 import time
 from unittest.mock import patch
@@ -27,6 +28,7 @@ from scripts.freeze_multilingual_queries import normalized
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--split', choices=['development', 'held_out_source'], default='development')
+    parser.add_argument('--reuse-artifact', type=Path, help='Copy a previous isolated public-paper workspace; never modify it')
     args = parser.parse_args()
     os.environ['RESEARCH_SEMANTIC_ENABLED'] = '0'
     os.environ['RESEARCH_OCR_ENABLED'] = '0'
@@ -40,6 +42,7 @@ def main():
               'fixture_sha256': sha256(manifest_path), 'driver_sha256': sha256(Path(__file__)),
               'runtime_sha256': {name: sha256(ROOT/name) for name in ['research_workspace/multilingual_index.py',
                   'research_workspace/multilingual_model.py', 'research_workspace/library.py', 'research_workspace/reader_search.py']}}
+    (output/'queries.jsonl').open('x', encoding='utf-8').close()
     def check(name, passed):
         report['checks'].append({'name': name, 'passed': bool(passed)})
         if not passed:
@@ -56,6 +59,11 @@ def main():
         raise RuntimeError('External connections forbidden during local acceptance')
     try:
         with patch.object(socket.socket, 'connect', blocked):
+            if args.reuse_artifact:
+                previous = args.reuse_artifact.resolve()
+                assert previous.is_relative_to(ROOT/'artifacts/multilingual-index') and previous != output
+                shutil.copytree(previous/'workspace', output/'workspace')
+                report['reused_public_workspace'] = str(previous.relative_to(ROOT))
             library = Library(output/'workspace')
             documents = {}
             for filename, source in manifest['sources'].items():
@@ -113,6 +121,8 @@ def main():
                     'elapsed_seconds': round(time.monotonic()-started, 4),
                     'top20': [h.model_dump() for h in hits],
                     'matches': {h.block_id: metadata['matches'][h.block_id] for h in hits}})
+                with (output/'queries.jsonl').open('a', encoding='utf-8') as stream:
+                    stream.write(json.dumps(report['queries'][-1], ensure_ascii=False)+'\n')
                 if len(report['queries']) % 16 == 0:
                     print(json.dumps({'queries': len(report['queries']), 'candidate_recall_at_5':
                         sum(r['recall_at_5'] for r in report['queries'])/len(report['queries'])}), flush=True)
@@ -121,7 +131,7 @@ def main():
             check('all selected split questions evaluated', len(report['queries']) == (96 if args.split == 'development' else 64))
             check('all raw library rows and originals unchanged by indexing', raw_before == main_snapshot(output/'workspace'))
             check('no external connections attempted', report['external_connection_attempts'] == 0)
-    except Exception as error:
+    except (Exception, KeyboardInterrupt) as error:
         report['errors'].append(type(error).__name__+': '+str(error))
     finally:
         if index and job_id:
@@ -134,7 +144,8 @@ def main():
             report['owned_builder_stopped'] = not index.job_status(job_id)['owned_live_thread']
         report['main_unchanged'] = main_snapshot() == before
         report['runtime_unchanged'] = all(sha256(ROOT/name) == value for name, value in report['runtime_sha256'].items())
-        report['passed'] = not report['errors'] and all(c['passed'] for c in report['checks']) and report['main_unchanged'] and report['runtime_unchanged'] and report.get('owned_builder_stopped', False)
+        report['passed'] = (not report['errors'] and len(report['queries']) == (96 if args.split == 'development' else 64)
+            and all(c['passed'] for c in report['checks']) and report['main_unchanged'] and report['runtime_unchanged'] and report.get('owned_builder_stopped', False))
         # Recall remains a measured result, not an implicit pass gate. End-to-end
         # S3 quality gates also require hybrid thresholds and held-out evaluation.
         with (output/'report.json').open('x', encoding='utf-8') as stream:
