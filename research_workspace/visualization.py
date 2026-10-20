@@ -31,6 +31,9 @@ def render_chart(spec: dict) -> str:
     if spec['kind'] == 'radar3d':
         from .radar import render_radar
         return render_radar(spec, COLORS)
+    if spec.get('layout_version') == 'cartesian-v2':
+        from .chart_layout import render_cartesian_chart
+        return render_cartesian_chart(spec, COLORS)
     labels, series = spec['labels'], spec['series']
     width, height = 1000, 600
     left, top, bottom, right = 90, 80, 480, 930
@@ -230,10 +233,19 @@ class DataStudio:
                     raise ValueError(f'第{index}行缺少横轴值或数值字段无效，请更正数据或选择忽略无效行。')
                 dropped.append(index)
                 continue
-            valid.append((row[xi], nums))
+            valid.append((row[xi], nums, index))
         if not valid or len(valid)>500:
             raise ValueError('绘图需要1至500条有效行；请先缩小数据范围，系统不会静默截断。')
         units = units or {}
+        generated_title = f'{x} 与 {", ".join(y)}'
+        if len(generated_title) > 150:
+            generated_title = f'{x}：所选数值系列'
+        title_text = str(title or generated_title)
+        if len(title_text) > 150 or any(len(str(units.get(name,''))) > 40 for name in y):
+            raise ValueError('图表标题最多150字符，单位最多40字符；请缩短输入，不会静默截断。')
+        if any(re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', text)
+               for text in [title_text, *[str(units.get(name,'')) for name in y]]):
+            raise ValueError('图表标题或单位包含无效控制字符。')
         series = []
         for index, name in enumerate(y):
             values = [r[1][index] for r in valid]
@@ -244,16 +256,24 @@ class DataStudio:
             series.append({'name':name,'unit':str(units.get(name,''))[:40], 'values':values,
                            'original_values':original_values,
                            'original_min':original_min,'original_max':original_max})
-        spec = {'kind':kind, 'title':str(title or f'{x} 与 {", ".join(y)}')[:150], 'x':x,
+        spec = {'kind':kind, 'title':title_text, 'x':x,
+                'source_csv_records':[r[2] for r in valid],
                 'labels':[r[0] for r in valid], 'series':series}
         if kind == 'radar3d':
             from .radar import radar_geometry
             spec['radar'] = radar_geometry(spec['labels'], series, normalize=normalize, yaw=yaw, elevation=elevation)
+        else:
+            from .chart_layout import cartesian_layout
+            spec['layout_version'] = 'cartesian-v2'
+            spec['normalized'] = bool(normalize)
+            layout = cartesian_layout(spec)  # validate before saving any chart
+            spec['layout'] = {key:layout[key] for key in ('width','height','font_size')}
         descriptions = [f'{s["name"]}范围为{min(s["values"]):.6g}至{max(s["values"]):.6g}{"（归一化）" if normalize else s["unit"]}' for s in series]
         item = {'id':uuid4().hex,'dataset_id':dataset_id,'dataset_sha256':data['sha256'], 'created_at':_now(), 'spec':spec,
-                'transformations':{'missing':missing,'dropped_csv_rows':dropped,'minmax_normalized':normalize,'aggregation':'none','row_order':'source'},
+                'transformations':{'missing':missing,'dropped_csv_rows':dropped,'minmax_normalized':normalize,'aggregation':'none','row_order':'source',
+                                   'record_numbering':'logical_csv_record_including_header'},
                 'caption':f'{spec["title"]}。横轴为{x}，保留CSV原行顺序，共{len(valid)}条有效记录。'+ '；'.join(descriptions)+'。该图未进行显著性检验，不表示因果关系。',
-                'template_version':'svg-chart-v1'}
+                'template_version':'svg-chart-v2'}
         if kind == 'radar3d':
             item['template_version'] = 'svg-radar3d-v1'
             item['transformations']['normalization_scope'] = spec['radar']['normalization']
@@ -278,11 +298,13 @@ class DataStudio:
     def export_script(self, chart_id):
         spec = self.get_chart(chart_id)['spec']
         from .radar import render_radar
-        renderer=inspect.getsource(render_chart).replace('        from .radar import render_radar\n','')
+        from . import chart_layout
+        renderer=inspect.getsource(render_chart).replace('        from .radar import render_radar\n','').replace('        from .chart_layout import render_cartesian_chart\n','')
+        layout_source=inspect.getsource(chart_layout).replace('from .chart_numeric import unit_fraction, finite_lerp\n','')
         return ('# Standalone Python 3; standard library only.\n'
                 '# Fixed rendering template: no user-supplied Python is executed.\n'
                 'import html\nimport math\nimport json\nfrom pathlib import Path\n'
-                +f'COLORS = {COLORS!r}\n\n'+inspect.getsource(unit_fraction)+'\n'+inspect.getsource(finite_lerp)+'\n'+inspect.getsource(render_radar)+'\n'+renderer+'\n'
+                +f'COLORS = {COLORS!r}\n\n'+inspect.getsource(unit_fraction)+'\n'+inspect.getsource(finite_lerp)+'\n'+layout_source+'\n'+inspect.getsource(render_radar)+'\n'+renderer+'\n'
                 f'spec = json.loads({json.dumps(spec,ensure_ascii=False)!r})\n'
-                'with Path("chart.svg").open("x", encoding="utf-8") as stream:\n'
+                'with Path("chart.svg").open("x", encoding="utf-8", newline="\\n") as stream:\n'
                 '    stream.write(render_chart(spec))\n')

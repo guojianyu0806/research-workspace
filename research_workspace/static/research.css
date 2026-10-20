@@ -119,6 +119,12 @@
 .rs-chart-form>.rs-button{margin-top:12px}
 .rs-chart-form>.rs-muted{margin-top:11px}
 .rs-chart-image{display:block;width:100%;height:auto;max-height:750px;object-fit:contain;background:#fff;border:1px solid #e7edef;border-radius:5px;margin:14px 0}
+.rs-chart-scroll{min-width:0;max-width:100%;max-height:780px;overflow:auto;border:1px solid var(--line,#cbd7de);border-radius:6px;margin:14px 0;scrollbar-width:thin}
+.rs-chart-scroll>.rs-chart-image{max-width:none;max-height:none;object-fit:initial;height:auto;margin:0;border:0;border-radius:0}
+.rs-chart-scroll:focus-visible{outline:2px solid var(--primary,#165f63);outline-offset:3px}
+.rs-plot-values{font-size:14px;line-height:1.7;min-width:0}
+.rs-plot-values>summary{cursor:pointer;padding:8px 0;overflow-wrap:anywhere}
+.rs-chart-output>.rs-card-title,.rs-y-choices .rs-check-label,.rs-column-chip{overflow-wrap:anywhere;min-width:0}
 .rs-caption{font-size:16px;line-height:1.85;margin:14px 0;overflow-wrap:anywhere}
 .rs-diagram-form>.rs-muted{margin-bottom:16px}
 .rs-diagram-form .rs-textarea{font-family:var(--utility,"Consolas",monospace);font-size:14px}

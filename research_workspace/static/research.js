@@ -955,11 +955,33 @@
         if (state.selected?.id !== datasetId) { life.revoke(imageUrl); life.show("数据集已切换，本次结果未替换当前视图。"); return; }
         if (state.chartUrl) life.revoke(state.chartUrl); state.chartUrl = imageUrl;
         const image = node("img", "rs-chart-image"); image.src = imageUrl; image.alt = chart.spec.title || "CSV数据图表";
+        image.style.width = `${chart.spec.layout?.width || (chart.spec.kind === "radar3d" ? 1280 : 1000)}px`;
+        const viewport = node("div", "rs-chart-scroll"); viewport.tabIndex = 0;
+        viewport.setAttribute("role", "region"); viewport.setAttribute("aria-label", "图表预览，可横向和纵向滚动");
+        viewport.append(image);
+        const values = node("details", "rs-plot-values");
+        values.append(node("summary", "", `查看全部绘图数据 · ${chart.spec.labels.length} 条有效记录`));
+        values.addEventListener("toggle", () => {
+          if (!values.open || values.querySelector("table")) return;
+          const scroll = node("div", "rs-table-scroll"), table = node("table", "rs-table");
+          const head = node("thead", ""), header = node("tr", "");
+          const headings = ["CSV记录号（含表头）", chart.spec.x, ...chart.spec.series.flatMap(s => [
+            `${s.name} · 原值${s.unit ? `（${s.unit}）` : ""}`, `${s.name} · 绘图值`])];
+          headings.forEach(text => { const th = node("th", "", text); th.scope = "col"; header.append(th); });
+          head.append(header); table.append(head); const body = node("tbody", "");
+          chart.spec.labels.forEach((label, index) => {
+            const row = node("tr", ""); row.append(node("td", "", String(chart.spec.source_csv_records?.[index] || index+2)), node("td", "", label));
+            chart.spec.series.forEach(s => row.append(node("td", "", String((s.original_values || s.values)[index])), node("td", "", String(s.values[index]))));
+            body.append(row);
+          });
+          table.append(body); scroll.append(table); values.append(scroll);
+        });
         const downloads = node("div", "rs-actions");
         for (const [format, label] of [["svg", "下载SVG"], ["py", "下载Python复现脚本"], ["json", "下载数据与转换记录"]]) downloads.append(link(label, `/api/charts/${encodeURIComponent(chart.id)}/${format}`, `chart-${chart.id}.${format}`));
         const dropped = chart.transformations?.dropped_csv_rows || [];
-        chartOutput.replaceChildren(node("h3", "rs-card-title", chart.spec.title), image, node("p", "rs-caption", chart.caption),
-          node("p", "rs-muted rs-small", `忽略无效行：${dropped.length}${dropped.length ? `（CSV行号 ${dropped.join("、")}）` : ""}；归一化：${chart.transformations?.minmax_normalized ? "已执行" : "未执行"}。`), downloads);
+        chartOutput.replaceChildren(node("h3", "rs-card-title", chart.spec.title),
+          node("p", "rs-muted rs-small", "图表按可读字号显示，可在图内横向或纵向滚动。完整标签、原值和绘图值可在下方数据表核对。"), viewport, values, node("p", "rs-caption", chart.caption),
+          node("p", "rs-muted rs-small", `忽略无效记录：${dropped.length}${dropped.length ? `（含表头的CSV记录号 ${dropped.join("、")}）` : ""}；归一化：${chart.transformations?.minmax_normalized ? "已执行" : "未执行"}。引号内换行仍属于同一条记录。`), downloads);
         chartOutput.hidden = false; life.show("图表已按实际数据生成，转换记录与脚本可下载。");
       } catch (error) { life.show(error.message, true); if (propagate) throw error; }
       finally { state.chartPosting = false; if (life.alive) create.disabled = !state.selected; }
