@@ -1,0 +1,969 @@
+{
+  "schema": "matrix-source-gold-v1",
+  "status": "clear_native_foundation_not_full_scan_acceptance",
+  "annotation": "Agent visual transcription of original page crops, not parser predictions; no independent human review claim.",
+  "coordinate_system": "unrotated_pdf_points_and_normalized_unrotated_page",
+  "held_out_policy": "Whole source works held out; do not score held-out regions during development.",
+  "limits": [
+    "No low-resolution or erased negative cases yet",
+    "No nested matrix-cell or fraction-cell coverage yet",
+    "These 24 regions do not complete S4; whole formula, table and chart gold remain unfinished"
+  ],
+  "sources": {
+    "book": {
+      "path": "data/samples/UnderstandingDeepLearning_02_09_26_C.pdf",
+      "sha256": "f8237d393163900fa8e43210e680a3f987b45ccac7750b372e156fae3df0bf32",
+      "pages": 541,
+      "split": "development"
+    },
+    "layernorm": {
+      "path": "data/corpus/1607.06450v1.pdf",
+      "sha256": "c464f839fb8d59f7fde92f9b4caa67c2d1f2f196b88f93fb60502249df0aaef7",
+      "pages": 14,
+      "split": "development"
+    },
+    "factorization": {
+      "path": "data/corpus/1703.10722v1.pdf",
+      "sha256": "c2a6639291631da107b82d54a6095014e5ae7a4cc28e1324bf676b738c92a11e",
+      "pages": 5,
+      "split": "held_out"
+    },
+    "machine_reader": {
+      "path": "data/corpus/1601.06733v1.pdf",
+      "sha256": "d2792f0bdbad84291d77e6032f67c6f2bae7dc6c4700c87aea2613b7629d913d",
+      "pages": 10,
+      "split": "held_out"
+    }
+  },
+  "cases": [
+    {
+      "id": "book-4.11-state",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        257,
+        537,
+        284,
+        583
+      ],
+      "bbox": [
+        0.4199346405228758,
+        0.678030303030303,
+        0.46405228758169936,
+        0.7361111111111112
+      ],
+      "delimiter": "square",
+      "expected_rows": 3,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "h_{1}"
+        ],
+        [
+          "h_{2}"
+        ],
+        [
+          "h_{3}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.11-state.png",
+        "sha256": "4c16a77af9aab76d45332afbd06b70aeba6027bd4370535c0b7cdcf81e432201",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "book-4.11-bias",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        311,
+        537,
+        338,
+        583
+      ],
+      "bbox": [
+        0.5081699346405228,
+        0.678030303030303,
+        0.5522875816993464,
+        0.7361111111111112
+      ],
+      "delimiter": "square",
+      "expected_rows": 3,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\theta_{10}"
+        ],
+        [
+          "\\theta_{20}"
+        ],
+        [
+          "\\theta_{30}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.11-bias.png",
+        "sha256": "b3fc67d0d804365b5e34ba625d51df057909386afedff9b771b93aa947d8cf5e",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "book-4.11-weights",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        349,
+        537,
+        374,
+        583
+      ],
+      "bbox": [
+        0.5702614379084967,
+        0.678030303030303,
+        0.6111111111111112,
+        0.7361111111111112
+      ],
+      "delimiter": "square",
+      "expected_rows": 3,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\theta_{11}"
+        ],
+        [
+          "\\theta_{21}"
+        ],
+        [
+          "\\theta_{31}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.11-weights.png",
+        "sha256": "9f56134f418d1155ebae48c85535fc5da78a3e92e775805772c049211b714762",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "book-4.12-state",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        221,
+        589,
+        249,
+        629
+      ],
+      "bbox": [
+        0.3611111111111111,
+        0.7436868686868687,
+        0.4068627450980392,
+        0.7941919191919192
+      ],
+      "delimiter": "square",
+      "expected_rows": 3,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "h_{1}^{\\prime}"
+        ],
+        [
+          "h_{2}^{\\prime}"
+        ],
+        [
+          "h_{3}^{\\prime}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.12-state.png",
+        "sha256": "bde3f2a9cde4da756e538d05e3cb8e1d6fdd3e5441943fc32825c6053b97c2aa",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "book-4.12-bias",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        276,
+        589,
+        301,
+        629
+      ],
+      "bbox": [
+        0.45098039215686275,
+        0.7436868686868687,
+        0.4918300653594771,
+        0.7941919191919192
+      ],
+      "delimiter": "square",
+      "expected_rows": 3,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\psi_{10}"
+        ],
+        [
+          "\\psi_{20}"
+        ],
+        [
+          "\\psi_{30}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.12-bias.png",
+        "sha256": "29fc3ee8943431f2a77cb3213606e22b65648c9ca355111b9acfffb0dbb2f856",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "book-4.12-weights",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        317,
+        589,
+        391,
+        629
+      ],
+      "bbox": [
+        0.5179738562091504,
+        0.7436868686868687,
+        0.6388888888888888,
+        0.7941919191919192
+      ],
+      "delimiter": "square",
+      "expected_rows": 3,
+      "expected_columns": 3,
+      "expected_cells": [
+        [
+          "\\psi_{11}",
+          "\\psi_{12}",
+          "\\psi_{13}"
+        ],
+        [
+          "\\psi_{21}",
+          "\\psi_{22}",
+          "\\psi_{23}"
+        ],
+        [
+          "\\psi_{31}",
+          "\\psi_{32}",
+          "\\psi_{33}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.12-weights.png",
+        "sha256": "12a7cb66d4d5538e85de0be235b2745615d3932031691c9d491ffd9b7af5b343",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "book-4.12-input",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        392,
+        589,
+        417,
+        629
+      ],
+      "bbox": [
+        0.6405228758169934,
+        0.7436868686868687,
+        0.6813725490196079,
+        0.7941919191919192
+      ],
+      "delimiter": "square",
+      "expected_rows": 3,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "h_{1}"
+        ],
+        [
+          "h_{2}"
+        ],
+        [
+          "h_{3}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.12-input.png",
+        "sha256": "a22f3e8e0ab4fc59a266c29dc32a8aa84b253a6c361a020e99ad8b4130666a3e",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "book-4.13-weights",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        301,
+        658,
+        362,
+        681
+      ],
+      "bbox": [
+        0.4918300653594771,
+        0.8308080808080808,
+        0.5915032679738562,
+        0.8598484848484849
+      ],
+      "delimiter": "square",
+      "expected_rows": 1,
+      "expected_columns": 3,
+      "expected_cells": [
+        [
+          "\\phi_{1}^{\\prime}",
+          "\\phi_{2}^{\\prime}",
+          "\\phi_{3}^{\\prime}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.13-weights.png",
+        "sha256": "b30bc310ba00f089e6005473fe2ace829381f4a34713f60f32c5c1b6a1bdae54",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "book-4.13-input",
+      "source": "book",
+      "split": "development",
+      "physical_page": 62,
+      "bbox_points": [
+        362,
+        645,
+        389,
+        693
+      ],
+      "bbox": [
+        0.5915032679738562,
+        0.8143939393939394,
+        0.6356209150326797,
+        0.875
+      ],
+      "delimiter": "square",
+      "expected_rows": 3,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "h_{1}^{\\prime}"
+        ],
+        [
+          "h_{2}^{\\prime}"
+        ],
+        [
+          "h_{3}^{\\prime}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/book-4.13-input.png",
+        "sha256": "72d6ec261c3ed7ad7388e1f2db636d101f5546d67afbf2e5e0c65a01b560bda6",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "layernorm-17-gates",
+      "source": "layernorm",
+      "split": "development",
+      "physical_page": 13,
+      "bbox_points": [
+        213,
+        299,
+        243,
+        346
+      ],
+      "bbox": [
+        0.3480392156862745,
+        0.37752525252525254,
+        0.39705882352941174,
+        0.43686868686868685
+      ],
+      "delimiter": "round",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\mathbf{f}_{t}"
+        ],
+        [
+          "\\mathbf{i}_{t}"
+        ],
+        [
+          "\\mathbf{o}_{t}"
+        ],
+        [
+          "\\mathbf{g}_{t}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/layernorm-17-gates.png",
+        "sha256": "73082d3df87849cacb261cfca3465159bc5917196333cf920f93dbabbe64d3d9",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "layernorm-20-gates",
+      "source": "layernorm",
+      "split": "development",
+      "physical_page": 13,
+      "bbox_points": [
+        177,
+        400,
+        207,
+        448
+      ],
+      "bbox": [
+        0.28921568627450983,
+        0.5050505050505051,
+        0.3382352941176471,
+        0.5656565656565656
+      ],
+      "delimiter": "round",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\mathbf{f}_{t}"
+        ],
+        [
+          "\\mathbf{i}_{t}"
+        ],
+        [
+          "\\mathbf{o}_{t}"
+        ],
+        [
+          "\\mathbf{g}_{t}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/layernorm-20-gates.png",
+        "sha256": "6d6e4418ece5202fbc01022c56370a13fbcde87ff54e3d6e74b955e095d15031",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "layernorm-23-gates",
+      "source": "layernorm",
+      "split": "development",
+      "physical_page": 13,
+      "bbox_points": [
+        215,
+        558,
+        242,
+        586
+      ],
+      "bbox": [
+        0.35130718954248363,
+        0.7045454545454546,
+        0.3954248366013072,
+        0.73989898989899
+      ],
+      "delimiter": "round",
+      "expected_rows": 2,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\mathbf{z}_{t}"
+        ],
+        [
+          "\\mathbf{r}_{t}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/layernorm-23-gates.png",
+        "sha256": "b4fd2442e21eb75e23e241f7b63a853b95f9f80096b5b4951e2315ef08f4f6c3",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "layernorm-26-gates",
+      "source": "layernorm",
+      "split": "development",
+      "physical_page": 13,
+      "bbox_points": [
+        164,
+        644,
+        191,
+        673
+      ],
+      "bbox": [
+        0.2679738562091503,
+        0.8131313131313131,
+        0.31209150326797386,
+        0.8497474747474747
+      ],
+      "delimiter": "round",
+      "expected_rows": 2,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\mathbf{z}_{t}"
+        ],
+        [
+          "\\mathbf{r}_{t}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/layernorm-26-gates.png",
+        "sha256": "939f9f2a0ebbcea3edb8778a42ed6beccb6fb0846f52c572477a7287e10ed311",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "factorization-2-gates",
+      "source": "factorization",
+      "split": "held_out",
+      "physical_page": 1,
+      "bbox_points": [
+        244,
+        608,
+        272,
+        656
+      ],
+      "bbox": [
+        0.39869281045751637,
+        0.7676767676767676,
+        0.4444444444444444,
+        0.8282828282828283
+      ],
+      "delimiter": "round",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "i"
+        ],
+        [
+          "f"
+        ],
+        [
+          "o"
+        ],
+        [
+          "g"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/factorization-2-gates.png",
+        "sha256": "a546d1e65b9f8fb02648a9d6e05a64435f340d76966b6dcb87074f25090000e8",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "factorization-2-activations",
+      "source": "factorization",
+      "split": "held_out",
+      "physical_page": 1,
+      "bbox_points": [
+        281,
+        608,
+        325,
+        656
+      ],
+      "bbox": [
+        0.4591503267973856,
+        0.7676767676767676,
+        0.5310457516339869,
+        0.8282828282828283
+      ],
+      "delimiter": "round",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{tanh}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/factorization-2-activations.png",
+        "sha256": "a74f4a8702ce78650a6094bb553c9d09c4e5074c534cd9d8a766bec4235a16d6",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "factorization-2-input",
+      "source": "factorization",
+      "split": "held_out",
+      "physical_page": 1,
+      "bbox_points": [
+        334,
+        616,
+        369,
+        651
+      ],
+      "bbox": [
+        0.545751633986928,
+        0.7777777777777778,
+        0.6029411764705882,
+        0.821969696969697
+      ],
+      "delimiter": "round",
+      "expected_rows": 2,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "x_{t}"
+        ],
+        [
+          "h_{t-1}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/factorization-2-input.png",
+        "sha256": "78bf407c559765f66c3de2ae3133f53f91375c9e627d2d4184c4f1aecfed67d1",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "factorization-3-activations-1",
+      "source": "factorization",
+      "split": "held_out",
+      "physical_page": 2,
+      "bbox_points": [
+        225,
+        646,
+        268,
+        695
+      ],
+      "bbox": [
+        0.36764705882352944,
+        0.8156565656565656,
+        0.43790849673202614,
+        0.8775252525252525
+      ],
+      "delimiter": "round",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{tanh}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/factorization-3-activations-1.png",
+        "sha256": "cb54fb77cd2c1d47728d706a9b28da783af0dbbf0f4b2132354829bdb06e6bc5",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "factorization-3-input-1",
+      "source": "factorization",
+      "split": "held_out",
+      "physical_page": 2,
+      "bbox_points": [
+        282,
+        654,
+        314,
+        690
+      ],
+      "bbox": [
+        0.46078431372549017,
+        0.8257575757575758,
+        0.5130718954248366,
+        0.8712121212121212
+      ],
+      "delimiter": "round",
+      "expected_rows": 2,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "x_{t}^{1}"
+        ],
+        [
+          "h_{t-1}^{1}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/factorization-3-input-1.png",
+        "sha256": "d277974ad8ecd3b87904859822004cd17dfa739e25757f0f7ae8e6927abda2c7",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "factorization-3-activations-k",
+      "source": "factorization",
+      "split": "held_out",
+      "physical_page": 2,
+      "bbox_points": [
+        332,
+        646,
+        376,
+        695
+      ],
+      "bbox": [
+        0.5424836601307189,
+        0.8156565656565656,
+        0.6143790849673203,
+        0.8775252525252525
+      ],
+      "delimiter": "round",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{sigm}"
+        ],
+        [
+          "\\mathit{tanh}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/factorization-3-activations-k.png",
+        "sha256": "95130ced65599a45391cd59aeda1567b1ecde884b1b978bc142510d24863d7a0",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "factorization-3-input-k",
+      "source": "factorization",
+      "split": "held_out",
+      "physical_page": 2,
+      "bbox_points": [
+        388,
+        654,
+        423,
+        690
+      ],
+      "bbox": [
+        0.6339869281045751,
+        0.8257575757575758,
+        0.6911764705882353,
+        0.8712121212121212
+      ],
+      "delimiter": "round",
+      "expected_rows": 2,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "x_{t}^{k}"
+        ],
+        [
+          "h_{t-1}^{k}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/factorization-3-input-k.png",
+        "sha256": "591cfcea35a2a54334a1cfdfdd9685985269234fd68ad3f5970887c0e1093132",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "machine-reader-1-gates",
+      "source": "machine_reader",
+      "split": "held_out",
+      "physical_page": 3,
+      "bbox_points": [
+        347,
+        169,
+        374,
+        224
+      ],
+      "bbox": [
+        0.5829228785147383,
+        0.20073881036654442,
+        0.6282799900994586,
+        0.2660680090065441
+      ],
+      "delimiter": "square",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "i_{t}"
+        ],
+        [
+          "f_{t}"
+        ],
+        [
+          "o_{t}"
+        ],
+        [
+          "\\hat{c}_{t}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/machine-reader-1-gates.png",
+        "sha256": "53292255f37cf78558a612078a08870a4aa61cd3439d2acc1269970208eb158e",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "machine-reader-1-activations",
+      "source": "machine_reader",
+      "split": "held_out",
+      "physical_page": 3,
+      "bbox_points": [
+        385,
+        169,
+        426,
+        224
+      ],
+      "bbox": [
+        0.6467588133376779,
+        0.20073881036654442,
+        0.7156344272255866,
+        0.2660680090065441
+      ],
+      "delimiter": "square",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\sigma"
+        ],
+        [
+          "\\sigma"
+        ],
+        [
+          "\\sigma"
+        ],
+        [
+          "\\mathrm{tanh}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/machine-reader-1-activations.png",
+        "sha256": "c8c3952d3aa19e4da9751954267e1faae9a4558b9d5169048f286521d4128585",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "machine-reader-8-gates",
+      "source": "machine_reader",
+      "split": "held_out",
+      "physical_page": 4,
+      "bbox_points": [
+        352,
+        61,
+        379,
+        117
+      ],
+      "bbox": [
+        0.5913223436230198,
+        0.0724560203098178,
+        0.6366794552077402,
+        0.13897302256145383
+      ],
+      "delimiter": "square",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "i_{t}"
+        ],
+        [
+          "f_{t}"
+        ],
+        [
+          "o_{t}"
+        ],
+        [
+          "\\hat{c}_{t}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/machine-reader-8-gates.png",
+        "sha256": "9934923650b5e09d127fd2e9db5e63ad414d11b1b07a4247f537c0fc72639cc4",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    },
+    {
+      "id": "machine-reader-8-activations",
+      "source": "machine_reader",
+      "split": "held_out",
+      "physical_page": 4,
+      "bbox_points": [
+        390,
+        61,
+        431,
+        117
+      ],
+      "bbox": [
+        0.6551582784459595,
+        0.0724560203098178,
+        0.7240338923338681,
+        0.13897302256145383
+      ],
+      "delimiter": "square",
+      "expected_rows": 4,
+      "expected_columns": 1,
+      "expected_cells": [
+        [
+          "\\sigma"
+        ],
+        [
+          "\\sigma"
+        ],
+        [
+          "\\sigma"
+        ],
+        [
+          "\\mathrm{tanh}"
+        ]
+      ],
+      "crop": {
+        "path": "artifacts/matrix-gold/20261020T040826360393Z/machine-reader-8-activations.png",
+        "sha256": "0fad0dd5a79c0ade6300a196fdfcbdb21b4aad01ebeaeaaa88ffb4f3357960d5",
+        "scale": 4
+      },
+      "annotation_status": "visual_transcription_pending_crop_review"
+    }
+  ]
+}
