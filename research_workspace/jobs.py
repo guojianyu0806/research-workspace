@@ -32,6 +32,8 @@ class JobStore:
               CREATE TABLE IF NOT EXISTS research_job_stream(
                 job_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL);
             ''')
+            from .translation_pages import create_schema
+            create_schema(db)
         from .model_usage import UsageStore
         self.usage_store=UsageStore(library)
 
@@ -45,7 +47,8 @@ class JobStore:
         self.event(job_id,'queued','任务已进入队列。')
         return self.get(job_id)
 
-    def get(self,job_id,*,include_items=True):
+    def get(self,job_id,*,include_items=True,include_result=True):
+        if not include_result:return self.header(job_id)
         with self.library._connection() as db:
             row = db.execute('SELECT * FROM research_jobs WHERE id=?',(job_id,)).fetchone()
             if row is None:
@@ -59,6 +62,28 @@ class JobStore:
             item['model_calls']=self.usage_store.calls(db,job_id)
             item['stream']=self.stream_snapshot(db,job_id)
         return item
+
+    def header(self,job_id):
+        """Bounded history view; no complete results, checkpoints or call bodies."""
+        from .translation_pages import header_row,summary
+        with self.library._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            item=header_row(db,job_id)
+            info=summary(db,item) if item['kind']=='translate' else None
+            item['payload']=json.loads(item['payload']);item['has_result']=bool(item['has_result'])
+            item.update(result=None,result_deferred=item['has_result'],completed_items=[],items_deferred=True,
+                        model_calls=[],model_calls_deferred=True,translation_summary=info)
+            events=[dict(r) for r in db.execute('''SELECT stage,message,created_at FROM research_job_events
+                  WHERE job_id=? ORDER BY id DESC LIMIT 100''',(job_id,))]
+            item['events']=list(reversed(events))
+            item['event_count']=db.execute('SELECT COUNT(*) FROM research_job_events WHERE job_id=?',(job_id,)).fetchone()[0]
+            item['events_truncated']=item['event_count']>len(events)
+            item['usage']=self.usage_store.summary(db,job_id);item['stream']=self.stream_snapshot(db,job_id)
+        return item
+
+    def translation_page(self,job_id,**options):
+        from .translation_pages import page
+        return page(self.library,job_id,**options)
 
     def summary(self,job_id):
         """Bounded status payload for polling/SSE; full text stays behind get()."""

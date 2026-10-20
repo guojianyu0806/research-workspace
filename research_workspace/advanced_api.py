@@ -469,10 +469,19 @@ def build_router():
         return {'jobs':JobStore(library).list()}
 
     @router.get('/research/tasks/{job_id}')
-    def task(job_id:str,library:Library=Depends(library_for)):
+    def task(job_id:str,include_result:bool=True,library:Library=Depends(library_for)):
         store = JobStore(library)
         summary = store.summary(job_id)
-        return {'job':store.get(job_id,include_items=summary['status'] not in {'queued','running'})}
+        return {'job':store.get(job_id,include_items=summary['status'] not in {'queued','running'},include_result=include_result)}
+
+    @router.get('/research/tasks/{job_id}/translation-blocks')
+    def translation_blocks(job_id:str,offset:int=Query(0,ge=0),limit:int=Query(100,ge=1,le=200),
+                           revision:int|None=Query(None,ge=1),block_id:str|None=None,include_index:bool=False,
+                           library:Library=Depends(library_for)):
+        from .translation_pages import TranslationRevisionChanged
+        try:return JobStore(library).translation_page(job_id,offset=offset,limit=limit,revision=revision,
+                                                      block_id=block_id,include_index=include_index)
+        except TranslationRevisionChanged as error:raise HTTPException(409,str(error)) from None
 
     @router.post('/research/tasks/{job_id}/cancel')
     def cancel(job_id:str,library:Library=Depends(library_for)):
