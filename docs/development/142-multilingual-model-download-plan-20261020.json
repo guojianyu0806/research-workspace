@@ -1,0 +1,53 @@
+{
+  "status": "proposed_not_downloaded",
+  "checked_at": "2026-10-20T02:34:21.690571+00:00",
+  "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "repository": "Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q",
+  "revision": "faf4aa4225822f3bc6376869cb1164e8e3feedd0",
+  "dimensions": 384,
+  "max_input_tokens": 128,
+  "existing_runtime": "FastEmbed 0.9.0 and ONNX Runtime; no new packages",
+  "destination": "data/models/multilingual-minilm-l12-v2-onnx-q-faf4aa4",
+  "files": [
+    {
+      "path": "config.json",
+      "size": 673,
+      "sha256": "c8ec081fdad2df991bf5abbf18418fec7a5cdaa421f60ffb060a30040b8c376f",
+      "url": "https://huggingface.co/Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q/resolve/faf4aa4225822f3bc6376869cb1164e8e3feedd0/config.json"
+    },
+    {
+      "path": "ort_config.json",
+      "size": 1272,
+      "sha256": "99881c45e073696289224931dd48694398bc6bcd1fe7cb7018bca1e0cc00e1fc",
+      "url": "https://huggingface.co/Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q/resolve/faf4aa4225822f3bc6376869cb1164e8e3feedd0/ort_config.json"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "size": 964,
+      "sha256": "8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835",
+      "url": "https://huggingface.co/Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q/resolve/faf4aa4225822f3bc6376869cb1164e8e3feedd0/special_tokens_map.json"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 1416,
+      "sha256": "0666eebf692422757e1dddf3c9fb1ded73ba3dc726c5828671fc89e45bf3609f",
+      "url": "https://huggingface.co/Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q/resolve/faf4aa4225822f3bc6376869cb1164e8e3feedd0/tokenizer_config.json"
+    },
+    {
+      "path": "tokenizer.json",
+      "size": 17083009,
+      "sha256": "fa685fc160bbdbab64058d4fc91b60e62d207e8dc60b9af5c002c5ab946ded00",
+      "url": "https://huggingface.co/Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q/resolve/faf4aa4225822f3bc6376869cb1164e8e3feedd0/tokenizer.json"
+    },
+    {
+      "path": "model_optimized.onnx",
+      "size": 235052644,
+      "sha256": "634d0f66c29dc934c8fa72b8a4fe91dd4d420a22f1d82a241058d4316e659a99",
+      "url": "https://huggingface.co/Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q/resolve/faf4aa4225822f3bc6376869cb1164e8e3feedd0/model_optimized.onnx"
+    }
+  ],
+  "total_bytes": 252139978,
+  "license": "apache-2.0",
+  "authorization": "pending; no weight or tokenizer download performed",
+  "scope": "isolated local retrieval and dedup acceptance; existing English weights and private data unchanged"
+}
