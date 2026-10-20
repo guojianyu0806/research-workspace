@@ -166,7 +166,7 @@
       if (typeof options.api === "function") return options.api(path, { ...init, signal: abort.signal });
       const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...init, signal: abort.signal });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(typeof payload.detail === "string" ? payload.detail : `请求失败（${response.status}）。`);
+      if (!response.ok) { const error = new Error(typeof payload.detail === "string" ? payload.detail : `请求失败（${response.status}）。`); error.status = response.status; throw error; }
       return payload;
     };
     const show = (message, error = false) => {
@@ -416,7 +416,8 @@
       }
     }
     function renderResult(job) {
-      const signature = `${job.id}:${job.updated_at}:${job.completed_items?.length || 0}`;
+      const signature = job.translationPaging ? `${job.id}:translation:${job.translationPaging.revision}:${job.status}`
+        : `${job.id}:${job.updated_at}:${job.completed_items?.length || 0}`;
       if (state.resultStamp === signature) return;
       state.resultStamp = signature;
       const checkpoints = ['future_work','future_filter'].includes(job.kind) ? new Map((job.completed_items || []).map((item) => [item.stage, item.result])) : new Map();
@@ -431,6 +432,20 @@
         details.append(list);resultArea.prepend(details);
       };
       if (job.kind === "translate") {
+        if (job.translationPaging) {
+          output = job.translation_summary.result_metadata;
+          state.bilingual = window.ResearchBilingual.render(resultArea, output, { onEvidence: options.onEvidence,
+            sourceKey: job.id, paging: job.translationPaging, onStale: () => {
+              if (state.selectedJob?.id === job.id) { state.selectedJob.translationPaging = null; state.resultStamp = ""; }
+            } });
+          addGlossary();
+          return;
+        }
+        if (job.translationPagingError) {
+          resultArea.replaceChildren(node("p", "rs-muted", job.translationPagingError + " 原始记录保留，可通过完整任务导出核对。"));
+          state.bilingual?.destroy(); state.bilingual = null;
+          return;
+        }
         if (pending(job) && !output && !job.completed_items?.length) {
           state.bilingual?.destroy(); state.bilingual = null;
           resultArea.replaceChildren(node("p", "rs-empty", job.progress > 0
@@ -441,7 +456,7 @@
         const value = output || { blocks: job.completed_items || [], status: "partial", total_blocks: job.total || undefined,
           target_language: job.payload?.target_language || "zh" };
         if (window.ResearchBilingual) {
-          state.bilingual = window.ResearchBilingual.render(resultArea, value, { onEvidence: options.onEvidence });
+          state.bilingual = window.ResearchBilingual.render(resultArea, value, { onEvidence: options.onEvidence, sourceKey: job.id });
           addGlossary();
         } else {
           resultArea.replaceChildren(node("p", "rs-muted", "双语阅读组件未加载；可通过任务导出查看已保存结果。"));
@@ -615,6 +630,7 @@
       eventList.replaceChildren();
       for (const event of job.events || []) eventList.append(node("li", "", `${dateLabel(event.created_at)} ${event.message || event.stage || ""}`));
       for (const call of job.model_calls || []) eventList.append(node("li", "", `${call.model} · ${call.output_schema} · ${call.state} · ${call.duration_ms ?? "待返回"} ms · ${call.usage?.total_tokens ?? "未知"} Tokens · 请求 ${call.id.slice(0,8)}`));
+      if (job.model_calls_deferred && job.usage?.calls) eventList.append(node("li", "", "本页面按摘要加载；全部模型调用回执保存在完整任务导出中。"));
       eventDetails.hidden = !job.events?.length;
       renderResult(job); renderHistory();
     }
@@ -668,7 +684,7 @@
       state.pollTimer = life.later(async () => {
         if (state.suspended || generation !== state.readGeneration) return;
         try {
-          const response = await life.api(`/api/research/tasks/${encodeURIComponent(id)}`);
+          const response = await readTask(id);
           if (state.selectedJob?.id !== id || !life.alive || state.suspended || generation !== state.readGeneration) return;
           displayJob(response.job); schedulePoll();
         } catch (error) { if (life.alive && !state.suspended && generation === state.readGeneration) life.show(`任务状态更新中断：${error.message} 可点击刷新继续查看。`, true); }
@@ -684,13 +700,34 @@
       state.selectingJobId = id;
       state.selectedJob = state.jobs.find((item) => item.id === id) || (state.selectedJob?.id === id ? state.selectedJob : { id });
       try {
-        const response = await life.api(`/api/research/tasks/${encodeURIComponent(id)}`);
+        const response = await readTask(id);
         if (state.selectedJob?.id !== id || !life.alive || state.suspended || generation !== state.readGeneration) return;
         displayJob(response.job); schedulePoll();
         showStream(response.job.stream, id);
         if (reveal) revealTaskResult();
       } catch (error) { if (life.alive && !state.suspended && generation === state.readGeneration) life.show(error.message, true); }
       finally { if (generation === state.readGeneration) state.selectingJobId = null; }
+    }
+    async function readTask(id) {
+      const path = `/api/research/tasks/${encodeURIComponent(id)}`;
+      const response = await life.api(path + "?include_result=false");
+      const job = response.job;
+      // Older servers may ignore the optional flag and return their legacy body.
+      if (!job?.items_deferred) return response;
+      if (job.kind !== "translate") return life.api(path);
+      const summary = job.translation_summary;
+      if (!summary?.paging_supported || summary.index_error) {
+        job.translationPagingError = summary?.index_error || "当前服务尚不支持译文分页。";
+        return response;
+      }
+      if (state.selectedJob?.id === id && state.selectedJob.translationPaging?.revision === summary.revision) {
+        job.translationPaging = state.selectedJob.translationPaging;
+        return response;
+      }
+      const page = await life.api(path + `/translation-blocks?offset=0&limit=100&include_index=true&revision=${summary.revision}`);
+      job.translationPaging = { index: page.index, revision: summary.revision, initial_page: page,
+        load: (offset, limit) => life.api(path + `/translation-blocks?offset=${offset}&limit=${limit}&revision=${summary.revision}`) };
+      return response;
     }
     async function refresh(preferredJobId = null) {
       if (!life.alive) return;

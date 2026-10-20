@@ -108,6 +108,15 @@ def test_paging_bounds(store,offset,limit):
     with pytest.raises(ValueError):store.translation_page(job_id,offset=offset,limit=limit)
 
 
+@pytest.mark.parametrize('box,valid',[([.2,.2,.2,.5],False),([.2,.2,.7,.2],False),([0,0,1,1],True),
+                                   (None,False),([True,0,1,1],False),([0,0,2,1],False)])
+def test_only_nonempty_normalized_source_areas_can_navigate(store,box,valid):
+    blocks=synthetic_blocks(1);blocks[0]['bbox']=box;job_id=make_job(store,blocks)
+    page=store.translation_page(job_id)
+    assert page['blocks']==blocks and page['record_metadata'][0]['anchor_valid'] is valid
+    assert page['invalid_block_count']==int(not valid)
+
+
 def test_metadata_bounds_events_and_does_not_hide_legacy_records(store):
     job_id=make_job(store,synthetic_blocks(2))
     for i in range(105):store.event(job_id,'synthetic',str(i))

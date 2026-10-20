@@ -50,6 +50,10 @@
 .rb-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:1.9;font-weight:400}
 .rb-text-missing{color:var(--muted,#536874);font-style:italic}
 .rb-tail{pointer-events:none}
+.rb-spacer{height:0;pointer-events:none}
+.rb-scroll{scrollbar-gutter:stable}
+.rb-block-loading{box-sizing:border-box}
+.rb-retry{padding:7px 12px;font:inherit;cursor:pointer}
 
 @media(max-width:700px){.rb-heading{padding:16px 15px 8px;align-items:flex-start}
 .rb-title{font-size:16px}

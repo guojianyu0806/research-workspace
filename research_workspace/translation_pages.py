@@ -50,7 +50,7 @@ def _state(value,header):
     valid=(isinstance(value.get('block_id'),str) and bool(value['block_id']) and
            isinstance(page,int) and not isinstance(page,bool) and page>=1 and isinstance(box,list) and len(box)==4 and
            all(isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v) and 0<=v<=1 for v in box) and
-           box[0]<=box[2] and box[1]<=box[3] and bool(header.get('document_id')) and bool(header.get('run_id')) and
+           box[0]<box[2] and box[1]<box[3] and bool(header.get('document_id')) and bool(header.get('run_id')) and
            value.get('document_id')==header['document_id'] and value.get('run_id')==header['run_id'])
     return (len(source) if isinstance(source,str) else 0,len(target) if isinstance(target,str) else 0,
             source.count('\n') if isinstance(source,str) else 0,target.count('\n') if isinstance(target,str) else 0,
