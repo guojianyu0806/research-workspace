@@ -1,0 +1,1495 @@
+{
+  "version": "20261020-v1",
+  "created_at": "2026-10-20T02:56:37.163788+00:00",
+  "sources": {
+    "1706.03762v7.pdf": {
+      "path": "data/samples/1706.03762v7.pdf",
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+    },
+    "1810.04805v2.pdf": {
+      "path": "data/samples/1810.04805v2.pdf",
+      "sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e"
+    },
+    "2005.11401v4.pdf": {
+      "path": "data/samples/2005.11401v4.pdf",
+      "sha256": "23e3249e9a1e75418d82efecab0ea8c4d033b89c93742f63208d47ce01f21233"
+    }
+  },
+  "facts": [
+    {
+      "id": "T1",
+      "source": "1706.03762v7.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 3,
+        "bbox": [
+          0.17588398503322228,
+          0.6348862696175623,
+          0.8262372484394148,
+          0.7319968637793955
+        ],
+        "native_text": "Encoder:\nThe encoder is composed of a stack of N = 6 identical layers. Each layer has two\nsub-layers. The first is a multi-head self-attention mechanism, and the second is a simple, position-\nwise fully connected feed-forward network. We employ a residual connection [11] around each of\nthe two sub-layers, followed by layer normalization [1]. That is, the output of each sub-layer is\nLayerNorm(x + Sublayer(x)), where Sublayer(x) is the function implemented by the sub-layer\nitself. To facilitate these residual connections, all sub-layers in the model, as well as the embedding\nlayers, produce outputs of dimension dmodel = 512.\n",
+        "native_text_sha256": "fa322089106298e92bb139077d6dc5d2aefdd8c03c484032b2ddc1b7fc933f4a",
+        "anchor": "The encoder is composed of a stack of N = 6 identical layers."
+      }
+    },
+    {
+      "id": "T2",
+      "source": "1706.03762v7.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 3,
+        "bbox": [
+          0.17647058823529413,
+          0.746724677808357,
+          0.8235318053002451,
+          0.8422386863014915
+        ],
+        "native_text": "Decoder:\nThe decoder is also composed of a stack of N = 6 identical layers. In addition to the two\nsub-layers in each encoder layer, the decoder inserts a third sub-layer, which performs multi-head\nattention over the output of the encoder stack. Similar to the encoder, we employ residual connections\naround each of the sub-layers, followed by layer normalization. We also modify the self-attention\nsub-layer in the decoder stack to prevent positions from attending to subsequent positions. This\nmasking, combined with fact that the output embeddings are offset by one position, ensures that the\npredictions for position i can depend only on the known outputs at positions less than i.\n",
+        "native_text_sha256": "9142081cd9186b830632d3225de0a14dbdb3a9fca364bd00ca631f25319a9e96",
+        "anchor": "prevent positions from attending to subsequent positions"
+      }
+    },
+    {
+      "id": "T3",
+      "source": "1706.03762v7.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 5,
+        "bbox": [
+          0.17647058823529413,
+          0.29563370136299516,
+          0.8235328524720436,
+          0.33605313541913273
+        ],
+        "native_text": "In this work we employ h = 8 parallel attention layers, or heads. For each of these we use\ndk = dv = dmodel/h = 64. Due to the reduced dimension of each head, the total computational cost\nis similar to that of single-head attention with full dimensionality.\n",
+        "native_text_sha256": "be8c3a1280cb6ba7b3faf13ca71490f566942c0ccab8e2e8f579e48565548036",
+        "anchor": "h = 8 parallel attention layers"
+      }
+    },
+    {
+      "id": "T4",
+      "source": "1706.03762v7.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 5,
+        "bbox": [
+          0.17570587856317657,
+          0.745252975309738,
+          0.826381010167739,
+          0.800654709941209
+        ],
+        "native_text": "While the linear transformations are the same across different positions, they use different parameters\nfrom layer to layer. Another way of describing this is as two convolutions with kernel size 1.\nThe dimensionality of input and output is dmodel = 512, and the inner-layer has dimensionality\ndff = 2048.\n",
+        "native_text_sha256": "482a28b425c5df124edfa8c6b4ae7418b30dd920f1a4f45c5042b7d363bd78ac",
+        "anchor": "the inner-layer has dimensionality dff = 2048"
+      }
+    },
+    {
+      "id": "T5",
+      "source": "1706.03762v7.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 6,
+        "bbox": [
+          0.17570587856317657,
+          0.5524528965805516,
+          0.8235333012599572,
+          0.6063586918994633
+        ],
+        "native_text": "We also experimented with using learned positional embeddings [9] instead, and found that the two\nversions produced nearly identical results (see Table 3 row (E)). We chose the sinusoidal version\nbecause it may allow the model to extrapolate to sequence lengths longer than the ones encountered\nduring training.\n",
+        "native_text_sha256": "b39fa4cc0ecc4e8c66e0754d1a3f00f07bde6bb2a3c930b0405ba393a7e2374a",
+        "anchor": "We chose the sinusoidal version because"
+      }
+    },
+    {
+      "id": "T6",
+      "source": "1706.03762v7.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 7,
+        "bbox": [
+          0.1759656893661599,
+          0.8115074851296165,
+          0.8255619223600899,
+          0.8519255512892597
+        ],
+        "native_text": "This corresponds to increasing the learning rate linearly for the first warmup_steps training steps,\nand decreasing it thereafter proportionally to the inverse square root of the step number. We used\nwarmup_steps = 4000.\n",
+        "native_text_sha256": "7ccf3b535471c773812d2b98801bc6a8fa2457f45960f38535156d7ffd2d1285",
+        "anchor": "We used warmup_steps = 4000"
+      }
+    },
+    {
+      "id": "T7",
+      "source": "1706.03762v7.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 8,
+        "bbox": [
+          0.17647058823529413,
+          0.3449917802907,
+          0.8235318551655688,
+          0.4005738845979325
+        ],
+        "native_text": "Residual Dropout\nWe apply dropout [33] to the output of each sub-layer, before it is added to the\nsub-layer input and normalized. In addition, we apply dropout to the sums of the embeddings and the\npositional encodings in both the encoder and decoder stacks. For the base model, we use a rate of\nPdrop = 0.1.\n",
+        "native_text_sha256": "da3ee3cfd828622e3c0727250f606f0321cdecdc8dc2bceb8277199756aa6483",
+        "anchor": "For the base model, we use a rate of Pdrop = 0.1"
+      }
+    },
+    {
+      "id": "T8",
+      "source": "1706.03762v7.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 8,
+        "bbox": [
+          0.17647058823529413,
+          0.4181085066361861,
+          0.8235225802153544,
+          0.4447526257447522
+        ],
+        "native_text": "Label Smoothing\nDuring training, we employed label smoothing of value ϵls = 0.1 [36]. This\nhurts perplexity, as the model learns to be more unsure, but improves accuracy and BLEU score.\n",
+        "native_text_sha256": "199bc349230e9854243191a68b6c46b354005ef100a39130ce61785b43566539",
+        "anchor": "we employed label smoothing"
+      }
+    },
+    {
+      "id": "R1",
+      "source": "2005.11401v4.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 3,
+        "bbox": [
+          0.1759656893661599,
+          0.5801613932908184,
+          0.7971686070261438,
+          0.5939666285659327
+        ],
+        "native_text": "The retrieval component pη(z|x) is based on DPR [26]. DPR follows a bi-encoder architecture:\n",
+        "native_text_sha256": "369492c36c7a741c1894fd1fcec04577064812b7bc2b94d12f33b6c227bf1316",
+        "anchor": "The retrieval component"
+      }
+    },
+    {
+      "id": "R2",
+      "source": "2005.11401v4.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 3,
+        "bbox": [
+          0.1759656893661599,
+          0.7609164305407592,
+          0.8235363929100286,
+          0.8428195221255524
+        ],
+        "native_text": "The generator component pθ(yi|x, z, y1:i−1) could be modelled using any encoder-decoder. We use\nBART-large [32], a pre-trained seq2seq transformer [58] with 400M parameters. To combine the input\nx with the retrieved content z when generating from BART, we simply concatenate them. BART was\npre-trained using a denoising objective and a variety of different noising functions. It has obtained\nstate-of-the-art results on a diverse set of generation tasks and outperforms comparably-sized T5\nmodels [32]. We refer to the BART generator parameters θ as the parametric memory henceforth.\n",
+        "native_text_sha256": "2336c7a5ee10583cc4e7fd6fdea689836ad2e6ba245833db1d5cf529a5f8bfc2",
+        "anchor": "We use BART-large"
+      }
+    },
+    {
+      "id": "R3",
+      "source": "2005.11401v4.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 4,
+        "bbox": [
+          0.17570587856317657,
+          0.09349479097308534,
+          0.8263775195950777,
+          0.16500896877712673
+        ],
+        "native_text": "j −log p(yj|xj) using stochastic\ngradient descent with Adam [28]. Updating the document encoder BERTd during training is costly as\nit requires the document index to be periodically updated as REALM does during pre-training [20].\nWe do not ﬁnd this step necessary for strong performance, and keep the document encoder (and\nindex) ﬁxed, only ﬁne-tuning the query encoder BERTq and the BART generator.\n",
+        "native_text_sha256": "a7982b22fe2ee4ca35dbe5460cab43b8db5592a94f2b4a6a20d22786475355d1",
+        "anchor": "keep the document encoder (and index) fixed"
+      }
+    },
+    {
+      "id": "R4",
+      "source": "2005.11401v4.pdf",
+      "split": "development",
+      "evidence": {
+        "physical_page": 4,
+        "bbox": [
+          0.17524999730727253,
+          0.498188327057193,
+          0.8239390553991779,
+          0.6071339231548887
+        ],
+        "native_text": "We experiment with RAG in a wide range of knowledge-intensive tasks. For all experiments, we use\na single Wikipedia dump for our non-parametric knowledge source. Following Lee et al. [31] and\nKarpukhin et al. [26], we use the December 2018 dump. Each Wikipedia article is split into disjoint\n100-word chunks, to make a total of 21M documents. We use the document encoder to compute an\nembedding for each document, and build a single MIPS index using FAISS [23] with a Hierarchical\nNavigable Small World approximation for fast retrieval [37]. During training, we retrieve the top\nk documents for each query. We consider k ∈{5, 10} for training and set k for test time using dev\ndata. We now discuss experimental details for each task.\n",
+        "native_text_sha256": "3d310646717512503e2b0e6b2f439b486547b3a69f4555a2c981f53930f844cf",
+        "anchor": "we use the December 2018 dump"
+      }
+    },
+    {
+      "id": "B1",
+      "source": "1810.04805v2.pdf",
+      "split": "held_out_source",
+      "evidence": {
+        "physical_page": 3,
+        "bbox": [
+          0.5161908097629837,
+          0.6743051776608824,
+          0.8828651937116387,
+          0.7355448490835483
+        ],
+        "native_text": "We primarily report results on two model sizes:\nBERTBASE (L=12, H=768, A=12, Total Param-\neters=110M) and BERTLARGE (L=24, H=1024,\nA=16, Total Parameters=340M).\n",
+        "native_text_sha256": "dc95e0d26fc72b64bd522c5532a3f9ba449c950415b2378036f6f6a10f227fde",
+        "anchor": "We primarily report results on two model sizes"
+      }
+    },
+    {
+      "id": "B2",
+      "source": "1810.04805v2.pdf",
+      "split": "held_out_source",
+      "evidence": {
+        "physical_page": 4,
+        "bbox": [
+          0.1209522719261208,
+          0.23936348834953441,
+          0.487627450501907,
+          0.4952037281837871
+        ],
+        "native_text": "We use WordPiece embeddings (Wu et al.,\n2016) with a 30,000 token vocabulary. The ﬁrst\ntoken of every sequence is always a special clas-\nsiﬁcation token ([CLS]). The ﬁnal hidden state\ncorresponding to this token is used as the ag-\ngregate sequence representation for classiﬁcation\ntasks. Sentence pairs are packed together into a\nsingle sequence. We differentiate the sentences in\ntwo ways. First, we separate them with a special\ntoken ([SEP]). Second, we add a learned embed-\nding to every token indicating whether it belongs\nto sentence A or sentence B. As shown in Figure 1,\nwe denote input embedding as E, the ﬁnal hidden\nvector of the special [CLS] token as C ∈RH,\nand the ﬁnal hidden vector for the ith input token\nas Ti ∈RH.\n",
+        "native_text_sha256": "d8dc74218b04b6cb0de5611328dd2ddd8e9cd768afcff8c7e4a68de57314e5f5",
+        "anchor": "with a 30,000 token vocabulary"
+      }
+    },
+    {
+      "id": "B3",
+      "source": "1810.04805v2.pdf",
+      "split": "held_out_source",
+      "evidence": {
+        "physical_page": 4,
+        "bbox": [
+          0.1209522719261208,
+          0.23936348834953441,
+          0.487627450501907,
+          0.4952037281837871
+        ],
+        "native_text": "We use WordPiece embeddings (Wu et al.,\n2016) with a 30,000 token vocabulary. The ﬁrst\ntoken of every sequence is always a special clas-\nsiﬁcation token ([CLS]). The ﬁnal hidden state\ncorresponding to this token is used as the ag-\ngregate sequence representation for classiﬁcation\ntasks. Sentence pairs are packed together into a\nsingle sequence. We differentiate the sentences in\ntwo ways. First, we separate them with a special\ntoken ([SEP]). Second, we add a learned embed-\nding to every token indicating whether it belongs\nto sentence A or sentence B. As shown in Figure 1,\nwe denote input embedding as E, the ﬁnal hidden\nvector of the special [CLS] token as C ∈RH,\nand the ﬁnal hidden vector for the ith input token\nas Ti ∈RH.\n",
+        "native_text_sha256": "d8dc74218b04b6cb0de5611328dd2ddd8e9cd768afcff8c7e4a68de57314e5f5",
+        "anchor": "hidden state corresponding to this token"
+      }
+    },
+    {
+      "id": "B4",
+      "source": "1810.04805v2.pdf",
+      "split": "held_out_source",
+      "evidence": {
+        "physical_page": 4,
+        "bbox": [
+          0.5161908097629837,
+          0.07779363304205175,
+          0.8828597594873866,
+          0.2999713235035045
+        ],
+        "native_text": "In order to train a deep bidirectional representa-\ntion, we simply mask some percentage of the input\ntokens at random, and then predict those masked\ntokens. We refer to this procedure as a “masked\nLM” (MLM), although it is often referred to as a\nCloze task in the literature (Taylor, 1953). In this\ncase, the ﬁnal hidden vectors corresponding to the\nmask tokens are fed into an output softmax over\nthe vocabulary, as in a standard LM. In all of our\nexperiments, we mask 15% of all WordPiece to-\nkens in each sequence at random. In contrast to\ndenoising auto-encoders (Vincent et al., 2008), we\nonly predict the masked words rather than recon-\nstructing the entire input.\n",
+        "native_text_sha256": "5db01e716aaffaae04095243447ee858c7e7659f840818aaeb565bf2dd5d7a99",
+        "anchor": "we mask 15% of all WordPiece"
+      }
+    },
+    {
+      "id": "B5",
+      "source": "1810.04805v2.pdf",
+      "split": "held_out_source",
+      "evidence": {
+        "physical_page": 4,
+        "bbox": [
+          0.5161908097629837,
+          0.3031070155665781,
+          0.8828658089068371,
+          0.5413782523772385
+        ],
+        "native_text": "Although this allows us to obtain a bidirec-\ntional pre-trained model, a downside is that we\nare creating a mismatch between pre-training and\nﬁne-tuning, since the [MASK] token does not ap-\npear during ﬁne-tuning. To mitigate this, we do\nnot always replace “masked” words with the ac-\ntual [MASK] token. The training data generator\nchooses 15% of the token positions at random for\nprediction. If the i-th token is chosen, we replace\nthe i-th token with (1) the [MASK] token 80% of\nthe time (2) a random token 10% of the time (3)\nthe unchanged i-th token 10% of the time. Then,\nTi will be used to predict the original token with\ncross entropy loss. We compare variations of this\nprocedure in Appendix C.2.\n",
+        "native_text_sha256": "9be42a29e6de19656c642acad92e17f323c2cb44121bc525dc25a8a79c1e8260",
+        "anchor": "the [MASK] token 80%"
+      }
+    },
+    {
+      "id": "B6",
+      "source": "1810.04805v2.pdf",
+      "split": "held_out_source",
+      "evidence": {
+        "physical_page": 4,
+        "bbox": [
+          0.5161908097629837,
+          0.559603070309941,
+          0.8828614000079155,
+          0.8623667363950306
+        ],
+        "native_text": "Task #2:\nNext Sentence Prediction (NSP)\nMany important downstream tasks such as Ques-\ntion Answering (QA) and Natural Language Infer-\nence (NLI) are based on understanding the rela-\ntionship between two sentences, which is not di-\nrectly captured by language modeling. In order\nto train a model that understands sentence rela-\ntionships, we pre-train for a binarized next sen-\ntence prediction task that can be trivially gener-\nated from any monolingual corpus. Speciﬁcally,\nwhen choosing the sentences A and B for each pre-\ntraining example, 50% of the time B is the actual\nnext sentence that follows A (labeled as IsNext),\nand 50% of the time it is a random sentence from\nthe corpus (labeled as NotNext).\nAs we show\nin Figure 1, C is used for next sentence predic-\ntion (NSP).5 Despite its simplicity, we demon-\nstrate in Section 5.1 that pre-training towards this\ntask is very beneﬁcial to both QA and NLI. 6\n",
+        "native_text_sha256": "f21f4a4abd66f149142851c68d52a256d7eaeb5f51c614bcb6fa43e070bf38e6",
+        "anchor": "50% of the time B is the actual"
+      }
+    },
+    {
+      "id": "B7",
+      "source": "1810.04805v2.pdf",
+      "split": "held_out_source",
+      "evidence": {
+        "physical_page": 5,
+        "bbox": [
+          0.12095229755925406,
+          0.38023863513941253,
+          0.48762140108245644,
+          0.5542516105019123
+        ],
+        "native_text": "Pre-training data The pre-training procedure\nlargely follows the existing literature on language\nmodel pre-training. For the pre-training corpus we\nuse the BooksCorpus (800M words) (Zhu et al.,\n2015) and English Wikipedia (2,500M words).\nFor Wikipedia we extract only the text passages\nand ignore lists, tables, and headers. It is criti-\ncal to use a document-level corpus rather than a\nshufﬂed sentence-level corpus such as the Billion\nWord Benchmark (Chelba et al., 2013) in order to\nextract long contiguous sequences.\n",
+        "native_text_sha256": "8a3124dd04c02080fa43d1221fee3458ebd15bf766f229ffb374f1c483c8c410",
+        "anchor": "BooksCorpus (800M words)"
+      }
+    },
+    {
+      "id": "B8",
+      "source": "1810.04805v2.pdf",
+      "split": "held_out_source",
+      "evidence": {
+        "physical_page": 4,
+        "bbox": [
+          0.5161908097629837,
+          0.07779363304205175,
+          0.8828597594873866,
+          0.2999713235035045
+        ],
+        "native_text": "In order to train a deep bidirectional representa-\ntion, we simply mask some percentage of the input\ntokens at random, and then predict those masked\ntokens. We refer to this procedure as a “masked\nLM” (MLM), although it is often referred to as a\nCloze task in the literature (Taylor, 1953). In this\ncase, the ﬁnal hidden vectors corresponding to the\nmask tokens are fed into an output softmax over\nthe vocabulary, as in a standard LM. In all of our\nexperiments, we mask 15% of all WordPiece to-\nkens in each sequence at random. In contrast to\ndenoising auto-encoders (Vincent et al., 2008), we\nonly predict the masked words rather than recon-\nstructing the entire input.\n",
+        "native_text_sha256": "5db01e716aaffaae04095243447ee858c7e7659f840818aaeb565bf2dd5d7a99",
+        "anchor": "we only predict the masked words"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "T1-en",
+      "fact_id": "T1",
+      "language": "en",
+      "query": "How many identical layers make up the Transformer encoder?",
+      "split": "development"
+    },
+    {
+      "id": "T1-zh",
+      "fact_id": "T1",
+      "language": "zh",
+      "query": "Transformer编码器由多少个相同层组成？",
+      "split": "development"
+    },
+    {
+      "id": "T1-de",
+      "fact_id": "T1",
+      "language": "de",
+      "query": "Aus wie vielen identischen Schichten besteht der Transformer-Encoder?",
+      "split": "development"
+    },
+    {
+      "id": "T1-fr",
+      "fact_id": "T1",
+      "language": "fr",
+      "query": "Combien de couches identiques composent l’encodeur du Transformer ?",
+      "split": "development"
+    },
+    {
+      "id": "T1-es",
+      "fact_id": "T1",
+      "language": "es",
+      "query": "¿Cuántas capas idénticas forman el codificador del Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T1-ja",
+      "fact_id": "T1",
+      "language": "ja",
+      "query": "Transformerのエンコーダは同一の層を何層重ねていますか？",
+      "split": "development"
+    },
+    {
+      "id": "T1-ko",
+      "fact_id": "T1",
+      "language": "ko",
+      "query": "Transformer 인코더는 동일한 층을 몇 개 쌓습니까?",
+      "split": "development"
+    },
+    {
+      "id": "T1-ar",
+      "fact_id": "T1",
+      "language": "ar",
+      "query": "من كم طبقة متطابقة يتكون مشفر Transformer؟",
+      "split": "development"
+    },
+    {
+      "id": "T2-en",
+      "fact_id": "T2",
+      "language": "en",
+      "query": "Why does Transformer decoder self-attention mask subsequent positions?",
+      "split": "development"
+    },
+    {
+      "id": "T2-zh",
+      "fact_id": "T2",
+      "language": "zh",
+      "query": "Transformer解码器的自注意力为什么要屏蔽后续位置？",
+      "split": "development"
+    },
+    {
+      "id": "T2-de",
+      "fact_id": "T2",
+      "language": "de",
+      "query": "Warum maskiert die Selbstaufmerksamkeit des Transformer-Decoders spätere Positionen?",
+      "split": "development"
+    },
+    {
+      "id": "T2-fr",
+      "fact_id": "T2",
+      "language": "fr",
+      "query": "Pourquoi l’auto-attention du décodeur Transformer masque-t-elle les positions suivantes ?",
+      "split": "development"
+    },
+    {
+      "id": "T2-es",
+      "fact_id": "T2",
+      "language": "es",
+      "query": "¿Por qué la autoatención del decodificador Transformer oculta las posiciones posteriores?",
+      "split": "development"
+    },
+    {
+      "id": "T2-ja",
+      "fact_id": "T2",
+      "language": "ja",
+      "query": "Transformerのデコーダの自己注意は、なぜ後続位置をマスクしますか？",
+      "split": "development"
+    },
+    {
+      "id": "T2-ko",
+      "fact_id": "T2",
+      "language": "ko",
+      "query": "Transformer 디코더의 자기 주의는 왜 이후 위치를 가립니까?",
+      "split": "development"
+    },
+    {
+      "id": "T2-ar",
+      "fact_id": "T2",
+      "language": "ar",
+      "query": "لماذا يحجب الانتباه الذاتي في مفكك Transformer المواضع اللاحقة؟",
+      "split": "development"
+    },
+    {
+      "id": "T3-en",
+      "fact_id": "T3",
+      "language": "en",
+      "query": "How many parallel attention heads are used in this Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T3-zh",
+      "fact_id": "T3",
+      "language": "zh",
+      "query": "论文中的Transformer使用多少个并行注意力头？",
+      "split": "development"
+    },
+    {
+      "id": "T3-de",
+      "fact_id": "T3",
+      "language": "de",
+      "query": "Wie viele parallele Aufmerksamkeitsköpfe verwendet dieser Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T3-fr",
+      "fact_id": "T3",
+      "language": "fr",
+      "query": "Combien de têtes d’attention parallèles ce Transformer utilise-t-il ?",
+      "split": "development"
+    },
+    {
+      "id": "T3-es",
+      "fact_id": "T3",
+      "language": "es",
+      "query": "¿Cuántas cabezas de atención paralelas utiliza este Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T3-ja",
+      "fact_id": "T3",
+      "language": "ja",
+      "query": "このTransformerは並列の注意ヘッドをいくつ使いますか？",
+      "split": "development"
+    },
+    {
+      "id": "T3-ko",
+      "fact_id": "T3",
+      "language": "ko",
+      "query": "이 Transformer는 병렬 주의 헤드를 몇 개 사용합니까?",
+      "split": "development"
+    },
+    {
+      "id": "T3-ar",
+      "fact_id": "T3",
+      "language": "ar",
+      "query": "كم رأس انتباه متوازيا يستخدم نموذج Transformer في الورقة؟",
+      "split": "development"
+    },
+    {
+      "id": "T4-en",
+      "fact_id": "T4",
+      "language": "en",
+      "query": "What is the inner-layer dimension of the Transformer feed-forward network?",
+      "split": "development"
+    },
+    {
+      "id": "T4-zh",
+      "fact_id": "T4",
+      "language": "zh",
+      "query": "Transformer前馈网络的内部层维度是多少？",
+      "split": "development"
+    },
+    {
+      "id": "T4-de",
+      "fact_id": "T4",
+      "language": "de",
+      "query": "Welche Dimension hat die innere Schicht des Feedforward-Netzes im Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T4-fr",
+      "fact_id": "T4",
+      "language": "fr",
+      "query": "Quelle est la dimension interne du réseau feed-forward du Transformer ?",
+      "split": "development"
+    },
+    {
+      "id": "T4-es",
+      "fact_id": "T4",
+      "language": "es",
+      "query": "¿Cuál es la dimensión interna de la red de avance del Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T4-ja",
+      "fact_id": "T4",
+      "language": "ja",
+      "query": "Transformerのフィードフォワードネットワークの中間層の次元はいくつですか？",
+      "split": "development"
+    },
+    {
+      "id": "T4-ko",
+      "fact_id": "T4",
+      "language": "ko",
+      "query": "Transformer 순방향 네트워크의 내부 층 차원은 얼마입니까?",
+      "split": "development"
+    },
+    {
+      "id": "T4-ar",
+      "fact_id": "T4",
+      "language": "ar",
+      "query": "ما بُعد الطبقة الداخلية للشبكة الأمامية في Transformer؟",
+      "split": "development"
+    },
+    {
+      "id": "T5-en",
+      "fact_id": "T5",
+      "language": "en",
+      "query": "Why did the Transformer authors choose sinusoidal instead of learned positional embeddings?",
+      "split": "development"
+    },
+    {
+      "id": "T5-zh",
+      "fact_id": "T5",
+      "language": "zh",
+      "query": "Transformer作者为什么选择正弦位置编码而非可学习的位置嵌入？",
+      "split": "development"
+    },
+    {
+      "id": "T5-de",
+      "fact_id": "T5",
+      "language": "de",
+      "query": "Warum wählten die Transformer-Autoren sinusförmige statt gelernter Positionskodierungen?",
+      "split": "development"
+    },
+    {
+      "id": "T5-fr",
+      "fact_id": "T5",
+      "language": "fr",
+      "query": "Pourquoi les auteurs du Transformer ont-ils choisi des positions sinusoïdales plutôt qu’apprises ?",
+      "split": "development"
+    },
+    {
+      "id": "T5-es",
+      "fact_id": "T5",
+      "language": "es",
+      "query": "¿Por qué eligieron los autores del Transformer posiciones sinusoidales en vez de aprendidas?",
+      "split": "development"
+    },
+    {
+      "id": "T5-ja",
+      "fact_id": "T5",
+      "language": "ja",
+      "query": "Transformerの著者は、学習する位置埋め込みではなく正弦波版をなぜ選びましたか？",
+      "split": "development"
+    },
+    {
+      "id": "T5-ko",
+      "fact_id": "T5",
+      "language": "ko",
+      "query": "Transformer 저자들은 왜 학습된 위치 임베딩 대신 사인파 방식을 선택했습니까?",
+      "split": "development"
+    },
+    {
+      "id": "T5-ar",
+      "fact_id": "T5",
+      "language": "ar",
+      "query": "لماذا اختار مؤلفو Transformer الترميز الموضعي الجيبي بدلا من التضمينات المتعلمة؟",
+      "split": "development"
+    },
+    {
+      "id": "T6-en",
+      "fact_id": "T6",
+      "language": "en",
+      "query": "How many warmup steps does the Transformer learning-rate schedule use?",
+      "split": "development"
+    },
+    {
+      "id": "T6-zh",
+      "fact_id": "T6",
+      "language": "zh",
+      "query": "Transformer学习率调度使用多少个预热步？",
+      "split": "development"
+    },
+    {
+      "id": "T6-de",
+      "fact_id": "T6",
+      "language": "de",
+      "query": "Wie viele Aufwärmschritte verwendet der Lernratenplan des Transformers?",
+      "split": "development"
+    },
+    {
+      "id": "T6-fr",
+      "fact_id": "T6",
+      "language": "fr",
+      "query": "Combien d’étapes de préchauffage le calendrier du taux d’apprentissage du Transformer utilise-t-il ?",
+      "split": "development"
+    },
+    {
+      "id": "T6-es",
+      "fact_id": "T6",
+      "language": "es",
+      "query": "¿Cuántos pasos de calentamiento usa el programa de tasa de aprendizaje del Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T6-ja",
+      "fact_id": "T6",
+      "language": "ja",
+      "query": "Transformerの学習率スケジュールのウォームアップは何ステップですか？",
+      "split": "development"
+    },
+    {
+      "id": "T6-ko",
+      "fact_id": "T6",
+      "language": "ko",
+      "query": "Transformer 학습률 일정의 워밍업 단계는 몇 번입니까?",
+      "split": "development"
+    },
+    {
+      "id": "T6-ar",
+      "fact_id": "T6",
+      "language": "ar",
+      "query": "كم خطوة إحماء يستخدم جدول معدل التعلم في Transformer؟",
+      "split": "development"
+    },
+    {
+      "id": "T7-en",
+      "fact_id": "T7",
+      "language": "en",
+      "query": "What dropout rate is used for the base Transformer model?",
+      "split": "development"
+    },
+    {
+      "id": "T7-zh",
+      "fact_id": "T7",
+      "language": "zh",
+      "query": "Transformer基础模型使用的dropout比例是多少？",
+      "split": "development"
+    },
+    {
+      "id": "T7-de",
+      "fact_id": "T7",
+      "language": "de",
+      "query": "Welche Dropout-Rate verwendet das Transformer-Basismodell?",
+      "split": "development"
+    },
+    {
+      "id": "T7-fr",
+      "fact_id": "T7",
+      "language": "fr",
+      "query": "Quel taux de dropout est utilisé pour le modèle Transformer de base ?",
+      "split": "development"
+    },
+    {
+      "id": "T7-es",
+      "fact_id": "T7",
+      "language": "es",
+      "query": "¿Qué tasa de dropout usa el modelo Transformer base?",
+      "split": "development"
+    },
+    {
+      "id": "T7-ja",
+      "fact_id": "T7",
+      "language": "ja",
+      "query": "Transformerの基本モデルのドロップアウト率はいくつですか？",
+      "split": "development"
+    },
+    {
+      "id": "T7-ko",
+      "fact_id": "T7",
+      "language": "ko",
+      "query": "Transformer 기본 모델의 드롭아웃 비율은 얼마입니까?",
+      "split": "development"
+    },
+    {
+      "id": "T7-ar",
+      "fact_id": "T7",
+      "language": "ar",
+      "query": "ما معدل الإسقاط المستخدم في نموذج Transformer الأساسي؟",
+      "split": "development"
+    },
+    {
+      "id": "T8-en",
+      "fact_id": "T8",
+      "language": "en",
+      "query": "What label-smoothing value is used when training the Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T8-zh",
+      "fact_id": "T8",
+      "language": "zh",
+      "query": "Transformer训练时使用的标签平滑系数是多少？",
+      "split": "development"
+    },
+    {
+      "id": "T8-de",
+      "fact_id": "T8",
+      "language": "de",
+      "query": "Welcher Wert für Label Smoothing wird beim Transformer-Training verwendet?",
+      "split": "development"
+    },
+    {
+      "id": "T8-fr",
+      "fact_id": "T8",
+      "language": "fr",
+      "query": "Quelle valeur de lissage des étiquettes est utilisée pour entraîner le Transformer ?",
+      "split": "development"
+    },
+    {
+      "id": "T8-es",
+      "fact_id": "T8",
+      "language": "es",
+      "query": "¿Qué valor de suavizado de etiquetas se usa al entrenar el Transformer?",
+      "split": "development"
+    },
+    {
+      "id": "T8-ja",
+      "fact_id": "T8",
+      "language": "ja",
+      "query": "Transformerの学習で使うラベルスムージングの値はいくつですか？",
+      "split": "development"
+    },
+    {
+      "id": "T8-ko",
+      "fact_id": "T8",
+      "language": "ko",
+      "query": "Transformer 학습의 레이블 스무딩 값은 얼마입니까?",
+      "split": "development"
+    },
+    {
+      "id": "T8-ar",
+      "fact_id": "T8",
+      "language": "ar",
+      "query": "ما قيمة تنعيم التسميات المستخدمة أثناء تدريب Transformer؟",
+      "split": "development"
+    },
+    {
+      "id": "R1-en",
+      "fact_id": "R1",
+      "language": "en",
+      "query": "Which retrieval architecture is used by RAG?",
+      "split": "development"
+    },
+    {
+      "id": "R1-zh",
+      "fact_id": "R1",
+      "language": "zh",
+      "query": "RAG的检索组件采用什么架构？",
+      "split": "development"
+    },
+    {
+      "id": "R1-de",
+      "fact_id": "R1",
+      "language": "de",
+      "query": "Welche Abrufarchitektur verwendet RAG?",
+      "split": "development"
+    },
+    {
+      "id": "R1-fr",
+      "fact_id": "R1",
+      "language": "fr",
+      "query": "Quelle architecture de recherche RAG utilise-t-il ?",
+      "split": "development"
+    },
+    {
+      "id": "R1-es",
+      "fact_id": "R1",
+      "language": "es",
+      "query": "¿Qué arquitectura de recuperación utiliza RAG?",
+      "split": "development"
+    },
+    {
+      "id": "R1-ja",
+      "fact_id": "R1",
+      "language": "ja",
+      "query": "RAGの検索コンポーネントはどのアーキテクチャを使いますか？",
+      "split": "development"
+    },
+    {
+      "id": "R1-ko",
+      "fact_id": "R1",
+      "language": "ko",
+      "query": "RAG 검색 구성 요소는 어떤 구조를 사용합니까?",
+      "split": "development"
+    },
+    {
+      "id": "R1-ar",
+      "fact_id": "R1",
+      "language": "ar",
+      "query": "ما بنية الاسترجاع التي يستخدمها RAG؟",
+      "split": "development"
+    },
+    {
+      "id": "R2-en",
+      "fact_id": "R2",
+      "language": "en",
+      "query": "Which pretrained generator and parameter count are used in RAG?",
+      "split": "development"
+    },
+    {
+      "id": "R2-zh",
+      "fact_id": "R2",
+      "language": "zh",
+      "query": "RAG采用哪个预训练生成器，它有多少参数？",
+      "split": "development"
+    },
+    {
+      "id": "R2-de",
+      "fact_id": "R2",
+      "language": "de",
+      "query": "Welchen vortrainierten Generator mit wie vielen Parametern verwendet RAG?",
+      "split": "development"
+    },
+    {
+      "id": "R2-fr",
+      "fact_id": "R2",
+      "language": "fr",
+      "query": "Quel générateur préentraîné RAG utilise-t-il et combien de paramètres possède-t-il ?",
+      "split": "development"
+    },
+    {
+      "id": "R2-es",
+      "fact_id": "R2",
+      "language": "es",
+      "query": "¿Qué generador preentrenado utiliza RAG y cuántos parámetros tiene?",
+      "split": "development"
+    },
+    {
+      "id": "R2-ja",
+      "fact_id": "R2",
+      "language": "ja",
+      "query": "RAGはどの事前学習済み生成器を使い、そのパラメータ数はいくつですか？",
+      "split": "development"
+    },
+    {
+      "id": "R2-ko",
+      "fact_id": "R2",
+      "language": "ko",
+      "query": "RAG는 어떤 사전 학습 생성기를 사용하며 매개변수 수는 얼마입니까?",
+      "split": "development"
+    },
+    {
+      "id": "R2-ar",
+      "fact_id": "R2",
+      "language": "ar",
+      "query": "ما المولد المدرب مسبقا الذي يستخدمه RAG وكم عدد معاملاته؟",
+      "split": "development"
+    },
+    {
+      "id": "R3-en",
+      "fact_id": "R3",
+      "language": "en",
+      "query": "Which RAG components are kept fixed and which are fine-tuned during training?",
+      "split": "development"
+    },
+    {
+      "id": "R3-zh",
+      "fact_id": "R3",
+      "language": "zh",
+      "query": "RAG训练中哪些组件保持固定，哪些组件参与微调？",
+      "split": "development"
+    },
+    {
+      "id": "R3-de",
+      "fact_id": "R3",
+      "language": "de",
+      "query": "Welche RAG-Komponenten bleiben beim Training fest und welche werden feinabgestimmt?",
+      "split": "development"
+    },
+    {
+      "id": "R3-fr",
+      "fact_id": "R3",
+      "language": "fr",
+      "query": "Quels composants de RAG restent fixes et lesquels sont ajustés pendant l’entraînement ?",
+      "split": "development"
+    },
+    {
+      "id": "R3-es",
+      "fact_id": "R3",
+      "language": "es",
+      "query": "¿Qué componentes de RAG permanecen fijos y cuáles se ajustan durante el entrenamiento?",
+      "split": "development"
+    },
+    {
+      "id": "R3-ja",
+      "fact_id": "R3",
+      "language": "ja",
+      "query": "RAGの学習では、どの構成要素を固定し、どれを微調整しますか？",
+      "split": "development"
+    },
+    {
+      "id": "R3-ko",
+      "fact_id": "R3",
+      "language": "ko",
+      "query": "RAG 학습에서 어떤 구성 요소를 고정하고 어떤 것을 미세 조정합니까?",
+      "split": "development"
+    },
+    {
+      "id": "R3-ar",
+      "fact_id": "R3",
+      "language": "ar",
+      "query": "ما مكونات RAG التي تبقى ثابتة وأيها يتم ضبطه أثناء التدريب؟",
+      "split": "development"
+    },
+    {
+      "id": "R4-en",
+      "fact_id": "R4",
+      "language": "en",
+      "query": "Which Wikipedia snapshot, chunk size and document count are used by RAG?",
+      "split": "development"
+    },
+    {
+      "id": "R4-zh",
+      "fact_id": "R4",
+      "language": "zh",
+      "query": "RAG使用哪一版维基百科快照，按多少词切块，共得到多少文档？",
+      "split": "development"
+    },
+    {
+      "id": "R4-de",
+      "fact_id": "R4",
+      "language": "de",
+      "query": "Welchen Wikipedia-Stand, welche Abschnittslänge und wie viele Dokumente verwendet RAG?",
+      "split": "development"
+    },
+    {
+      "id": "R4-fr",
+      "fact_id": "R4",
+      "language": "fr",
+      "query": "Quelle version de Wikipédia, quelle taille de passage et combien de documents RAG utilise-t-il ?",
+      "split": "development"
+    },
+    {
+      "id": "R4-es",
+      "fact_id": "R4",
+      "language": "es",
+      "query": "¿Qué versión de Wikipedia, tamaño de fragmento y número de documentos utiliza RAG?",
+      "split": "development"
+    },
+    {
+      "id": "R4-ja",
+      "fact_id": "R4",
+      "language": "ja",
+      "query": "RAGは何年何月のWikipediaを使い、何語ずつ分割して何件の文書を作りますか？",
+      "split": "development"
+    },
+    {
+      "id": "R4-ko",
+      "fact_id": "R4",
+      "language": "ko",
+      "query": "RAG는 어느 시점의 위키백과를 몇 단어씩 나누어 몇 개 문서를 만듭니까?",
+      "split": "development"
+    },
+    {
+      "id": "R4-ar",
+      "fact_id": "R4",
+      "language": "ar",
+      "query": "ما نسخة ويكيبيديا وحجم المقاطع وعدد الوثائق التي يستخدمها RAG؟",
+      "split": "development"
+    },
+    {
+      "id": "B1-en",
+      "fact_id": "B1",
+      "language": "en",
+      "query": "What are the layer, hidden-size and attention-head configurations of BERT Base and Large?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B1-zh",
+      "fact_id": "B1",
+      "language": "zh",
+      "query": "BERT Base和Large的层数、隐藏维度与注意力头数分别是多少？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B1-de",
+      "fact_id": "B1",
+      "language": "de",
+      "query": "Welche Schichtzahlen, versteckten Dimensionen und Kopfzahlen haben BERT Base und Large?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B1-fr",
+      "fact_id": "B1",
+      "language": "fr",
+      "query": "Quels nombres de couches, dimensions cachées et têtes ont BERT Base et Large ?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B1-es",
+      "fact_id": "B1",
+      "language": "es",
+      "query": "¿Cuáles son las capas, dimensiones ocultas y cabezas de BERT Base y Large?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B1-ja",
+      "fact_id": "B1",
+      "language": "ja",
+      "query": "BERT BaseとLargeの層数、隠れ次元、注意ヘッド数はそれぞれいくつですか？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B1-ko",
+      "fact_id": "B1",
+      "language": "ko",
+      "query": "BERT Base와 Large의 층 수, 은닉 차원, 주의 헤드 수는 각각 얼마입니까?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B1-ar",
+      "fact_id": "B1",
+      "language": "ar",
+      "query": "ما عدد الطبقات والأبعاد المخفية ورؤوس الانتباه في BERT Base وLarge؟",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B2-en",
+      "fact_id": "B2",
+      "language": "en",
+      "query": "Which tokenization method and vocabulary size are used by BERT?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B2-zh",
+      "fact_id": "B2",
+      "language": "zh",
+      "query": "BERT使用哪种分词方法，词表大小是多少？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B2-de",
+      "fact_id": "B2",
+      "language": "de",
+      "query": "Welche Tokenisierung und Vokabulargröße verwendet BERT?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B2-fr",
+      "fact_id": "B2",
+      "language": "fr",
+      "query": "Quelle tokenisation et quelle taille de vocabulaire BERT utilise-t-il ?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B2-es",
+      "fact_id": "B2",
+      "language": "es",
+      "query": "¿Qué tokenización y tamaño de vocabulario utiliza BERT?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B2-ja",
+      "fact_id": "B2",
+      "language": "ja",
+      "query": "BERTはどの分割方法を使い、語彙数はいくつですか？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B2-ko",
+      "fact_id": "B2",
+      "language": "ko",
+      "query": "BERT는 어떤 토큰화 방식과 어휘 크기를 사용합니까?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B2-ar",
+      "fact_id": "B2",
+      "language": "ar",
+      "query": "ما طريقة تجزئة الكلمات وحجم المفردات المستخدمان في BERT؟",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B3-en",
+      "fact_id": "B3",
+      "language": "en",
+      "query": "How is the final hidden state of BERT’s CLS token used?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B3-zh",
+      "fact_id": "B3",
+      "language": "zh",
+      "query": "BERT的CLS标记的最终隐藏状态用来做什么？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B3-de",
+      "fact_id": "B3",
+      "language": "de",
+      "query": "Wofür wird der letzte versteckte Zustand des CLS-Tokens von BERT verwendet?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B3-fr",
+      "fact_id": "B3",
+      "language": "fr",
+      "query": "À quoi sert l’état caché final du jeton CLS de BERT ?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B3-es",
+      "fact_id": "B3",
+      "language": "es",
+      "query": "¿Para qué se utiliza el estado oculto final del token CLS de BERT?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B3-ja",
+      "fact_id": "B3",
+      "language": "ja",
+      "query": "BERTのCLSトークンの最終隠れ状態は何に使われますか？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B3-ko",
+      "fact_id": "B3",
+      "language": "ko",
+      "query": "BERT CLS 토큰의 최종 은닉 상태는 무엇에 사용됩니까?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B3-ar",
+      "fact_id": "B3",
+      "language": "ar",
+      "query": "فيم تستخدم الحالة المخفية النهائية لرمز CLS في BERT؟",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B4-en",
+      "fact_id": "B4",
+      "language": "en",
+      "query": "What proportion of WordPiece tokens is selected for BERT masked language modeling?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B4-zh",
+      "fact_id": "B4",
+      "language": "zh",
+      "query": "BERT掩码语言建模选择多少比例的WordPiece标记？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B4-de",
+      "fact_id": "B4",
+      "language": "de",
+      "query": "Welcher Anteil der WordPiece-Token wird für BERTs maskiertes Sprachmodell ausgewählt?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B4-fr",
+      "fact_id": "B4",
+      "language": "fr",
+      "query": "Quelle proportion des jetons WordPiece est sélectionnée pour le langage masqué de BERT ?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B4-es",
+      "fact_id": "B4",
+      "language": "es",
+      "query": "¿Qué proporción de tokens WordPiece se selecciona para el modelado enmascarado de BERT?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B4-ja",
+      "fact_id": "B4",
+      "language": "ja",
+      "query": "BERTのマスク言語モデルではWordPieceトークンの何割を選択しますか？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B4-ko",
+      "fact_id": "B4",
+      "language": "ko",
+      "query": "BERT 마스크 언어 모델은 WordPiece 토큰의 몇 퍼센트를 선택합니까?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B4-ar",
+      "fact_id": "B4",
+      "language": "ar",
+      "query": "ما نسبة رموز WordPiece التي يتم اختيارها للنمذجة المقنعة في BERT؟",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B5-en",
+      "fact_id": "B5",
+      "language": "en",
+      "query": "How are BERT’s selected prediction positions replaced with MASK, random or unchanged tokens?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B5-zh",
+      "fact_id": "B5",
+      "language": "zh",
+      "query": "BERT选中预测的位置分别按什么比例替换为MASK、随机词或保持原词？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B5-de",
+      "fact_id": "B5",
+      "language": "de",
+      "query": "Wie verteilt BERT gewählte Vorhersagepositionen auf MASK, zufällige und unveränderte Token?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B5-fr",
+      "fact_id": "B5",
+      "language": "fr",
+      "query": "Comment BERT répartit-il les positions choisies entre MASK, jetons aléatoires et jetons inchangés ?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B5-es",
+      "fact_id": "B5",
+      "language": "es",
+      "query": "¿Cómo reparte BERT las posiciones elegidas entre MASK, tokens aleatorios y tokens sin cambios?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B5-ja",
+      "fact_id": "B5",
+      "language": "ja",
+      "query": "BERTで予測対象に選んだ位置は、MASK、ランダム、変更なしにどう割り振られますか？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B5-ko",
+      "fact_id": "B5",
+      "language": "ko",
+      "query": "BERT의 예측 대상 위치는 MASK, 무작위 토큰, 원래 토큰으로 어떻게 나뉩니까?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B5-ar",
+      "fact_id": "B5",
+      "language": "ar",
+      "query": "كيف يوزع BERT مواضع التنبؤ المختارة بين MASK والرموز العشوائية وغير المعدلة؟",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B6-en",
+      "fact_id": "B6",
+      "language": "en",
+      "query": "How are positive and random sentence pairs sampled for BERT next-sentence prediction?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B6-zh",
+      "fact_id": "B6",
+      "language": "zh",
+      "query": "BERT下一句预测中真实后续句和随机句分别按什么比例采样？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B6-de",
+      "fact_id": "B6",
+      "language": "de",
+      "query": "Wie werden echte und zufällige Satzpaare für BERTs Vorhersage des nächsten Satzes gezogen?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B6-fr",
+      "fact_id": "B6",
+      "language": "fr",
+      "query": "Comment les paires réelles et aléatoires sont-elles échantillonnées pour la prédiction de phrase suivante de BERT ?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B6-es",
+      "fact_id": "B6",
+      "language": "es",
+      "query": "¿Cómo se muestrean los pares reales y aleatorios para predecir la siguiente oración en BERT?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B6-ja",
+      "fact_id": "B6",
+      "language": "ja",
+      "query": "BERTの次文予測では、本当の次の文とランダムな文をどの割合で選びますか？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B6-ko",
+      "fact_id": "B6",
+      "language": "ko",
+      "query": "BERT 다음 문장 예측에서 실제 다음 문장과 무작위 문장은 각각 어떤 비율로 선택합니까?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B6-ar",
+      "fact_id": "B6",
+      "language": "ar",
+      "query": "كيف تؤخذ عينات الجمل التالية الحقيقية والعشوائية في مهمة BERT لتوقع الجملة التالية؟",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B7-en",
+      "fact_id": "B7",
+      "language": "en",
+      "query": "Which corpora and word counts are used to pretrain BERT?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B7-zh",
+      "fact_id": "B7",
+      "language": "zh",
+      "query": "BERT预训练使用哪些语料库，各有多少词？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B7-de",
+      "fact_id": "B7",
+      "language": "de",
+      "query": "Welche Korpora mit welchen Wortzahlen werden für BERTs Vortraining verwendet?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B7-fr",
+      "fact_id": "B7",
+      "language": "fr",
+      "query": "Quels corpus et nombres de mots sont utilisés pour préentraîner BERT ?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B7-es",
+      "fact_id": "B7",
+      "language": "es",
+      "query": "¿Qué corpus y cantidades de palabras se utilizan para preentrenar BERT?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B7-ja",
+      "fact_id": "B7",
+      "language": "ja",
+      "query": "BERTの事前学習に使うコーパスと、それぞれの語数はいくつですか？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B7-ko",
+      "fact_id": "B7",
+      "language": "ko",
+      "query": "BERT 사전 학습에 사용하는 말뭉치와 각각의 단어 수는 얼마입니까?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B7-ar",
+      "fact_id": "B7",
+      "language": "ar",
+      "query": "ما مجموعات النصوص وأعداد كلماتها المستخدمة في التدريب المسبق لـBERT؟",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B8-en",
+      "fact_id": "B8",
+      "language": "en",
+      "query": "Does BERT masked language modeling reconstruct the whole input or predict only masked words?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B8-zh",
+      "fact_id": "B8",
+      "language": "zh",
+      "query": "BERT掩码语言建模是重构整个输入，还是只预测被遮蔽的词？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B8-de",
+      "fact_id": "B8",
+      "language": "de",
+      "query": "Rekonstruiert BERTs maskiertes Sprachmodell die gesamte Eingabe oder nur maskierte Wörter?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B8-fr",
+      "fact_id": "B8",
+      "language": "fr",
+      "query": "Le langage masqué de BERT reconstruit-il toute l’entrée ou prédit-il seulement les mots masqués ?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B8-es",
+      "fact_id": "B8",
+      "language": "es",
+      "query": "¿El modelado enmascarado de BERT reconstruye toda la entrada o predice solo las palabras ocultas?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B8-ja",
+      "fact_id": "B8",
+      "language": "ja",
+      "query": "BERTのマスク言語モデルは入力全体を復元しますか、それとも隠した単語だけを予測しますか？",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B8-ko",
+      "fact_id": "B8",
+      "language": "ko",
+      "query": "BERT 마스크 언어 모델은 전체 입력을 복원합니까, 가려진 단어만 예측합니까?",
+      "split": "held_out_source"
+    },
+    {
+      "id": "B8-ar",
+      "fact_id": "B8",
+      "language": "ar",
+      "query": "هل تعيد نمذجة BERT المقنعة بناء الإدخال كله أم تتنبأ بالكلمات المخفية فقط؟",
+      "split": "held_out_source"
+    }
+  ],
+  "annotation": "Agent-authored questions; original PDF paragraph anchors checked. No independent human/native-language validation claimed.",
+  "split_policy": "BERT source held out; Transformer and RAG development; no same-paper versions across splits.",
+  "gates": {
+    "recall_at_5_total": 0.9,
+    "recall_at_5_each_language": 0.8,
+    "max_english_regression_percentage_points": 5
+  },
+  "limitations": [
+    "No evaluation performed while freezing.",
+    "Not official competition samples.",
+    "160 questions cover 20 facts; repeated source paragraphs are not 160 independent facts.",
+    "Unknown languages and real OCR quality remain outside this fixture."
+  ]
+}
