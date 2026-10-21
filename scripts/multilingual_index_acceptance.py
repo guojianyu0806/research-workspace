@@ -28,6 +28,7 @@ from scripts.freeze_multilingual_queries import normalized
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--split', choices=['development', 'held_out_source'], default='development')
+    parser.add_argument('--encoder', choices=['minilm', 'e5'], default='minilm')
     parser.add_argument('--reuse-artifact', type=Path, help='Copy a previous isolated public-paper workspace; never modify it')
     args = parser.parse_args()
     os.environ['RESEARCH_SEMANTIC_ENABLED'] = '0'
@@ -37,11 +38,13 @@ def main():
     print(json.dumps({'output': str(output), 'split': args.split}), flush=True)
     manifest_path = ROOT/'tests/fixtures/multilingual/20261020-v1/manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-    report = {'split': args.split, 'checks': [], 'errors': [], 'queries': [], 'external_connection_attempts': 0,
+    report = {'split': args.split, 'encoder_kind': args.encoder, 'checks': [], 'errors': [], 'queries': [], 'external_connection_attempts': 0,
               'paid_model_calls': 0, 'scope': 'Actual paper index primitive; no reader API/hybrid or dedup quality claim.',
               'fixture_sha256': sha256(manifest_path), 'driver_sha256': sha256(Path(__file__)),
               'runtime_sha256': {name: sha256(ROOT/name) for name in ['research_workspace/multilingual_index.py',
                   'research_workspace/multilingual_model.py', 'research_workspace/library.py', 'research_workspace/reader_search.py']}}
+    if args.encoder == 'e5':
+        report['runtime_sha256']['research_workspace/e5_model.py'] = sha256(ROOT/'research_workspace/e5_model.py')
     (output/'queries.jsonl').open('x', encoding='utf-8').close()
     def check(name, passed):
         report['checks'].append({'name': name, 'passed': bool(passed)})
@@ -85,7 +88,12 @@ def main():
                     and b.page == evidence['physical_page'] and normalized(evidence['anchor']) in normalized(b.text)]
                 check('frozen source anchor resolves '+fact_id, len(matches) >= 1)
                 expected[fact_id] = matches
-            index = MultilingualIndex(library)
+            if args.encoder == 'e5':
+                from research_workspace.e5_model import LocalE5Encoder
+                index = MultilingualIndex(library, encoder=LocalE5Encoder())
+            else:
+                index = MultilingualIndex(library)
+            report['encoder_status'] = index.status()
             started = time.monotonic()
             job = index.start_build(blocks)
             job_id = job['id']
