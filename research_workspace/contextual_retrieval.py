@@ -75,6 +75,9 @@ def make_input(target, span, canonical, tokenizer, model_fingerprint, *, variant
             remaining = limit
             for original in parts:
                 validate_part(original, canonical, target)
+                if role == 'heading' and (original['page'] > target.page or
+                        (original['block_id'] == target.block_id and original['start'] >= target_part['end'])):
+                    raise ValueError('Heading must precede or overlap the target source span')
                 if remaining <= 0:
                     break
                 part = clip_part(dict(original, role=role), tokenizer, remaining)

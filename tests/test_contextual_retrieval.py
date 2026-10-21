@@ -121,3 +121,14 @@ def test_clipped_context_keeps_exact_absolute_intervals(tokenizer):
         clipped = clip_part(part, tokenizer, 4, tail=tail)
         assert clipped['text'] == b.text[clipped['start']:clipped['end']]
         assert len(tokenizer.encode(clipped['text'], add_special_tokens=False).ids) <= 4
+
+
+def test_later_same_block_heading_and_future_page_cannot_be_borrowed(tokenizer):
+    b = block('body', 'word '*400+'NEXT SECTION')
+    first = target_spans(b.text, tokenizer)[0]
+    later = source_part(b, 'heading', b.text.index('NEXT'), len(b.text))
+    with pytest.raises(ValueError, match='precede'):
+        make_input(b, first, {'body': b}, tokenizer, 'model', variant='title_heading384', heading=[later])
+    h = block('future', 'Later heading').model_copy(update={'page': 3})
+    with pytest.raises(ValueError, match='precede'):
+        make_input(b, first, {'body': b, 'future': h}, tokenizer, 'model', variant='title_heading384', heading=[source_part(h, 'heading')])
