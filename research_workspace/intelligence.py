@@ -528,6 +528,17 @@ class IntelligenceService:
         if block.block_id in reference_blocks and not re.search(
                 r"参考文献|引用文献|书目|\b(?:references|bibliography|cited works)\b", question, re.I):
             return 0.08
+        without_urls = re.sub(r"https?://\S+|www\.\S+", " ", text, flags=re.I)
+        labels = re.sub(r"[\[\](){}*,;:†‡]", " ", without_urls).split()
+        if without_urls != text and all(label.isdecimal() and len(label) <= 3 for label in labels):
+            # URL-only footnotes do not explain a mechanism or a measurement.
+            # Preserve original text/anchors and explicit link/code lookup;
+            # decimal measurements or surrounding prose are not bare links.
+            link_request = re.search(
+                r"https?://|\b(?:code|implementation|repositor(?:y|ies)|github|gitlab|links?|urls?|doi|download|quellcode|lien|código|repositorio|enlace)\b"
+                r"|代码|源码|链接|仓库|开源|下载|网站|コード|リポジトリ|リンク|코드|저장소|링크|رابط|روابط|شفرة|شيفرة|كود|مستودع",
+                question, re.I)
+            return 1.0 if link_request else 0.12
         bibliographic = re.search(r"作者|机构|单位|隶属|\bauthors?\b|\baffiliations?\b", question, re.I)
         numeric_question = re.search(
             r"公式|方程|参数|数值|得分|分数|准确率|表格|[=α-ω]|\b(?:equation|formula|parameter|value|score|bleu|accuracy|table)\b",
