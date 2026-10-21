@@ -1,0 +1,20 @@
+{
+  "status": "frozen_before_development_measurement",
+  "policy": "source-bound-context-candidate-v1",
+  "scope": "Existing three public papers; development questions only. No production enablement, new weights, paid model or held-out scoring.",
+  "variants": ["target384", "title_heading384", "title_heading_previous384"],
+  "target_token_budget": 384,
+  "target_overlap_tokens": 64,
+  "whole_input_token_budget": 512,
+  "title_max_tokens": 48,
+  "heading_max_tokens": 48,
+  "previous_max_tokens": 64,
+  "previous_policy": "At most one prior prose block from the same document, run and physical page, within 0.20 normalized page-height and with at least 0.5 horizontal overlap relative to the smaller width; at least eight indexed words. No cross-page or foreign-column inference.",
+  "title_policy": "Only existing first-page native layout title candidates that resolve to unique exact source substrings. Candidate labels do not establish verified publication metadata.",
+  "heading_policy": "Nearest preceding source-bound parsed heading and at most its two ancestors; separate numbered parts keep their own literal anchors.",
+  "budget_policy": "Clip context to literal source character spans. Preserve complete target span. If final passage-prefixed token count exceeds 512, remove previous first, then oldest heading components, then title components. Never silently truncate the encoded input.",
+  "provenance": "Every source part includes document/run/block/physical page/full block bbox/exact character range/text hash. New input/cache keys bind policy, model fingerprint, all ordered parts and complete input hash. Never reuse the old raw block cache.",
+  "ranking": "Maximum chunk cosine per target block. Evaluate existing quality and BM25/RRF separately, using identical frozen questions and canonical target identities. Additional context is not an extra recalled target.",
+  "quality_gates": {"recall_at_5": 0.9, "minimum_each_language": 0.8},
+  "limits": ["Agent-authored multilingual fixture; no independent human/native-language quality claim", "No general context accuracy, irrelevant-query threshold, deduplication or end-to-end S3 acceptance implied"]
+}
