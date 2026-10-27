@@ -171,4 +171,4 @@ py -3.12 -m venv .venv
 
 资料来源包括Transformer 1706.03762v1及v7、BERT 1810.04805v2、RAG 2005.11401v4和公开教材。它们是本地公开替代样本，不冒称组委会资料包。实际版本、摘要和来源路径保留在测试夹具及阶段记录中。
 
-主要代码入口为research_workspace/api.py、library.py、intelligence.py、reader_search.py、layout.py、semantic.py与prompts目录；运行与验收入口位于scripts和tests。交付manifest绑定完整提交{{SOURCE_REV}}及每份文件SHA-256。所有已知未验收项在00交付导航和04验收记录中单列。
+源码入口、资料摘要、完整Git提交和文件SHA-256见交付manifest；已知缺项见00交付导航。
