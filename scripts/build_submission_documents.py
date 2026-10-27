@@ -76,6 +76,10 @@ def style_document(doc, kind):
     font(styles['Heading 2'], '微软雅黑', 12.5, '16384F', True)
     styles['Heading 2'].paragraph_format.space_before = Pt(11)
     styles['Heading 2'].paragraph_format.space_after = Pt(6)
+    if kind == '录屏稿':
+        styles['Normal'].paragraph_format.space_after = Pt(5)
+        styles['Heading 1'].paragraph_format.space_before = Pt(12)
+        styles['Heading 1'].paragraph_format.space_after = Pt(6)
     for style in ['Heading 1', 'Heading 2']:
         styles[style].paragraph_format.keep_with_next = True
     # The bundled default template can carry a title paragraph border. Strip
