@@ -10,6 +10,7 @@ htmlcov/
 .runtime/
 data/
 artifacts/
+deliverables/
 node_modules/
 *.log
 *.sqlite3

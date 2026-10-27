@@ -1,0 +1,12 @@
+# Submission configuration draft: not built or deployed in this preparation.
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 RESEARCH_DATA_DIR=/data
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && useradd --create-home --uid 10001 research \
+    && mkdir -p /data && chown research:research /data
+COPY --chown=research:research research_workspace /app/research_workspace
+USER research
+EXPOSE 8765
+CMD ["python", "-m", "uvicorn", "research_workspace.api:app", "--host", "0.0.0.0", "--port", "8765", "--workers", "1"]
