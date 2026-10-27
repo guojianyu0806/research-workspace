@@ -78,6 +78,11 @@ def style_document(doc, kind):
     styles['Heading 2'].paragraph_format.space_after = Pt(6)
     for style in ['Heading 1', 'Heading 2']:
         styles[style].paragraph_format.keep_with_next = True
+    # The bundled default template can carry a title paragraph border. Strip
+    # it from every inherited style as well as direct paragraph properties.
+    for style in styles:
+        for border in list(style.element.iter(qn('w:pBdr'))):
+            border.getparent().remove(border)
     font(styles['List Bullet'], '宋体', 11.5)
     styles['List Bullet'].paragraph_format.space_after = Pt(5)
     header = section.header.paragraphs[0]
@@ -104,6 +109,7 @@ def add_table(doc, rows):
         table.columns[i].width = Inches(width)
     for row_index, values in enumerate(rows):
         row = table.rows[0] if row_index == 0 else table.add_row()
+        no_split = OxmlElement('w:cantSplit'); row._tr.get_or_add_trPr().append(no_split)
         for i, value in enumerate(values):
             cell = row.cells[i]; cell.width = Inches(widths[i])
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
@@ -124,6 +130,7 @@ def add_table(doc, rows):
             for p in cell.paragraphs:
                 p.paragraph_format.space_after = Pt(2)
                 p.paragraph_format.line_spacing = 1.16
+                p.paragraph_format.keep_with_next = row_index == 0
                 for run in p.runs:
                     run.font.size = Pt(10)
                     run.font.bold = row_index == 0
@@ -167,6 +174,9 @@ def render_markdown(text, output, figure, kind):
         else:
             value = re.sub(r'\*\*([^*]+)\*\*', r'\1', line)
             doc.add_paragraph(value[2:] if value.startswith('- ') else value, 'List Bullet' if value.startswith('- ') else None)
+    for paragraph in doc.paragraphs:
+        for border in list(paragraph._p.iter(qn('w:pBdr'))):
+            border.getparent().remove(border)
     doc.save(output)
 
 
