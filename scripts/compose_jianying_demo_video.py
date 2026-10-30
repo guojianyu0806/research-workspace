@@ -103,12 +103,13 @@ class Clip:
     source_kind:str
 
 
-def fitted(crop,layout):
+def fitted(crop,layout,context_overview=False):
     area=(96,250,1728,680) if layout=='full_width' else (638,250,1186,680)
     x,y,w,h=area;_,_,cw,ch=crop
     factor=min(w/cw,h/ch)
     tw=max(2,int(cw*factor)//2*2);th=max(2,int(ch*factor)//2*2)
-    if factor<1.25:
+    minimum=.9 if context_overview else 1.25
+    if factor<minimum:
         raise ValueError('UI crop would be too small. Crop the relevant facts more closely; do not shrink the whole workspace.')
     return (x+(w-tw)//2,y+(h-th)//2,tw,th)
 
@@ -165,7 +166,10 @@ def validate(plan_path,allow_partial=False):
                 forbidden+= [(str(i),tuple(v)) for i,v in enumerate(entry.get('forbidden_regions',[]))]
                 for label,rect in forbidden:
                     if overlap(crop,rect):raise ValueError(f'{name}: crop includes {label}; select a clean source rectangle instead of covering it')
-                box=fitted(crop,layout)
+                overview=entry.get('context_overview',False)
+                if overview and (sid!='S20' or duration>5 or not entry.get('overview_reason')):
+                    raise ValueError('Only the brief S20 whole-chart overview may use context scale; provide its reason and enlarge values separately')
+                box=fitted(crop,layout,overview)
             label=str(entry.get('label',item.get('source_label',''))).strip()
             if not label:raise ValueError(f'{name}: a truthful short source label is required')
             notes=entry.get('notes',item.get('notes',[]))
@@ -294,13 +298,28 @@ def concatenate(files,target,log,listfile,cwd):
     run(['ffmpeg','-hide_banner','-nostdin','-n','-f','concat','-safe','1','-i',listfile.name,'-c','copy','-an','-movflags','+faststart',target.name],log,cwd)
 
 
-def render_scenes(prepared,report,out):
+def render_scenes(prepared,report,out,reuse_from=None):
     out.mkdir(parents=True,exist_ok=False)
     write_new(out/'validated-plan.json',report)
     shutil.copyfile(report['plan'],out/'frozen-edit-plan.json')
     shutil.copyfile(__file__,out/'composer-source-snapshot.py')
+    previous={}
+    if reuse_from:
+        previous={s['id']:s for s in read(reuse_from/'frozen-edit-plan.json')['scenes']}
     for item,shot,clips in prepared:
         directory=out/shot['id'];directory.mkdir()
+        if previous.get(shot['id'])==item:
+            source=reuse_from/shot['id']/(shot['id']+'.mp4')
+            old=read(source.parent/'scene-manifest.json')
+            if old['output_sha256']!=sha(source):raise ValueError('Reuse source hash mismatch')
+            verify_video(source,float(shot['end']-shot['start']))
+            target=directory/source.name
+            shutil.copyfile(source,target)
+            write_new(directory/'scene-manifest.json',{**old,'plan_sha256':report['plan_sha256'],
+                      'reused_from':str(source.relative_to(ROOT)),
+                      'reused_original_plan_sha256':old['plan_sha256'],
+                      'reuse_basis':'Exact scene item equality and verified original output SHA-256; no picture change'})
+            continue
         parts=[encode_clip(item,shot,c,i,directory) for i,c in enumerate(clips,1)]
         target=directory/(shot['id']+'.mp4')
         concatenate(parts,target,directory/'concat.log',directory/'clips.ffconcat',directory)
@@ -346,6 +365,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--plan',type=Path,default=DEFAULT_PLAN)
     parser.add_argument('--out',type=Path,default=DEFAULT_OUT)
+    parser.add_argument('--reuse-from',type=Path,help='Reuse verified unchanged scene items from a prior local render; never overwrite it')
     modes=parser.add_mutually_exclusive_group()
     modes.add_argument('--validate',action='store_true',help='Validate only; the default')
     modes.add_argument('--preview',metavar='SCENE',help='Write a new PNG composition from the first selected real clip')
@@ -362,6 +382,9 @@ def main():
     out=args.out.resolve()
     if not out.is_relative_to(PRODUCTION.resolve()):raise ValueError('Outputs must stay inside the new production directory')
     plan,prepared,report,audio,captions=validate(args.plan,args.allow_partial)
+    reuse=args.reuse_from.resolve() if args.reuse_from else None
+    if reuse and (not reuse.is_relative_to(PRODUCTION.resolve()) or not (reuse/'frozen-edit-plan.json').is_file()):
+        raise ValueError('Reuse must name a previous render inside the new production directory')
     if args.preview:
         selected=next((v for v in prepared if v[1]['id']==args.preview),None)
         if selected is None:raise ValueError('Scene not found in plan')
@@ -378,7 +401,7 @@ def main():
                   'scene':args.smoke,'duration':clip.duration,'output':str(movie),'sha256':sha(movie),
                   'full_decode_passed':True,'new_model_calls':0,'source_speed_changed':False})
     elif args.render or args.render_scenes:
-        render_scenes(prepared,report,out)
+        render_scenes(prepared,report,out,reuse)
         if args.render:assemble(prepared,report,audio,captions,out)
     elif args.assemble:assemble(prepared,report,audio,captions,out)
     else:print(json.dumps(report,ensure_ascii=False,indent=2))
