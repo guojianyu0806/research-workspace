@@ -2,6 +2,7 @@
 
 Only existing video/audio inputs are accepted. This program does not record UI,
 call a model/TTS service, generate cards, animate, freeze, loop, or retime speech.
+An optional static source crop can exclude edge overlays before normal fitting.
 Relative paths are resolved against the repository root. Default: check only.
 """
 from __future__ import annotations
@@ -123,7 +124,7 @@ def validate(plan_path: Path) -> tuple[dict, dict]:
         return sources[key]
 
     for segment in segments:
-        allowed_keys(segment, {"id", "source", "start", "duration", "speed", "narration", "evidence_note"}, "segment")
+        allowed_keys(segment, {"id", "source", "start", "duration", "speed", "crop", "narration", "evidence_note"}, "segment")
         ident = segment.get("id", "")
         if not isinstance(ident, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", ident) or ident in identifiers:
             raise ValueError(f"Invalid/duplicate segment id: {ident}")
@@ -139,8 +140,17 @@ def validate(plan_path: Path) -> tuple[dict, dict]:
             raise ValueError(f"{ident}: duration must be on the 1/{FPS} second frame grid")
         if start + duration > info["duration_seconds"] + 0.5 / FPS:
             raise ValueError(f"{ident}: video cut extends beyond its input")
+        crop = segment.get("crop")
+        if crop is not None:
+            if (not isinstance(crop, list) or len(crop) != 4
+                    or any(type(value) is not int for value in crop)):
+                raise ValueError(f"{ident}: crop must be four integers [x,y,width,height]")
+            x, y, crop_width, crop_height = crop
+            if (x < 0 or y < 0 or crop_width < 1 or crop_height < 1
+                    or x + crop_width > info["width"] or y + crop_height > info["height"]):
+                raise ValueError(f"{ident}: crop must have positive dimensions and remain within the source")
         item = {"id": ident, "source": str(source), "start": start, "duration": frames / FPS,
-                "frames": frames, "timeline_start": timeline, "narration": None,
+                "frames": frames, "timeline_start": timeline, "crop": crop, "narration": None,
                 "evidence_note": segment.get("evidence_note", "")}
         narration = segment.get("narration")
         if narration is not None:
@@ -215,6 +225,9 @@ def render(prepared: dict, report: dict, output: Path) -> dict:
         part_names.append(name)
         video_filter = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
                         f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={FPS}")
+        if segment["crop"] is not None:
+            x, y, crop_width, crop_height = segment["crop"]
+            video_filter = f"crop={crop_width}:{crop_height}:{x}:{y}:exact=1," + video_filter
         run(["ffmpeg", "-hide_banner", "-nostdin", "-n", "-ss", str(segment["start"]),
              "-i", segment["source"], "-map", "0:v:0", "-an", "-vf", video_filter,
              "-frames:v", str(segment["frames"]), "-c:v", "libx264", "-threads", "4",
