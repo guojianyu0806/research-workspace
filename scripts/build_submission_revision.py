@@ -42,6 +42,11 @@ def main():
 
     def style_v2(doc, kind):
         old_style(doc, kind)
+        doc.styles['Normal'].paragraph_format.space_after = Pt(6)
+        doc.styles['Heading 1'].paragraph_format.space_before = Pt(15)
+        doc.styles['Heading 1'].paragraph_format.space_after = Pt(7)
+        doc.styles['Heading 2'].paragraph_format.space_before = Pt(10)
+        doc.styles['Heading 2'].paragraph_format.space_after = Pt(5)
         for name in ['Title', 'Heading 1', 'Heading 2', 'Header']:
             doc.styles[name].font.color.rgb = RGBColor(0, 0, 0)
         header = doc.sections[0].header.paragraphs[0]
