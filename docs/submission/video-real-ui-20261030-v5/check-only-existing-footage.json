@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "final_name": "仅校验_不会生成成片.mp4",
+  "subtitles": null,
+  "notes": "仅使用已有真实连续录屏验证合成器的输入检查，不是本版实际录制、配音或成片证据；不执行 --render。",
+  "segments": [
+    {
+      "id": "CHECK_REAL_OLD_FOOTAGE",
+      "source": "artifacts/video-production-jianying-20261030-v1/take-continuous-v1/full-workflow-take9.mp4",
+      "start": 25,
+      "duration": 5,
+      "speed": 1,
+      "narration": null,
+      "evidence_note": "历史连续录屏片段，仅做 check-only；不作为新 AI 使用过程证明。"
+    }
+  ]
+}

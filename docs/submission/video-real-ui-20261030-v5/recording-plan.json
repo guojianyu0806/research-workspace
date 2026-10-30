@@ -1,0 +1,145 @@
+{
+  "project": "研序 可溯源科研助手 Agent",
+  "author": "郭剑宇",
+  "version": "真实页面演示 v5 / 2026-10-30",
+  "status": "用户已批准录制；本文件为拟执行脚本，不作为已执行、已生成或已验收的证据",
+  "estimated_duration_seconds": 400,
+  "timing_policy": "各场时长为预算。先取得正常 1.0 倍速原生配音和真实页面素材，再按实际内容调整；不为固定时长拉慢声音或页面，不用冻结或循环补时。最终保持官方 5—8 分钟范围。",
+  "official_url": "https://www.boxuegu.com/matchTrack/detail/?id=10040",
+  "official_cached_snapshot": "artifacts/video-redesign-20261030/official-085659Z/official-response.json",
+  "official_cached_sha256": "9069b61cc2693c543178c219d42495d285e41bd9b25ec70b9fa8f5291cad848e",
+  "format": {"width": 1920, "height": 1080, "fps": 30, "container": "MP4", "language": "普通话"},
+  "voice": {
+    "provider": "剪映原生朗读",
+    "style": "自然沉稳男声",
+    "candidate_native_voice": "解说小帅",
+    "native_generation_speed": 1.0,
+    "postprocessing_speed": 1.0,
+    "status": "拟生成，须以本轮剪映可见设置及新音频证明；旧版原生 0.8 倍速素材不能直接标为 1.0 倍速"
+  },
+  "presentation": {
+    "visual_source": "软件真实原始页面连续录屏",
+    "screen_speed": 1.0,
+    "cards": false,
+    "explanatory_animation": false,
+    "fabricated_interface": false,
+    "captions": "普通旁白字幕，保持界面关键操作、回答和引句可见",
+    "detail_view": "优先使用软件自身滚动、缩放、预览和全屏功能",
+    "waiting_cut": "仅省略较长的无操作等待，并在对应画面短注等待已省略；保留提交、实际生成与真实结果",
+    "old_artifacts": "旧视频、脚本、素材及剪映工程保留；本版全部另存"
+  },
+  "model_scope": {
+    "pro_paid_retest": "已取消，后续不安排",
+    "planned_demo_tasks": 4,
+    "planned_task_types": ["qa", "compare", "translate_selected_text", "draft"],
+    "note": "此处四项指用户层面的演示任务，不承诺底层模型请求恰好四次。演示实际使用当前可用配置；不得从历史聊天或日志提取密钥。",
+    "execution_status": "尚未由本清单证明执行；输入、任务标识、实际结果及原文核对需另记录制证据"
+  },
+  "papers": [
+    {"title": "Attention Is All You Need", "arxiv": "1706.03762", "role": "问答、比较、论文框架"},
+    {"title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding", "arxiv": "1810.04805", "role": "比较、论文框架"},
+    {"title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks", "arxiv": "2005.11401", "role": "段落翻译、论文框架"}
+  ],
+  "scenes": [
+    {
+      "id": "S01", "title": "进入科研工作区", "estimated_seconds": 20,
+      "narration": "这是研序，一款面向论文阅读与研究整理的科研助手。下面通过实际操作，展示如何从阅读论文开始，完成带原文引用的问答、比较、翻译和写作。",
+      "page": "原文阅读",
+      "actions": ["打开真实软件页面", "展示文献列表与真实 PDF", "鼠标正常移动到主要功能入口，进入操作"],
+      "capture_acceptance": ["软件界面为主画面", "无另外制作的封面卡片"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S02", "title": "导入与阅读定位", "estimated_seconds": 40,
+      "narration": "首先导入一篇公开论文。解析完成后，可以查看正文、章节和提取出的内容。阅读时既能查看完整原页，也能放大文字对应的原文区域，核对完成后继续阅读。",
+      "page": "文献上传、原文阅读、文献管理—本页文字",
+      "actions": ["选择演示库中尚未存在的一份公开 PDF，通过真实上传入口导入", "保留实际排队和解析完成状态", "打开已完成文献并点击章节导航", "打开对应文字的小图预览，放大查看原文区域", "关闭预览，展示回到原文字位置"],
+      "capture_acceptance": ["不能把重复文件去重误说成新文献解析", "若等待省略，明确短注", "解析运行与结果状态真实，不直接修改数据库伪造完成"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S03", "title": "文献问答与引用核对", "estimated_seconds": 70,
+      "narration": "现在围绕这篇论文提出一个具体问题：模型用了什么硬件，训练了多久。选择文献并提交后，系统生成回答。接着打开回答中的引用，回到论文对应位置，核对硬件配置与训练时间，再返回回答继续查看。",
+      "page": "问答与写作—文献问答",
+      "task_type": "qa", "documents": ["1706.03762"],
+      "input": "根据本文，Transformer base 模型使用了多少块、什么型号的 GPU？训练了多长时间？请与 big 模型的训练时间区分，简要回答，并为每项事实提供对应原文引用。",
+      "actions": ["选择文献问答，仅勾选 Transformer 论文", "输入问题并提交", "保留实际生成过程与一段逐字输出", "展示硬件、base 时间和 big 时间的真实回答", "点击相关引用展示 PDF 原文位置", "使用返回入口回到该回答"],
+      "capture_acceptance": ["完整呈现输入、提交、生成、结果、引用、返回", "不使用预写答案或历史任务伪装本轮生成", "实际回答与原文不符时不得用旁白宣称核对正确"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S04", "title": "多篇比较", "estimated_seconds": 50,
+      "narration": "多篇比较可以围绕同一个问题整理不同论文。这里比较 Transformer 和 BERT 的模型结构与训练任务。查看比较结果后，再分别打开两篇论文的引用，确认各项结论来自哪篇原文。",
+      "page": "问答与写作—多篇比较",
+      "task_type": "compare", "documents": ["1706.03762", "1810.04805"],
+      "input": "请比较这两篇论文的模型结构和训练任务：Transformer 的编码器、解码器分别起什么作用？BERT 使用什么结构、包含哪些预训练任务？按两个维度简要组织，每项结论附对应原文引用，不比较不同任务上的分数高低。",
+      "actions": ["选择多篇比较，勾选两篇论文", "输入问题、提交并保留真实生成", "按软件实际返回布局查看比较内容", "分别打开 Transformer 和 BERT 的一条对应引用并返回"],
+      "capture_acceptance": ["不另做回答表格图片", "引用确属对应文献及结论", "MLM 的引句不能替代 NSP 的依据"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S05", "title": "阅读中的段落翻译", "estimated_seconds": 40,
+      "narration": "阅读英文论文时，可以直接选中需要理解的段落进行翻译。这里保留原始输入与中文译文，遇到术语或表述疑问时，再回到原文位置核对，然后继续阅读。",
+      "page": "文献管理—本页文字及实际翻译结果",
+      "task_type": "translate_selected_text", "documents": ["2005.11401"],
+      "input_policy": "实际选中 RAG 原文中介绍参数化与非参数化记忆，或检索器与生成器关系的一段，再点击翻译所选文字；不输入额外虚构指令。",
+      "actions": ["打开 RAG 对应本页文字", "鼠标实际选择一个段落", "点击翻译所选文字并展示生成过程", "查看所选原文和真实译文", "打开原文位置并返回翻译内容"],
+      "capture_acceptance": ["所选文字与翻译输入一致", "只展示软件真实翻译布局", "无虚构双栏阅读器或不存在的指令框"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S06", "title": "发现文献与推荐", "estimated_seconds": 35,
+      "narration": "在发现与追踪页面，可以继续寻找相关研究。输入关键词后，查看论文标题、发布时间和摘要，也可以查看与本地文献相关的推荐理由。这些结果用于发现候选资料，具体结论仍需阅读全文核对。",
+      "page": "发现与追踪", "input": "retrieval augmented generation",
+      "actions": ["输入检索词并发起真实检索", "查看真实结果列表", "打开一个结果的摘要与来源信息", "查看本地推荐和实际推荐理由"],
+      "capture_acceptance": ["不把摘要检索说成全文核验", "不承诺已验收多日追踪或研究方向自动筛除"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S07", "title": "引用图谱与出处", "estimated_seconds": 30,
+      "narration": "引用图谱把文献之间的关系展示出来。选择一条已经确认的引用关系，可以查看它对应的参考文献原文，再返回图谱，继续探索相关论文。",
+      "page": "引用图谱",
+      "candidate_edge": {"source": "Character-Level Language Modeling with Deeper Self-Attention", "target": "Exploring the Limits of Language Modeling", "note": "候选为历史存在的已确认边，录前仍以当前界面及真实引用原文确认。"},
+      "actions": ["展示当前真实图谱", "选择一条有原文依据的引用关系", "查看两端文献和引用信息", "打开参考文献所在原页", "点击返回引用图谱，回到该关系"],
+      "capture_acceptance": ["不临时伪造节点或连线", "关系方向和原文出处相符", "返回动作实际可见"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S08", "title": "有来源边界的论文框架", "estimated_seconds": 65,
+      "narration": "接下来用这三篇论文辅助组织研究框架。输入研究主题与写作要求后，查看摘要、引言和相关工作。已有研究事实需要对应来源，尚未开展的方案则明确标为研究设想。最后可以导出任务与来源，继续整理和修改。",
+      "page": "问答与写作—论文框架",
+      "task_type": "draft", "documents": ["1706.03762", "1810.04805", "2005.11401"],
+      "input": "请基于所选论文，为“带原文证据的科研问答系统”拟定简短的 Abstract、Introduction 和 Related Work，每部分2—3句。已有研究事实附对应原文引用；拟开展的方案明确标为“待验证研究设想”，不要编造实验结果。参考文献仅列实际用到的资料。",
+      "actions": ["选择论文框架并勾选三篇文献", "输入要求并提交，展示真实生成", "查看 Abstract、Introduction 与 Related Work", "停留展示带引用的事实和待验证研究设想", "打开一条引用核对并返回", "点击导出任务与来源"],
+      "capture_acceptance": ["不预写或替换真实返回内容", "不展示不存在的 Word 排版编辑器或导出选项", "未开展方案不得说成已完成实验"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S09", "title": "CSV 数据与图表导出", "estimated_seconds": 35,
+      "narration": "数据与图表页面可以把结构化数据转换为图表。这里使用论文表格中的公开报告值，选择模型名称和指标列生成柱状图，再核对原始数值，并下载图表与绘图代码。",
+      "page": "数据与图表",
+      "source_csv": "research_workspace/static/examples/transformer-wmt14.csv",
+      "source_label": "Transformer 论文表 2 报告值，非本项目复现实验",
+      "actions": ["通过真实页面导入示例 CSV", "查看数据预览并选择模型列、BLEU 指标列", "点击生成并展示真实柱状图", "查看原值和图注", "下载 SVG 与 Python 绘图代码"],
+      "capture_acceptance": ["数值与 CSV、论文报告相符", "不将公开报告值称为本项目训练结果", "导出文件实际存在"],
+      "execution_evidence": null
+    },
+    {
+      "id": "S10", "title": "在真实结果页面收尾", "estimated_seconds": 15,
+      "narration": "以上展示了研序从阅读、问答到研究整理的主要使用流程。生成内容可以结合原文逐项核对，整理结果也能导出，供后续研究继续使用。",
+      "page": "本轮实际生成的论文框架或问答结果",
+      "actions": ["回到本轮实际生成的结果", "保持引用信息可见，停留后自然结束"],
+      "capture_acceptance": ["无总结卡片", "无机制解释动画"],
+      "execution_evidence": null
+    }
+  ],
+  "handoff_checks": [
+    "所有录制源文件、剪映新工程、原生配音、字幕和成片进入本版新目录，输出不得覆盖已有文件。",
+    "每段保留源文件、入出点、真实任务标识或文献标识，生成证据后另存实际录制清单。",
+    "检查输入与真实结果、引用打开位置及返回动作；没有执行的部分保持待录状态。",
+    "检查剪映原生语速 1.0 与后期 1.0，不复用原生 0.8 的旧音轨作为正常速度证明。",
+    "检查全部画面来自原始软件，禁止说明卡片、解释动画、虚构页面和用历史答案冒充本轮生成。",
+    "成片完成后核验 1080p、正常帧率、音视频时长、完整解码、字幕可读性和人工试听边界。",
+    "本地制作不代表上传、部署或正式提交。"
+  ]
+}
