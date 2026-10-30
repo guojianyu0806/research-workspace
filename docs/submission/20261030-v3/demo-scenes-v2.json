@@ -1,0 +1,354 @@
+{
+  "status": "actual_builtin_browser_capture_completed_render_and_independent_review_pending",
+  "target": {
+    "format": "MP4",
+    "width": 1920,
+    "height": 1080,
+    "minimum_seconds": 300,
+    "maximum_seconds": 480
+  },
+  "narration": {
+    "language": "普通话",
+    "voice": "Windows Microsoft Huihui offline TTS",
+    "is_participant_original_voice": false,
+    "duration_verified": true,
+    "duration_seconds": 429.594
+  },
+  "recording": {
+    "mode": "Codex_builtin_IAB_continuous_JPEG_capture_with_explicit_static_supplements",
+    "actual_capture_completed": true,
+    "capture_file": "artifacts/builtin-recording-20261030/take-v2/frames.jsonl",
+    "capture_file_sha256": "ec8200d49b850b7c77f6e5746ca5928746f281623f69b66d11fe1de719f7c259",
+    "raw_frame_count": 1344,
+    "native_width": 1920,
+    "native_height": 1080,
+    "Pro_retest": false,
+    "new_Pro_calls": 0,
+    "excluded_blocks": [
+      "01-2",
+      "04-10",
+      "03-8",
+      "03-21",
+      "04-12",
+      "05-14",
+      "06-16"
+    ],
+    "supplements_spec": "artifacts/builtin-recording-20261030/supplements.json",
+    "cross_block_waits": "cut; never filled with duplicated frozen frames",
+    "narration_sync": "scene durations measured from existing WAV; subtitle/listening alignment remains pending",
+    "required_persistent_disclosure": "历史模型结果回看｜本轮未调用Pro｜微软慧慧离线合成旁白｜实际网页画面已剪辑调整节奏"
+  },
+  "scenes": [
+    {
+      "id": "01",
+      "title": "项目与录制说明",
+      "narration": "本视频介绍研序可溯源科研助手，参赛者为郭剑宇，个人参赛，无指导老师。旁白采用微软慧慧离线合成语音，不是参赛者原声。研序把论文管理、阅读翻译、问答比较、研究追踪、引用图谱和写作绘图放在同一工作台。接下来的画面区分当前界面操作和已有历史验收结果，历史模型任务不代表本轮重新调用。希望展示的是结论如何回到依据，以及哪些能力仍需继续验证。视频不使用模拟答案冒充真实模型输出。",
+      "actions": [
+        "使用仅含公开资料的专用演示空间打开工作台，不显示私人库、密钥、账号信息或聊天。",
+        "停留在六个主模块均可见的工作台全景，缓慢指示模块名称。",
+        "显示标题及固定说明：系统合成旁白；历史模型结果非本轮Pro复测。"
+      ],
+      "evidence": {
+        "kind": "current_UI_and_recording_disclosure",
+        "sources": [
+          "docs/submission/20261030-v2/technical.md",
+          "artifacts/builtin-recording-20261030/take-v2/frames.jsonl"
+        ],
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "微软慧慧离线合成旁白 非参赛者原声",
+        "capture_status": "actual_IAB_browser_capture_completed"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": null
+    },
+    {
+      "id": "02",
+      "title": "公开论文导入与版本管理",
+      "narration": "先看文献导入。这里使用固定版本的公开论文，包含注意力机制论文、双向编码器论文和检索增强生成论文。系统先保留原始文件，再建立解析任务，进度和失败状态分别显示。重新解析会产生新的解析版本，旧答案仍可指向原来的来源。遇到同一论文的不同版本时，系统提供候选提示，由使用者核对后决定保留关系；主题相近不能直接合并。画面以当前实际就绪状态为准，不把未解析完成的资料说成已经通过。",
+      "actions": [
+        "展示隔离空间五篇公开论文的已完成解析状态。此空间关闭后台worker，只查看已保存的资料，不新建导入、重解析或模型任务。",
+        "展开一篇文献的资料与解析历史，展示实际版本及状态。",
+        "若有已核对的v1/v7关系才展示去重候选；没有候选则只展示版本记录，保留候选交互待录。"
+      ],
+      "evidence": {
+        "kind": "current_local_document_operation",
+        "sources": [
+          "docs/demo-examples.txt",
+          "research_workspace/static/examples"
+        ],
+        "papers": [
+          "1706.03762v1",
+          "1706.03762v7",
+          "1810.04805v2",
+          "2005.11401v4",
+          "1312.3005v1"
+        ],
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "公开论文固定版本 当前本地操作",
+        "capture_status": "actual_IAB_browser_capture_completed"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": null
+    },
+    {
+      "id": "03",
+      "title": "阅读缩放与原页核对返回",
+      "narration": "进入原文阅读区，使用章节导航定位，再演示首末页、页码输入和缩放。切换另一篇论文后返回，可以检查页码是否恢复。接着在文字区域选择一个段落，打开对应原页的小图预览，在当前页面放大核对，关闭后继续阅读同一段。引用进入原文后也有返回入口。这些操作关注来源区域和阅读位置是否保持一致，不用快速滚动掩盖定位过程。公式或扫描字形仍不能识别时，应当保留真实未知标记，不口头补成正确答案。",
+      "actions": [
+        "打开Transformer第3页；点击一个实际章节，等待目标文字和页码稳定。",
+        "分别操作首末页、输入页码、适宽与放大、横向拖动；每次动作后至少停留两秒。",
+        "切换BERT再切回，展示实际恢复页码；失败则标记并停止宣称成功。",
+        "在文献管理文字区打开原页小图、放大、关闭；再执行一次原文链接和返回，保留同段落画面。"
+      ],
+      "evidence": {
+        "kind": "current_reader_interaction",
+        "sources": [
+          "docs/demo-examples.txt",
+          "docs/development/024-reader-pan-sizing.txt"
+        ],
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "当前界面交互 不涉及新模型调用",
+        "capture_status": "actual_IAB_browser_capture_completed"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": null
+    },
+    {
+      "id": "04",
+      "title": "历史问答与本条引句",
+      "narration": "现在打开一条已有的真实问答验收记录。它来自此前的模型任务和当时的软件版本，本轮没有进行付费模型复测。每条事实保留自己的原文引句，点击其中一条，核对论文名称、解析版本、页码和区域，再返回答案。系统通过固定目录回填原文字符，减少模型重新抄写造成的差异。出处属于论文和结论是否得到充分支持是两层检查，不能只看到引用按钮就认定答案一定正确。没有依据的部分应保留缺口，不能借相邻条目的出处补齐。",
+      "actions": [
+        "手动打开真实历史问答，不点击创建、重试或继续模型任务。",
+        "同时显示历史标识、实际任务ID、产生日期和旧源码；选用记录前核对是否与验收选择清单一致。",
+        "展开一条结论的自身引句，核对来源页块，跳至原文后返回同一任务。",
+        "若任务不在当前演示空间，使用真实历史截图或导出作为明确标注的补充证据；无可显示资料则该段待录，不手工填答案。"
+      ],
+      "evidence": {
+        "kind": "historical_model_acceptance",
+        "sources": [
+          "artifacts/model-retest-20261016-qa-compare-draft-accepted/acceptance-summary.json"
+        ],
+        "candidate_case": "qa_ui_zh",
+        "job_id": "bbbf1c9ce1a745fc970a7dc61da8feaa",
+        "source_revision": "ce89267",
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "历史真实模型验收记录 旧源码ce89267 非本轮Pro复测",
+        "capture_status": "actual_IAB_browser_capture_completed"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": null
+    },
+    {
+      "id": "05",
+      "title": "历史多篇比较与审核对应",
+      "narration": "多篇比较使用另一条已有的历史验收任务，不能和刚才的问答当作同一次模型运行。这里按结构、训练目标和外部知识等维度分别查看各篇论文，核对每条结论自己的引句与审核索引。比较表述需要保留模型主体、实验任务和指标条件，不把不同数据集的分数直接解释为谁全面更好。某一维度没有检索到依据时，应该说明具体缺口；删除没有回答的问题再宣称完整，并不是完成比较。历史审核通过也不代替当前版本的全面质量验收。",
+      "actions": [
+        "打开真实compare历史任务，显示旧源码ae87754及历史任务标识。",
+        "连续核对两个不同论文的结论卡片，每条都打开自己的引句与对应claim_index审核。",
+        "将一条数值或训练条件与原页对照；若该记录没有此类内容，不另加数字。",
+        "如果只能打开历史导出，注明是导出回看，不模拟可点击网页或新任务进度。"
+      ],
+      "evidence": {
+        "kind": "historical_model_acceptance",
+        "sources": [
+          "artifacts/model-retest-20261016-qa-compare-draft-accepted/acceptance-summary.json",
+          "artifacts/model-retest-20261016-qa-compare-draft-accepted/compare.json"
+        ],
+        "job_id": "658facf12c804abeae432f6bc482543a",
+        "source_revision": "ae87754",
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "历史比较验收 旧源码ae87754 非本轮Pro复测",
+        "capture_status": "actual_IAB_browser_capture_completed"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": null
+    },
+    {
+      "id": "06",
+      "title": "历史整篇翻译与双语定位",
+      "narration": "双语阅读展示的是十月十七日完成的历史任务，六页公开论文共一百零七个原文块，使用旧源码和当时固定的术语表，并非本轮重新翻译。先选择一个原文块，再查看对应译文，滚动后检查来源标识是否一致。进入原页核对，再返回相同任务。此前的日期保护、术语和双栏顺序问题均有失败及修复记录，不能把早期失败任务当作最终通过。已保存译文存在，不代表所有专业句意、复杂公式和长书翻译质量都已经解决。",
+      "actions": [
+        "只打开最终历史翻译任务aac298845f7d49c384372ac0121a3627，显示107/107块、6/6页及旧源码0114f09。",
+        "查看一段含固定术语的原文和译文，缓慢滚动，点击原页出处后返回同一任务。",
+        "若只能取得既有真实截图，标注历史截图，不能将静态画面冒充本轮实时双向联动。",
+        "不要恢复旧失败任务或发起新的整篇翻译；记录缺少时保留待录。"
+      ],
+      "evidence": {
+        "kind": "historical_translation_acceptance",
+        "sources": [
+          "docs/development/061-priority-software-acceptance-20261017.md",
+          "artifacts/full-translation-checks/20261017T005608249084Z"
+        ],
+        "paper": "1312.3005v1",
+        "job_id": "aac298845f7d49c384372ac0121a3627",
+        "source_revision": "0114f09",
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "2026年10月17日历史翻译 旧源码0114f09 非本轮Pro复测",
+        "capture_status": "actual_IAB_browser_capture_completed"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": null
+    },
+    {
+      "id": "07",
+      "title": "发现追踪与独立历史图谱",
+      "narration": "发现模块提供公开论文搜索、选定全文导入和偏好反馈入口，本轮只说明流程，不把已缓存论文称为实时最新结果。图谱补充画面来自此前独立验收空间，二十二篇公开论文形成三十五条已确认引用边，不能说当前隔离演示库也有同样规模。查看一条边时，应继续核对原文证据；尚未确认的关系保持未确认。节点排名只描述这个局域网络，不代表整个领域的重要性。真实多日追踪和推荐效果仍需单独验收，缺少历史画面时本段保留待录。",
+      "actions": [
+        "实际打开发现追踪入口，未触发付费任务。",
+        "后接2026-10-17独立历史图谱截图30秒；保持1280×720原像素，并明确截图裁切、非本轮交互。",
+        "22论文与35条确认边仅作为既有历史验收记录，不宣称当前演示库达到相同规模。"
+      ],
+      "evidence": {
+        "kind": "supplementary_independent_historical_graph",
+        "sources": [
+          "docs/development/052-competition-audit-acceptance-20261017.md",
+          "artifacts/real-graph/20261016T154133822925Z/graph-refined-20261017.json"
+        ],
+        "confirmed_nodes": 22,
+        "confirmed_edges": 35,
+        "capture_status": "actual_IAB_browser_capture_completed_with_explicit_static_supplement",
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "独立空间历史图谱 22论文35确认边 非当前隔离演示库"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": {
+        "position": "after",
+        "items": [
+          {
+            "file": "artifacts/real-graph/20261016T154133822925Z/browser-graph-20261017.png",
+            "duration_seconds": 30,
+            "kind": "historical_screenshot",
+            "label": "2026-10-17历史图谱截图",
+            "note": "独立历史验收：22论文、35条确认边；原图裁切，未显示全部节点。",
+            "source_date": "2026-10-17",
+            "source_revision": null,
+            "expected_sha256": "9d92787c03827296e31f453e74c8074616473ad4ef8d0e8f25b5f3480c72db10"
+          }
+        ]
+      },
+      "source_label": "当前发现入口＋2026-10-17独立图谱截图"
+    },
+    {
+      "id": "08",
+      "title": "公开报告值与可复现绘图",
+      "narration": "数据区使用注意力机制论文第七版表二中的公开报告值，展示模型名称、原始数值和来源。这些是作者报告的翻译指标，不是本项目重新训练模型得到的成绩。切换图形后，原始行号、数值和系列仍然保留；可以导出图形和固定模板脚本，再回到数据表核对。图注只描述数据中能看到的趋势，不凭空给出因果或统计显著性结论。三维分层雷达的高度代表系列类别，也不能被解释成新增的一项实验测量。",
+      "actions": [
+        "打开现有transformer-wmt14-en-de-v7.csv公开数据，先停留源数据和来源说明。",
+        "生成或打开实际已保存柱状图，显示标签与数值；不点击任何模型解读或付费生成。",
+        "展示SVG或Python固定模板的下载入口，必要时把文件保存到新的演示输出目录。",
+        "返回数据表核对至少一个实际数值，保留“论文报告值，非本项目复现实验”标签。"
+      ],
+      "evidence": {
+        "kind": "current_local_chart_from_public_reported_data",
+        "sources": [
+          "docs/demo-examples.txt",
+          "research_workspace/static/examples/transformer-wmt14.csv"
+        ],
+        "paper": "1706.03762v7",
+        "physical_page": 8,
+        "table": 2,
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "公开论文报告值 非本项目训练或复现实验成绩",
+        "capture_status": "actual_IAB_browser_capture_completed"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": null
+    },
+    {
+      "id": "09",
+      "title": "历史论文框架与系统架构",
+      "narration": "论文框架回看另一条真实历史任务，已有事实、参考文献和未执行的研究计划应当分开。打开一条事实的出处，再查看拟开展的工作，避免把研究建议写成已经完成的实验。随后展示技术文档中的系统架构：浏览器连接接口与任务工具，原始文件和固定来源贯穿解析、检索、生成及审核。模型承担语言处理，本地工具处理文献、图谱和数据。开发中保留实际提示词版本及真实提交，人工负责需求取舍和体验反馈，AI辅助实现与测试排错。",
+      "actions": [
+        "实际回看历史论文框架、事实来源与计划内容。",
+        "后接技术架构图卡14秒、真实Prompt和Git资料图卡11秒；全部明确标为静态技术资料。"
+      ],
+      "evidence": {
+        "kind": "historical_framework_and_current_technical_document",
+        "sources": [
+          "artifacts/model-retest-20261016-qa-compare-draft-accepted/acceptance-summary.json",
+          "docs/submission/20261030-v2/technical.md",
+          "research_workspace/prompts/qa_v5.txt"
+        ],
+        "job_id": "0bf0fa90699f4ab49cd013efe68d5b8f",
+        "source_revision": "ce89267",
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "框架为历史验收 旧源码ce89267 技术架构为本轮材料",
+        "capture_status": "actual_IAB_browser_capture_completed_with_explicit_static_supplement"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": {
+        "position": "after",
+        "items": [
+          {
+            "file": "artifacts/builtin-recording-20261030/technical-evidence-v1/01_architecture_document_card.png",
+            "duration_seconds": 14,
+            "kind": "document_page",
+            "label": "2026-10-30技术文档架构图卡",
+            "note": "来自技术文档与本地架构图；文档源版本c2e291b；本轮只展示资料。",
+            "source_date": "2026-10-30",
+            "source_revision": "c2e291b6ab2c6def2a774706c8ee77f478eb2b56",
+            "expected_sha256": "5f7b3ea28bedde0f5f4f2cdbd5379038d9a058ba4c539cd2e317ff61988baec3"
+          },
+          {
+            "file": "artifacts/builtin-recording-20261030/technical-evidence-v1/02_prompt_and_git_document_card.png",
+            "duration_seconds": 11,
+            "kind": "source_excerpt",
+            "label": "实际Prompt节选与真实Git记录",
+            "note": "Prompt为真实文件逐字节选；Git记录读取于b6ca8ca；均为静态资料说明。",
+            "source_date": "2026-10-30",
+            "source_revision": "b6ca8caa710f41c39bcac25ff1ad82d02446d55a",
+            "expected_sha256": "ea26e2a691b87c38fb5933896f3f2b78c4ca195855fab1fac1049ffd01fb6353"
+          }
+        ]
+      },
+      "source_label": "历史框架ce89267＋技术文档c2e291b"
+    },
+    {
+      "id": "10",
+      "title": "验证边界与当前交付状态",
+      "narration": "最后说明验证范围。二零二六年十月二十七日曾完成一千二百七十七项本地回归，本片引用的是历史报告，不是本轮重新执行，也不能替代真实模型质量或官方资料验收。复杂低清扫描、通用跨语言检索和部分外部闭环仍有缺口，Pro最终复测暂缓，代码托管和公网部署也尚待完成。最终材料会核对源码、文档和实际视频的版本与摘要。研序希望提供可以继续检查依据的工作台，让已验证、待确认和未完成的部分都能被看见，而不是用流畅回答掩盖不确定性。",
+      "actions": [
+        "先显示历史回归与当前限制资料图卡32秒，再接本轮实际浏览器结束画面。",
+        "1277项为2026-10-27历史回归，Pro复测与公网部署等仍待完成。",
+        "成片另存新目录；编码后核查格式与摘要，再由主代理独立回看，不将格式检测称为软件验收。"
+      ],
+      "evidence": {
+        "kind": "historical_tests_and_current_limitations",
+        "sources": [
+          "artifacts/regression-local/20261027T081810Z-c4f62f/summary.json",
+          "docs/submission/20261030-v2/technical.md"
+        ],
+        "ready_when": "原始浏览器帧已保存；成片编码、全片解码、画面与音频独立检查后方可标记交付。",
+        "required_overlay": "1277项为2026年10月27日历史回归 非本轮复测 Pro及公网部署待完成",
+        "capture_status": "actual_IAB_browser_capture_completed_with_explicit_static_supplement"
+      },
+      "recording_status": "actual_browser_capture_completed",
+      "static_supplement": {
+        "position": "before",
+        "items": [
+          {
+            "file": "artifacts/builtin-recording-20261030/technical-evidence-v1/03_historical_tests_and_limits_card.png",
+            "duration_seconds": 32,
+            "kind": "document_page",
+            "label": "历史回归报告与当前限制清单",
+            "note": "1277项来自2026-10-27历史报告；Pro复测、公网部署等待验收。",
+            "source_date": "2026-10-30",
+            "source_revision": "888eb8b2f854f22cc162e027811be458bb044484",
+            "expected_sha256": "96ddd4fd5036f7db148f15f89d3aa32a8b2834166ad3045bee6909be576ec0c3"
+          }
+        ]
+      },
+      "source_label": "历史回归888eb8b＋当前阅读工作台"
+    }
+  ],
+  "based_on": {
+    "file": "docs/submission/20261030-v2/demo-scenes.json",
+    "sha256": "7220df12f9b2ec167fabd5ef981f1d6e3a03385e893cf8a7a801e91e4ed9a1d9",
+    "narration_changed": false
+  },
+  "revision_purpose": "Clarify scene-level provenance for mixed current-UI and historical/document segments; narration and all media unchanged.",
+  "previous_scene_manifest": {
+    "file": "docs/submission/20261030-v3/demo-scenes.json",
+    "sha256": "98d64b3efc557e2504aab87f54ad435eb3a5dddc662fa9fe46f77ebfc8605519"
+  }
+}
