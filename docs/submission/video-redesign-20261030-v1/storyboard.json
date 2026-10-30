@@ -1,0 +1,670 @@
+{
+  "project": "研序 可溯源科研助手 Agent",
+  "author": "郭剑宇",
+  "version": "重新策划 v1 / 2026-10-30",
+  "status": "脚本与画面构图待审阅；不是已完成的新视频",
+  "duration_seconds": 380,
+  "timing": "全部时间为策划预估，未以新配音实测；定稿后按自然讲解微调，总片保持5至8分钟",
+  "format": "1920×1080以上 / 16:9 / MP4 / 普通话；建议真正连续采集25或30fps",
+  "official_url": "https://www.boxuegu.com/matchTrack/detail/?id=10040",
+  "official_snapshot": "artifacts/video-redesign-20261030/official-085659Z/official-response.json",
+  "official_sha256": "9069b61cc2693c543178c219d42495d285e41bd9b25ec70b9fa8f5291cad848e",
+  "official_content_changed": false,
+  "creative_intent": "让评审看清：研序如何把一组论文变成有原文依据、可继续核对的研究材料。",
+  "research_brief": "为一个可追溯的科研问答方案准备文献：读懂Transformer、BERT和RAG，核对结论，补充文献，形成Related Work与待验证方案。",
+  "narrative_scope": "同一科研场景串联多个真实功能样例，不假装所有历史任务属于同一次端到端自动运行。双语、方向筛选和CSV分别注明独立示例来源。",
+  "priority": "先证明答案与依据、工具编排和选择逻辑，再展示便利操作与技术解释。",
+  "new_model_calls": 0,
+  "voice_direction": "本轮只交稿，不生成配音。建议自然普通话讲解，重点词稍停；不复用上一版整段慧慧旁白。先以主镜头节奏试读，再决定真人或试听后的配音方案。",
+  "design": {
+    "tone": "清楚、克制、有研究现场感",
+    "palette": [
+      "#10233f",
+      "#f5f7fc",
+      "#315bff",
+      "#087f86",
+      "#ad6a00"
+    ],
+    "motion_personality": "Corporate / calm-sharp",
+    "easing": "cubic-bezier(0.2,0,0,1)",
+    "base_motion_seconds": 0.3,
+    "transition_family": "动作匹配直切；章节间短淡入；不使用闪白、旋转或弹跳",
+    "shot_rule": "每镜只突出一个对象；建立位置→发生变化→结果停留。重要结论、引句和审核各留2至3秒可读时间。",
+    "text_pixels_at_1080": "标题52至64px；解说字幕38至44px；关键引用和数值至少32px；来源标签28至30px。达不到就补拍局部，不拉大模糊旧图。",
+    "safe_margin_pixels": 96,
+    "source_label": "历史日期/固定任务在右上角短标签持续出现，首次入段交代清楚；不再用两行长页脚挤小软件主体。",
+    "static_rule": "原则上一个静态关键帧只承担一次判断，配明确层次变化；不把旧图谱静置30秒，不用技术卡代替功能实录。",
+    "capture_gate": "正式拍摄先验5秒连续操作样片。浏览器操作可由内置浏览器完成，但截图采样不能冒充25/30fps连续录屏。若录制能力或服务不足，保留待录，不用插帧/加速小字滚动伪装。",
+    "privacy": "仅公开论文与隔离演示空间；不录密钥、私人聊天、账号、桌面杂项。解释图明确标注，不能仿造产品结果。"
+  },
+  "requirements": [
+    {
+      "module": "项目与交付",
+      "level": "视频硬要求",
+      "need": "项目介绍、核心功能、AI亮点；5至8分钟、MP4、至少1080p、普通话。字幕可选。",
+      "shots": [
+        "S01",
+        "S02",
+        "S22",
+        "S23"
+      ],
+      "note": "没有额外Logo或AI协同至少两分钟的硬性规定。"
+    },
+    {
+      "module": "PDF管理与解析",
+      "level": "产品必须覆盖，视频选代表动作",
+      "need": "批量文献、v7/v1内容去重、版本选择、结构化文本/公式/表格与原页位置。",
+      "shots": [
+        "S03",
+        "S04",
+        "S05",
+        "S06"
+      ],
+      "note": "官方扫描PDF及541页教材仍待验收，不能用普通论文替代后宣称全通过。"
+    },
+    {
+      "module": "抗幻觉问答与多文推理",
+      "level": "产品必须覆盖，视频重点",
+      "need": "细粒度问答、同条引句/来源锚点、跨文比较、缺口保留。",
+      "shots": [
+        "S07",
+        "S08",
+        "S09",
+        "S10",
+        "S11"
+      ],
+      "note": "按钮和概括性验证步骤不等于拍清逐条引句与审核。"
+    },
+    {
+      "module": "版式阅读与双向翻译",
+      "level": "产品必须覆盖，视频选代表动作",
+      "need": "章节定位、原页预览与返回；有意义正文的双语阅读及两个方向的联动。",
+      "shots": [
+        "S06",
+        "S12",
+        "S13"
+      ],
+      "note": "整篇任务的历史块数不能等价于全部专业译文质量通过。"
+    },
+    {
+      "module": "检索、追踪与推荐",
+      "level": "产品必须覆盖，视频选代表动作",
+      "need": "真实结果、检索时间/来源、全文入库或推荐理由、订阅与反馈入口。",
+      "shots": [
+        "S14"
+      ],
+      "note": "缓存标缓存；已完成记录标历史；不把一次查询说成真实多日效果。"
+    },
+    {
+      "module": "图谱、综述与方向筛选",
+      "level": "产品必须覆盖，视频重点",
+      "need": "局域引用关系、基石排名、边的原文证据、带自身引用的综述、充分/部分/证据不足三类方向。",
+      "shots": [
+        "S15",
+        "S16",
+        "S17",
+        "S18"
+      ],
+      "note": "局域排名不代表全领域；受控方向样例不证明实时查新完整闭环或研究新颖性。"
+    },
+    {
+      "module": "写作与数据可视化",
+      "level": "产品必须覆盖，视频选代表动作",
+      "need": "Abstract/Introduction/Related Work及真实References；CSV→图形→图注→脚本/文件导出。",
+      "shots": [
+        "S19",
+        "S20",
+        "S21"
+      ],
+      "note": "BLEU为原论文报告值，不是本项目训练成绩，也不能用来证明RAG方案有效。"
+    }
+  ],
+  "score_basis": {
+    "Agent与大模型技术深度": 35,
+    "科研场景创新性": 25,
+    "全栈工程质量与系统鲁棒性": 10,
+    "科研实用性与业务闭环": 10,
+    "学术级UI与交互": 10,
+    "学术价值与应用广度": 10
+  },
+  "shots": [
+    {
+      "id": "S01",
+      "start": 0,
+      "end": 12,
+      "chapter": "先看结果",
+      "title": "这条结论，能回到哪里？",
+      "narration": "做科研，最难核对的往往不是一篇论文，而是答案里的某一句。研序先把这句话和它的原文连起来。",
+      "caption": "结论 → 自身引句 → 原文位置",
+      "frame_kind": "evidence_hook",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/000515.jpg",
+      "reuse": "旧原文定位可取5至6秒，其余新增剪辑解释；不是复用旧开头。",
+      "source_note": "Transformer第2页；历史任务bbbf1c9c / ce89267。开场标明含历史任务回看。",
+      "visual_plan": "左侧只放一个结论的中文概述，右侧保留真实原页高亮；开头即出现证据落点，不先浏览菜单。解释叠层标注为剪辑说明。",
+      "beats": [
+        "建立一条结论",
+        "同色线连接本条引句和原页区域",
+        "高亮落定，停留2至3秒"
+      ],
+      "new_capture": "补录答案端起点和真正点击动作；不得用制作的连线冒充软件已有动画。",
+      "evidence_refs": [
+        "artifacts/model-retest-20261016-qa-compare-draft-accepted/qa_ui_zh.json"
+      ]
+    },
+    {
+      "id": "S02",
+      "start": 12,
+      "end": 28,
+      "chapter": "建立研究任务",
+      "title": "从几篇论文，到一份有依据的方案",
+      "narration": "这次，我们为可追溯的科研问答准备一份方案。先读懂Transformer、BERT与RAG，再整理比较、文献关系和写作草稿。",
+      "caption": "同一研究目标，贯穿读、查、比、写",
+      "frame_kind": "research_brief",
+      "reuse": "全新片头和任务说明，不复用42秒翻页开头。",
+      "source_note": "任务设定为本次视频叙事；多个示例分别保留自己的历史身份。",
+      "visual_plan": "研序名称与郭剑宇个人参赛信息简洁出现；三篇真实论文题名围绕研究目标排列；最终产物只列有出处比较、文献关系、待验证方案。",
+      "beats": [
+        "提出科研目标",
+        "三篇文献进入任务背景",
+        "落到需要交付的研究材料"
+      ],
+      "new_capture": "后续补拍该研究空间/资料选择；不制作假的一键全流程按钮。",
+      "evidence_refs": [
+        "docs/submission/20261030-v2/technical.md"
+      ]
+    },
+    {
+      "id": "S03",
+      "start": 28,
+      "end": 45,
+      "chapter": "建立可靠文献库",
+      "title": "先把原件和解析版本留下来",
+      "narration": "把论文导入后，原件和解析结果分开保存。我们先确认文献身份与处理状态，再进入阅读，避免后面引用到错误文件或未完成的内容。",
+      "caption": "原始文件与解析版本分别保留",
+      "frame_kind": "import_plan",
+      "reuse": "补录为主，旧文献列表只作机位参考。",
+      "source_note": "当前公开论文空间；不把已保存状态重放成正在解析。",
+      "visual_plan": "镜头只留三篇文献与状态区，导入动作→真实进度→稳定完成。等待可直切，角标注明等待已压缩；原件不变。",
+      "beats": [
+        "选中公开PDF",
+        "处理状态变化",
+        "完成后打开资料身份"
+      ],
+      "new_capture": "P1：真实导入/解析连续录像；先在可运行的专用副本准备，当前无worker空间不能拍完成进度。",
+      "evidence_refs": [
+        "scripts/prepare_submission_demo.py",
+        "docs/demo-examples.txt"
+      ]
+    },
+    {
+      "id": "S04",
+      "start": 45,
+      "end": 62,
+      "chapter": "建立可靠文献库",
+      "title": "遇到v1和v7，先核对内容",
+      "narration": "同名论文也可能是不同版本。这里用Transformer的v7和v1检查内容重合及版本关系，核对后再决定保留方式，不把主题相似的论文直接合并。",
+      "caption": "内容核对 → 版本建议 → 人工确认",
+      "frame_kind": "version_plan",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/000200.jpg",
+      "reuse": "旧候选卡可参考；正文差异旧片署名/许可页剔除。",
+      "source_note": "公开1706.03762v7/v1；不宣称通用跨语言去重已达标。",
+      "visual_plan": "只聚焦候选版本卡与原件身份；不要铺满157处差异，也不把许可文本差别当科研结论变化。",
+      "beats": [
+        "库中已有v7",
+        "导入v1后提示内容候选",
+        "展示选择会保留的原件和历史引用"
+      ],
+      "new_capture": "P1：拍真实候选生成与最终选择；本轮只设计，不合并用户库。",
+      "evidence_refs": [
+        "docs/development/111-semantic-dedup-final-acceptance-20261018.md"
+      ]
+    },
+    {
+      "id": "S05",
+      "start": 62,
+      "end": 80,
+      "chapter": "读懂论文",
+      "title": "把结构和原页并排核对",
+      "narration": "解析结果不只是一大段文字。标题树、公式和表格都要保留自己的位置。扫描内容不能识别的部分继续标记待核对，不能靠猜测补齐。",
+      "caption": "结构化结果，也要能回到原位置",
+      "frame_kind": "parsing_plan",
+      "reuse": "新增结构对照图与补拍，旧一般阅读器翻页不用。",
+      "source_note": "选已有公开扫描开发样本；官方扫描样例和541页教材仍待验收。",
+      "visual_plan": "原扫描区域与结构结果各占半屏，仅选一个可核对公式/表格；再给一个未知元素未被补写的小局部。须用真实已有转写结果，不画假识别。",
+      "beats": [
+        "原页局部出现",
+        "对应结构及位置锚点出现",
+        "未知处保留待核对状态"
+      ],
+      "new_capture": "P1：补录局部原图→候选/审核记录；缺正例时保留待录，不换成普通矢量PDF冒充OCR。",
+      "evidence_refs": [
+        "artifacts/initial-equations/20261018T080641508898Z",
+        "artifacts/local-pdf-ui/20261017T101109213123Z"
+      ]
+    },
+    {
+      "id": "S06",
+      "start": 80,
+      "end": 96,
+      "chapter": "读懂论文",
+      "title": "从章节文字，就地核对原页",
+      "narration": "沿章节找到要读的段落，点开原页预览，放大核对后关掉，继续读同一段。阅读操作围绕内容展开，不需要来回找页面。",
+      "caption": "章节 → 段落 → 原页 → 回到同段",
+      "frame_kind": "reading_focus",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/000847.jpg",
+      "crop": [
+        180,
+        300,
+        1900,
+        1030
+      ],
+      "reuse": "旧片105.248至113.764秒选4至6秒；原帧000843至000879。",
+      "source_note": "当前界面操作；本条原文为Transformer第3页。",
+      "visual_plan": "裁掉上方空区域，保留章节、选中段及右侧预览；一个放大动作后静止，不加多重转场。",
+      "beats": [
+        "章节选中并定位",
+        "原页小图放大",
+        "关闭后回到同段"
+      ],
+      "new_capture": "P2：补拍更大字号的起点和返回落点。",
+      "evidence_refs": [
+        "docs/development/024-reader-pan-sizing.txt"
+      ]
+    },
+    {
+      "id": "S07",
+      "start": 96,
+      "end": 114,
+      "chapter": "看清Agent怎样工作",
+      "title": "任务背后，是可观察的工具步骤",
+      "narration": "任务背后可以看到下载、解析、检索、回答与审核的执行记录。这里回看一次真实历史任务，重点看实际调用了什么工具、保存了什么结果。",
+      "caption": "工具动作与检查点，不展示私有推理",
+      "frame_kind": "tool_trace",
+      "reuse": "全新历史日志解说画面＋补录执行记录，不用折叠面板代替。",
+      "source_note": "2026-10-17历史任务acbb2ec3；不是本轮模型调用，不声称动态规划或多Agent路由已演示。",
+      "visual_plan": "根据真实events做五步解释线，每步与实际执行记录对应；从完成状态回看，不播放假的进行中进度。优先以软件展开的执行记录为主。",
+      "beats": [
+        "展示任务身份及已完成状态",
+        "依次定位下载/解析/检索记录",
+        "停在回答和审核已保存的检查点"
+      ],
+      "new_capture": "P0：展开真实执行记录拍名称、状态与输出摘要。",
+      "evidence_refs": [
+        "artifacts/reading-workflow/20261017T003347312341Z/job.json"
+      ]
+    },
+    {
+      "id": "S08",
+      "start": 114,
+      "end": 135,
+      "chapter": "让答案经得起核对",
+      "title": "只问一个能检查的问题",
+      "narration": "先问一个具体问题：Transformer为什么更适合并行？回答不能只给一句解释，还要保留支持这句话的论文、解析版本和原文片段。",
+      "caption": "一个问题，一条事实，一组自身来源",
+      "frame_kind": "answer_focus",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/001242.jpg",
+      "reuse": "旧回答末尾可取3秒作参考；主镜头重拍单条事实。",
+      "source_note": "历史问答bbbf1c9c / ce89267；新提问文字为解说概括，不冒充旧payload原文。",
+      "visual_plan": "关闭无关侧栏，画面只保留这条并行性事实；不要一次显示三条长答案及满屏同名引用按钮。",
+      "beats": [
+        "解说问题出现",
+        "聚焦保存答案中的一条事实",
+        "指出该条自己的引句入口"
+      ],
+      "new_capture": "P0：大字拍本条结论和自身引句；当前普通问答引句在title中，需确认实际可读呈现路径。",
+      "evidence_refs": [
+        "artifacts/model-retest-20261016-qa-compare-draft-accepted/qa_ui_zh.json",
+        "research_workspace/static/research.js"
+      ]
+    },
+    {
+      "id": "S09",
+      "start": 135,
+      "end": 158,
+      "chapter": "让答案经得起核对",
+      "title": "同一条：结论、引句、审核、原页",
+      "narration": "现在逐项核对这条事实：先读它自己的引句，再看对应审核记录，最后回到原文高亮。来源属于这篇论文，与引句是否支持结论，是两个不同的检查。",
+      "caption": "本条结论 ↔ 本条引句 ↔ 本条审核",
+      "frame_kind": "evidence_chain",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/000515.jpg",
+      "reuse": "原页高亮旧片144.975至153.972秒取5至7秒；引句/审核必须新拍。",
+      "source_note": "逐条记录来自同一任务；若用导出做解释，标“任务导出对照”，不能仿造产品审核面板。",
+      "visual_plan": "分为三个连续落点：本条中文结论及原句；claim身份与审核；真实原页高亮和返回。画面不同时塞满三套长文本。",
+      "beats": [
+        "完整支持片段可读停留",
+        "审核身份和本条结论对应",
+        "高亮原文后回到同条答案"
+      ],
+      "new_capture": "P0：必须补完整证据链。若当前UI只显示验证概述，须用真实任务导出作明示解释层，或先补UI后录；不能假装已拍好。",
+      "evidence_refs": [
+        "artifacts/model-retest-20261016-qa-compare-draft-accepted/qa_ui_zh.json"
+      ]
+    },
+    {
+      "id": "S10",
+      "start": 158,
+      "end": 178,
+      "chapter": "让答案经得起核对",
+      "title": "比较架构，也比较任务条件",
+      "narration": "再把Transformer和BERT放在一起。比较编码器结构，也分别核对训练目标与出处。每个维度独立找依据，不把不同任务上的指标直接排成高低。",
+      "caption": "结构与训练目标分别比较，出处逐条对应",
+      "frame_kind": "comparison",
+      "reuse": "新增比较构图与正文证据镜头；旧BERT大架构图过渡不用作主证据。",
+      "source_note": "历史compare ae87754；训练目标可核对独立综述460b9fe，不能混成同一任务审核。",
+      "visual_plan": "两列只展示一个维度；随后切到训练目标，BERT的两个任务分别有依据。引句需覆盖整条声明，不能只用“两个任务”证明预测细节。",
+      "beats": [
+        "对齐比较维度",
+        "分别显示两篇的结论和来源",
+        "原页核对具体训练目标"
+      ],
+      "new_capture": "P0：补拍正文段落，不只拍架构图；跨任务样例切换时明确身份。",
+      "evidence_refs": [
+        "artifacts/model-retest-20261016-qa-compare-draft-accepted/compare.json",
+        "artifacts/model-retest-20261016-direct-training-task/review.json"
+      ]
+    },
+    {
+      "id": "S11",
+      "start": 178,
+      "end": 191,
+      "chapter": "让答案经得起核对",
+      "title": "比较里没有的依据，保留缺口",
+      "narration": "有些比较维度仍然缺少依据。系统应把缺口留下，而不是删掉这一项后宣称完整，也不能拿相邻结论的引用来补。",
+      "caption": "没有充分支持，就保留信息缺口",
+      "frame_kind": "missing_evidence",
+      "reuse": "新图形解说＋真实compare限制局部；不使用“最喜欢的水果”无关问题。",
+      "source_note": "历史比较明确保留Transformer优化损失方面的检索缺口；不改写成论文中不存在该信息。",
+      "visual_plan": "只突出真实缺口句；旁边是“已回答”和“仍缺依据”的范围区分，不生成假的新拒答。",
+      "beats": [
+        "已回答维度淡下",
+        "真实缺口句获得焦点",
+        "保留待补充标记"
+      ],
+      "new_capture": "P1：补拍比较结果中的真实limitations。",
+      "evidence_refs": [
+        "artifacts/model-retest-20261016-qa-compare-draft-accepted/compare.json"
+      ]
+    },
+    {
+      "id": "S12",
+      "start": 191,
+      "end": 208,
+      "chapter": "对照阅读",
+      "title": "英文正文与中文译文，对齐到段落",
+      "narration": "遇到英文正文，可以切到双语阅读。镜头停在有实际内容的一段，对照原文与译文、术语和来源，不在标题、作者地址上停留。",
+      "caption": "正文对照，术语与来源一起核对",
+      "frame_kind": "bilingual",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/001341.jpg",
+      "crop": [
+        375,
+        410,
+        1850,
+        810
+      ],
+      "reuse": "旧片245.750至254.967秒可取2至3秒参考；正文同屏比例需补拍。",
+      "source_note": "独立阅读示例：1312.3005v1；2026-10-17历史翻译0114f09，107块不等于全部翻译质量验收。",
+      "visual_plan": "去掉左侧任务新建区，英文和中文各占一半；先在浏览器增加可读字号，确保两边都显示同一正文段。",
+      "beats": [
+        "正文段同时进入视野",
+        "同一段在两侧对应",
+        "术语和来源短暂强调"
+      ],
+      "new_capture": "P1：同段完整正文的新宽屏画面，不能把作者地址当正文示例。",
+      "evidence_refs": [
+        "docs/development/061-priority-software-acceptance-20261017.md"
+      ]
+    },
+    {
+      "id": "S13",
+      "start": 208,
+      "end": 220,
+      "chapter": "对照阅读",
+      "title": "两侧都能拖动，核对后回到原段",
+      "narration": "从任意一栏往下读，另一栏应跟到对应段落。需要确认时再打开原页，关闭或返回后，继续刚才的位置。",
+      "caption": "左带右，右带左，来源往返不丢位置",
+      "frame_kind": "bilingual_motion",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/001341.jpg",
+      "crop": [
+        375,
+        410,
+        1850,
+        810
+      ],
+      "reuse": "动作需全新连续录屏，不用低帧率旧片证明流畅。",
+      "source_note": "固定历史译文的当前交互；不是本轮重新翻译。",
+      "visual_plan": "同一机位先左栏滚动、再右栏滚动，再给返回落点；用两次明确手势，不快速来回滚。",
+      "beats": [
+        "左栏滚动右栏跟随",
+        "右栏滚动左栏跟随",
+        "原文核对返回同段"
+      ],
+      "new_capture": "P1：双向真实动作及落点，需连续采集。",
+      "evidence_refs": [
+        "docs/development/061-priority-software-acceptance-20261017.md"
+      ]
+    },
+    {
+      "id": "S14",
+      "start": 220,
+      "end": 238,
+      "chapter": "选择下一篇文献",
+      "title": "看检索结果，也看来源和推荐理由",
+      "narration": "接着围绕研究问题补文献。我们要看到实际检索结果、时间、来源和推荐理由，再决定是否入库；缓存或历史结果也应当明确标识。",
+      "caption": "结果、来源、时间、理由，一起看",
+      "frame_kind": "discovery_plan",
+      "reuse": "完全补录；旧空检索入口不复用。",
+      "source_note": "新公开元数据查询不需要Pro；若网络失败，仅可回看明确标日期的现有真实检索记录。",
+      "visual_plan": "输入研究主题后，画面落在两条真实结果，至少一条打开来源/推荐理由；订阅与反馈入口短暂出现。代码库只标已核验者，无正例不虚构。",
+      "beats": [
+        "主题查询及来源时间",
+        "两条实际结果和理由",
+        "用户选择全文或反馈"
+      ],
+      "new_capture": "P0：有结果的检索或推荐全过程；真实多日效果、GitHub正例仍待验收。",
+      "evidence_refs": [
+        "artifacts/real-graph/20261016T154133822925Z/actual-discovery-import.json"
+      ]
+    },
+    {
+      "id": "S15",
+      "start": 238,
+      "end": 256,
+      "chapter": "把论文放回文献关系",
+      "title": "局域图谱中，哪些论文值得先读？",
+      "narration": "文献多起来后，用引用图谱看它们的关系。节点排名帮助安排阅读顺序，但这个排名只属于当前文献集合，不能当成整个领域的重要性。",
+      "caption": "从一组论文里，找到阅读线索",
+      "frame_kind": "graph_data",
+      "reuse": "新拓扑解说样稿；最终应补录真实宽屏图谱，不沿用720p截图静置30秒。",
+      "source_note": "解说图仅依据真实22篇/35确认边历史JSON；不是本轮图谱UI录屏。",
+      "visual_plan": "先建立全部节点，再聚焦一条确认关系；PageRank只呈现实际计算值和局域含义。此构图样稿明确为数据解释图，不能冒充新交互。",
+      "beats": [
+        "局域文献集合建立",
+        "一条确认边获得焦点",
+        "阅读优先级与局域范围出现"
+      ],
+      "new_capture": "P0：准备可安全访问的图谱空间后拍全景及选边；服务不可用就保留待录。",
+      "evidence_refs": [
+        "artifacts/real-graph/20261016T154133822925Z/graph-refined-20261017.json"
+      ]
+    },
+    {
+      "id": "S16",
+      "start": 256,
+      "end": 274,
+      "chapter": "把论文放回文献关系",
+      "title": "一条引用边，也必须有原文",
+      "narration": "图上的连线同样要能核对。选中一条已确认关系，查看参考文献条目，回到原页，再返回图谱。尚未确认的关系继续保留原来的状态。",
+      "caption": "确认边 → 参考文献条目 → 原页 → 返回",
+      "frame_kind": "graph_edge",
+      "reuse": "新证据构图＋待补录连续动作，旧图谱截图只作来源参考。",
+      "source_note": "历史确认边1808.04444v1→1602.02410v1；源论文第10页参考文献[18]。",
+      "visual_plan": "先只高亮这条真实边，再把侧栏的第10页[18]放到可读字号；不要同时展现几十个标签。",
+      "beats": [
+        "选中确认关系",
+        "源条目清楚可读",
+        "原页往返并保留选中关系"
+      ],
+      "new_capture": "P0：真实图谱与原页连续录像，不制作假的点击反馈。",
+      "evidence_refs": [
+        "artifacts/real-graph/20261016T154133822925Z/browser-checks-20261017.json"
+      ]
+    },
+    {
+      "id": "S17",
+      "start": 274,
+      "end": 292,
+      "chapter": "从阅读到研究整理",
+      "title": "综述也要逐条有出处",
+      "narration": "现在把材料整理成简短综述。结构、训练目标和信息来源分别组织；每个事实都带自己的依据，而不是段末堆一串参考文献，让人猜对应关系。",
+      "caption": "综述中的每条事实，仍能独立核对",
+      "frame_kind": "review_plan",
+      "reuse": "新增综述正文与审核对应的镜头；旧343px窄截图不放大使用。",
+      "source_note": "2026-10-16真实综述8a430bfa / 460b9fe，9条结论、17处自身引用；不称当前版重新验收。",
+      "visual_plan": "只展示BERT训练目标这一张事实卡；强调三个支持片段各自负责的声明；软件段与解说叠层严格区分。",
+      "beats": [
+        "综述结构建立",
+        "只展开一张完整事实卡",
+        "本卡引用与审核对应"
+      ],
+      "new_capture": "P0：安全带入固定历史结果后宽屏重拍；不能粘贴编辑后的假结果。",
+      "evidence_refs": [
+        "artifacts/model-retest-20261016-direct-training-task/review.json"
+      ]
+    },
+    {
+      "id": "S18",
+      "start": 292,
+      "end": 314,
+      "chapter": "从阅读到研究整理",
+      "title": "已覆盖的移出，证据不足的留下",
+      "narration": "方向筛选看证据覆盖了哪些条件。这里用固定公开文献检查预设条件：充分覆盖的移出重点候选；部分覆盖和证据不足的保留，继续核验。",
+      "caption": "充分覆盖：移出重点；部分或不足：保留",
+      "frame_kind": "direction_filter",
+      "reuse": "新增三状态解释图与界面补拍，旧片没有这一段。",
+      "source_note": "受控历史样例766095e5 / 69754c3，1312.3005v1。候选由开发者预设；不是实时查新闭环或新颖性证明。",
+      "visual_plan": "三张卡依次进入：已报告模型组合/增加无需训练限制/跨句长上下文。只有第一张改变为移出，后两张留在候选区。审核通过是事实支持，不等于正向条件已满足。",
+      "beats": [
+        "三个不同条件分别出现",
+        "原文事实与条件逐一对照",
+        "仅充分覆盖卡移出，其他保留"
+      ],
+      "new_capture": "P0：宽屏拍真实条件、引用、审核及筛选结果；完整实时检索→筛选验收仍缺，不能用动画伪造。",
+      "evidence_refs": [
+        "artifacts/future-filter/20261017T044708331885Z/job.json"
+      ]
+    },
+    {
+      "id": "S19",
+      "start": 314,
+      "end": 332,
+      "chapter": "形成可继续使用的成果",
+      "title": "事实写进背景，方案仍标待验证",
+      "narration": "回到最初的科研问答方案，整理Abstract、Introduction、Related Work和真实参考文献。已有事实与拟开展的工作分开，研究设想不能写成已经完成的实验。",
+      "caption": "可核对事实，与待验证方案分开",
+      "frame_kind": "writing_plan",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/001140.jpg",
+      "reuse": "RAG框架旧片350.120至358.839秒最多取3至4秒；补拍完整产物与真实References。",
+      "source_note": "历史draft 0bf0fa90 / ce89267；与前面比较或综述不是同一次生成任务。",
+      "visual_plan": "屏幕先呈现三个章节结构，再只展开RAG背景事实和下一段待验证研究设想；最后落到实际参考文献题名。",
+      "beats": [
+        "写作结构出现",
+        "事实与方案标签分别落定",
+        "真实References可核对"
+      ],
+      "new_capture": "P1：同主题草稿完整落点及来源，不为覆盖模块硬塞无关主题。",
+      "evidence_refs": [
+        "artifacts/model-retest-20261016-qa-compare-draft-accepted/draft.json"
+      ]
+    },
+    {
+      "id": "S20",
+      "start": 332,
+      "end": 350,
+      "chapter": "形成可继续使用的成果",
+      "title": "CSV中的原值，变成可核对的图",
+      "narration": "再用论文报告值演示绘图：从CSV生成柱状图，同时保留原始数值和图注。这里的BLEU来自Transformer论文，不是本项目训练或RAG方案的实验结果。",
+      "caption": "原值 → 图形 → 图注；作者报告值",
+      "frame_kind": "chart_focus",
+      "source_image": "artifacts/builtin-recording-20261030/take-v2/frames/001070.jpg",
+      "reuse": "旧片326.767至339.306秒选6至8秒；需新拍CSV起点和取值核对。",
+      "source_note": "Attention Is All You Need v7物理第8页表2；非本项目复现实验。",
+      "visual_plan": "聚焦一行原值与对应柱；保留模型名称、纵轴、图注及来源；不要先给一屏绘图配置。",
+      "beats": [
+        "选一个CSV原值",
+        "对应柱和标签出现",
+        "图注与数据边界可读"
+      ],
+      "new_capture": "P1：补拍真实CSV和一项原值核对；不能把BLEU比较用于研究方案性能结论。",
+      "evidence_refs": [
+        "research_workspace/static/examples/transformer-wmt14.csv"
+      ]
+    },
+    {
+      "id": "S21",
+      "start": 350,
+      "end": 362,
+      "chapter": "形成可继续使用的成果",
+      "title": "不只看到图，还要拿到文件",
+      "narration": "把图形、固定模板脚本和数据转换记录导出，再打开核对，留下可以继续编辑和复现的文件。",
+      "caption": "SVG + Python脚本 + 数据转换记录",
+      "frame_kind": "export_plan",
+      "reuse": "全新导出结果画面；旧下载入口不足以证明已导出。",
+      "source_note": "本地固定模板绘图，不是执行任意模型生成代码。",
+      "visual_plan": "下载动作后展示实际保存的SVG及脚本开头；三份文件名分别出现，但不制作假的系统成功提示。",
+      "beats": [
+        "实际下载入口触发",
+        "已保存的图形/脚本可打开",
+        "原值记录与源数据对应"
+      ],
+      "new_capture": "P1：本地导出闭环，不涉及付费模型。",
+      "evidence_refs": [
+        "artifacts/submission-video-20261030/chart-preparation.json"
+      ]
+    },
+    {
+      "id": "S22",
+      "start": 362,
+      "end": 374,
+      "chapter": "解释关键技术",
+      "title": "语言模型与本地工具各做什么",
+      "narration": "这些交互由固定来源、混合检索、生成与审核共同支持。模型组织语言，本地工具管理文献、位置和数据。",
+      "caption": "固定来源 → 检索 → 生成 → 本条审核",
+      "frame_kind": "pipeline",
+      "reuse": "全新简明解释图，旧57秒架构/测试卡全部剔除。",
+      "source_note": "解释当前实现；不展示私有推理，不把普通任务状态说成复杂自主规划。",
+      "visual_plan": "沿同一条证据线回顾四步，复用镜头中的同色标记；只有4个短标签，不摆满技术栈和Git日志。",
+      "beats": [
+        "固定来源对象建立",
+        "检索与生成分工出现",
+        "审核重新连接到本条原文"
+      ],
+      "new_capture": "解释图可本地制作，不需Pro；真实工具记录已经由S07承担证明。",
+      "evidence_refs": [
+        "docs/submission/20261030-v2/technical.md",
+        "research_workspace/prompts/qa_v5.txt"
+      ]
+    },
+    {
+      "id": "S23",
+      "start": 374,
+      "end": 380,
+      "chapter": "收束",
+      "title": "研序：让研究材料可以继续核对",
+      "narration": "研序，让研究材料里的每条结论，都能继续找到依据。",
+      "caption": "研序 · 郭剑宇 · 个人参赛",
+      "frame_kind": "ending",
+      "reuse": "全新片尾，不口播测试清单。",
+      "source_note": "片尾短注：当前Pro、官方资料及公网等验收仍待完成。",
+      "visual_plan": "答案、引用、图谱与草稿四项成果收拢到作品名称；保留清楚的真实验收边界短注。",
+      "beats": [
+        "四项成果形成收束",
+        "作品名称与参赛者出现",
+        "停留结束，不捏造公网网址"
+      ],
+      "new_capture": "图形收尾，无模型调用。",
+      "evidence_refs": [
+        "docs/submission/20261030-v3/recording-acceptance.json"
+      ]
+    }
+  ]
+}
