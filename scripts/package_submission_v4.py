@@ -7,6 +7,7 @@ project-local directories. Run only after committing the reviewed materials.
 from __future__ import annotations
 
 import argparse
+from copy import copy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -107,7 +108,7 @@ def sanitize(value):
     return value
 
 
-def tree_blob_hashes(repo: Path, revision: str) -> dict:
+def tree_blob_hashes(repo: Path, revision: str, include_payload: bool = False) -> dict:
     records = []
     for entry in git('ls-tree', '-r', '-z', '--full-tree', revision, cwd=repo).stdout.split(b'\0'):
         if not entry:
@@ -121,16 +122,64 @@ def tree_blob_hashes(repo: Path, revision: str) -> dict:
     raw = subprocess.run(['git', 'cat-file', '--batch'], cwd=repo,
                          input=('\n'.join(oids)+'\n').encode('ascii'), capture_output=True,
                          check=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stdout
-    hashes, pos = {}, 0
+    hashes, payloads, pos = {}, {}, 0
     for expected_oid in oids:
         end = raw.index(b'\n', pos)
         oid, kind, size = raw[pos:end].decode('ascii').split()
         size = int(size)
         if oid != expected_oid or kind != 'blob':
             raise ValueError('Unexpected restored Git object')
-        hashes[oid] = hashlib.sha256(raw[end+1:end+1+size]).hexdigest()
+        payload = raw[end+1:end+1+size]
+        hashes[oid] = hashlib.sha256(payload).hexdigest()
+        if include_payload:
+            payloads[oid] = payload
         pos = end+2+size
-    return {name: {'git_blob': oid, 'git_mode': mode, 'sha256': hashes[oid]} for name, oid, mode in records}
+    return {name: {'git_blob': oid, 'git_mode': mode, 'sha256': hashes[oid],
+                   **({'payload': payloads[oid]} if include_payload else {})}
+            for name, oid, mode in records}
+
+
+def canonicalize_git_archive(exported: Path, canonical: Path, revision: str) -> dict:
+    """Retain Git's frozen file list, but use the exact committed blob bytes.
+
+    git archive can apply .gitattributes/core.autocrlf transformations. The
+    intermediate export is retained; no repository attributes are changed.
+    """
+    tree = tree_blob_hashes(ROOT, revision, include_payload=True)
+    changed, seen = [], set()
+    with zipfile.ZipFile(exported) as original, zipfile.ZipFile(canonical, 'x', compression=zipfile.ZIP_DEFLATED) as target:
+        if original.testzip() is not None:
+            raise ValueError('Intermediate Git archive CRC verification failed')
+        for info in original.infolist():
+            if info.is_dir():
+                continue
+            safe_path(info.filename)
+            if info.filename in seen or info.filename not in tree:
+                raise ValueError('Intermediate Git archive file list differs from the frozen tree')
+            seen.add(info.filename)
+            entry = tree[info.filename]
+            exported_payload = original.read(info)
+            payload = entry['payload']
+            if exported_payload != payload:
+                changed.append({'path': info.filename, 'git_blob_sha256': entry['sha256'],
+                                'git_archive_sha256': hashlib.sha256(exported_payload).hexdigest(),
+                                'git_archive_bytes': len(exported_payload), 'raw_blob_bytes': len(payload),
+                                'reason': 'Git archive attributes may transform line endings or export content; delivered bytes come from the exact frozen Git blob.'})
+            target.writestr(copy(info), payload)
+    if seen != set(tree):
+        raise ValueError('Canonical source archive omits a frozen tracked file')
+    with zipfile.ZipFile(canonical) as target:
+        if target.testzip() is not None:
+            raise ValueError('Canonical source archive CRC failed')
+        if any(hashlib.sha256(target.read(name)).hexdigest() != entry['sha256'] for name, entry in tree.items()):
+            raise ValueError('Canonical archive does not exactly preserve frozen blob bytes')
+    return {'revision': revision, 'git_archive_file': exported.name, 'git_archive_sha256': sha(exported),
+            'canonical_archive_file': canonical.name, 'canonical_archive_sha256': sha(canonical),
+            'file_list_source': 'git archive at the frozen revision',
+            'payload_source': 'raw Git blob bytes at the same frozen revision',
+            'repository_attributes_changed': False, 'tracked_source_files_modified': False,
+            'all_canonical_payloads_match_raw_blobs': True,
+            'file_count': len(tree), 'converted_file_count': len(changed), 'archive_conversion': changed}
 
 
 def auxiliary_ref_coverage(revision: str) -> list[dict]:
@@ -318,11 +367,14 @@ def main() -> None:
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     work = CASE/f'package-verification-{stamp}-{revision[:7]}'
     work.mkdir(parents=True, exist_ok=False)
-    archive = work/'frozen-source.zip'
+    exported_archive = work/'git-archive-original.zip'
+    archive = work/'frozen-source-canonical.zip'
     bundle = work/'research-workspace-history.bundle'
-    git('archive', '--format=zip', '--output='+str(archive), revision)
+    git('archive', '--format=zip', '--output='+str(exported_archive), revision)
+    archive_conversion = canonicalize_git_archive(exported_archive, archive, revision)
     git('bundle', 'create', str(bundle), '--all')
     integrity = verify_bundle_and_sources(archive, bundle, revision, work)
+    integrity['archive_conversion'] = archive_conversion
     output.mkdir(parents=True, exist_ok=False)
     upload = output/'01_上传百度网盘_作品文件'
     single = output/'02_表单第6项_只上传一个PDF'
@@ -401,14 +453,17 @@ def main() -> None:
         'git -C restored-project fsck --full\n\n'
         '命令从本ZIP解压根执行，目标restored-project必须尚未存在。恢复后按README运行。'
         '本地已在独立新目录clone、核对HEAD、全部refs提交数、git fsck及逐源码文件摘要。\n'
-        'project目录来自git archive同一冻结提交，不含.git；history/bundle是完整历史，git-log只是辅助，不能替代真实历史。'
+        'project目录使用git archive冻结文件清单，并以同一提交的raw Git blob字节回填，避免归档时CRLF等属性转换；原归档保留为本地诊断，源仓库属性未修改。'
+        'project不含.git；history/bundle是完整历史，git-log只是辅助，不能替代真实历史。'
         'bundle不是在线GitHub/Gitee评审访问地址。acceptance提供必要的历史测试与本轮演示核对，不包含私库/密钥/原始私聊。\n')
     source_zip = upload/f'03_研序_源码与完整Git历史_{revision[:7]}.zip'
     with zipfile.ZipFile(source_zip, 'x', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as target:
         with zipfile.ZipFile(archive) as original:
             for info in original.infolist():
                 if not info.is_dir():
-                    target.writestr('project/'+info.filename, original.read(info))
+                    prefixed_info = copy(info)
+                    prefixed_info.filename = 'project/'+info.filename
+                    target.writestr(prefixed_info, original.read(info))
         for prefix, directory in [('history', history_dir), ('acceptance', evidence)]:
             for path in sorted(directory.rglob('*')):
                 if path.is_file():
@@ -423,6 +478,10 @@ def main() -> None:
         for entry in integrity['source_files']:
             if hashlib.sha256(package.read('project/'+entry['path'])).hexdigest() != entry['sha256']:
                 raise ValueError('Final ZIP changed an archived source blob')
+        with zipfile.ZipFile(archive) as canonical:
+            if any(package.getinfo('project/'+info.filename).external_attr != info.external_attr
+                   for info in canonical.infolist() if not info.is_dir()):
+                raise ValueError('Final ZIP changed source file-mode archive metadata')
         if hashlib.sha256(package.read('history/'+bundle.name)).hexdigest() != sha(bundle):
             raise ValueError('Final ZIP changed the verified Git bundle')
     upload_files = [{'path': p.relative_to(upload).as_posix(), 'bytes': p.stat().st_size, 'sha256': sha(p)}
