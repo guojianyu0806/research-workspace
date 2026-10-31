@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "purpose": "从用户选定的v5真实页面演示视频提取六幅作品介绍截图，不构成新增软件验收或模型复测。",
+  "created_at": "2026-10-31T10:36:21.703647+08:00",
+  "selected_video": "artifacts/video-real-ui-20261030-v5/final-v5-r2/研序_真实页面演示_剪映正常配音_v5.mp4",
+  "selected_video_sha256": "869e3335c8f5144eba8a2854827d75051a586f42a84d8b51dc9069b884d72dd2",
+  "selected_video_bytes": 19074827,
+  "selected_video_sha256_before": "869e3335c8f5144eba8a2854827d75051a586f42a84d8b51dc9069b884d72dd2",
+  "selected_video_sha256_after": "869e3335c8f5144eba8a2854827d75051a586f42a84d8b51dc9069b884d72dd2",
+  "selected_video_unchanged": true,
+  "source_reference_files": [
+    "artifacts/video-real-ui-20261030-v5/edit-v3/edit-plan.json",
+    "artifacts/video-real-ui-20261030-v5/final-v5-r2/captions.ass",
+    "artifacts/video-real-ui-20261030-v5/review-final-v1/visual-review-result.json"
+  ],
+  "extraction": {
+    "method": "FFmpeg decoded-frame select by zero-based frame index into full-frame PNG",
+    "frame_rate": "30/1",
+    "source_frame_size": [
+      1920,
+      1080
+    ],
+    "image_alteration": "none: no crop, scale, retouch, generated UI, overlays, replacement or annotation; original letterboxing/cursor/native UI retained",
+    "frame_selection_expression": "select='eq(n,<frame_index_zero_based>)'",
+    "output_frame_limit": 1,
+    "note": "PNG stores the decoded video frame as RGB; original video is read only. Six representative figures are an editorial selection, not an additional form minimum."
+  },
+  "review_summary": {
+    "selected_images": 6,
+    "all_full_frames_viewed": true,
+    "all_selected_frames_have_no_burned_subtitle_text": true,
+    "no_new_model_or_Pro_call": true,
+    "no_gui_or_network_or_install": true,
+    "no_git_commit": true,
+    "older_deliverables_preserved": true
+  },
+  "frames": [
+    {
+      "order": 1,
+      "id": "reading",
+      "file": "01-reading.png",
+      "caption": "原文阅读：文献列表、PDF页码、缩放和专注／全屏入口。",
+      "pdf_caption": "原文阅读：文献列表、PDF页码、缩放和专注／全屏入口。",
+      "showed_function": "真实阅读页面与论文首页；展示75%缩放状态、第一页／最后一页入口。",
+      "scope_limit": "单帧只展示当时的阅读状态，不表示已在本轮重新验收全部阅读交互。",
+      "source_time_seconds": 15.3,
+      "source_timecode": "00:15.300",
+      "frame_index_zero_based": 459,
+      "frame_rate": "30/1",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 415197,
+      "sha256": "25180ded644aaf8970881c4f7a41fcc1dbbb5886f8b386ed87cece461b7eb51c",
+      "visual_review": {
+        "method": "Full-frame local image inspection with view_image",
+        "passed": true,
+        "legible_real_ui": true,
+        "no_credential_or_private_chat_or_os_dialog_visible": true,
+        "subtitle_visible": false
+      }
+    },
+    {
+      "order": 2,
+      "id": "qa",
+      "file": "02-qa.png",
+      "caption": "文献问答：硬件、base训练时间和big训练时间分别附有来源入口。",
+      "pdf_caption": "文献问答：硬件、base训练时间和big训练时间分别附有来源入口。",
+      "showed_function": "实际完成的文献问答任务；三条回答各自关联第7页引用，保留任务导出入口。",
+      "scope_limit": "引用入口可见，完整引句和原文跳转过程见选定v5视频，本图不代替逐项引用审核报告。",
+      "source_time_seconds": 88.8,
+      "source_timecode": "01:28.800",
+      "frame_index_zero_based": 2664,
+      "frame_rate": "30/1",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 437285,
+      "sha256": "dd5262c6e7036642d1103dfec5cc76a43051dbc24bde754c647694dfea208a51",
+      "visual_review": {
+        "method": "Full-frame local image inspection with view_image",
+        "passed": true,
+        "legible_real_ui": true,
+        "no_credential_or_private_chat_or_os_dialog_visible": true,
+        "subtitle_visible": false
+      }
+    },
+    {
+      "order": 3,
+      "id": "comparison",
+      "file": "03-comparison.png",
+      "caption": "多篇比较：Transformer与BERT的结构结论保留独立原文来源。",
+      "pdf_caption": "多篇比较：Transformer与BERT的结构结论保留独立原文来源。",
+      "showed_function": "实际比较任务的结果局部；展示模型结构描述、Transformer与BERT各自的页码来源入口。",
+      "scope_limit": "较长比较结果超出单帧范围，图片不宣称完整展示全部比较条目。",
+      "source_time_seconds": 119.0,
+      "source_timecode": "01:59.000",
+      "frame_index_zero_based": 3570,
+      "frame_rate": "30/1",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 595998,
+      "sha256": "3c3e340a1eb128a3b300b2353e32f66dd8ce1d829b3845d3916b8d09f6391ec8",
+      "visual_review": {
+        "method": "Full-frame local image inspection with view_image",
+        "passed": true,
+        "legible_real_ui": true,
+        "no_credential_or_private_chat_or_os_dialog_visible": true,
+        "subtitle_visible": false
+      }
+    },
+    {
+      "order": 4,
+      "id": "translation",
+      "file": "04-translation.png",
+      "caption": "原文与译文：RAG选段的英文和中文并排显示，并保留查看出处与返回入口。",
+      "pdf_caption": "原文与译文：RAG选段的英文和中文并排显示，并保留查看出处与返回入口。",
+      "showed_function": "真实选段翻译结果；原文、译文两栏及各自出处入口可见。",
+      "scope_limit": "图片展示一个已保存文本块；不是对整篇论文翻译质量的本轮验收。",
+      "source_time_seconds": 178.0,
+      "source_timecode": "02:58.000",
+      "frame_index_zero_based": 5340,
+      "frame_rate": "30/1",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 437342,
+      "sha256": "06da8eeb4642a177eb8afa4b3ab619099ed3fd60e6dbf0d5ade682fbdf2676b2",
+      "visual_review": {
+        "method": "Full-frame local image inspection with view_image",
+        "passed": true,
+        "legible_real_ui": true,
+        "no_credential_or_private_chat_or_os_dialog_visible": true,
+        "subtitle_visible": false
+      }
+    },
+    {
+      "order": 5,
+      "id": "framework",
+      "file": "05-framework.png",
+      "caption": "论文框架：已有研究事实附来源，尚未实施的方案明确标为待验证研究设想。",
+      "pdf_caption": "论文框架：已有研究事实附来源，尚未实施的方案明确标为待验证研究设想。",
+      "showed_function": "真实完成的论文框架任务结果局部；Abstract事实、原文来源、研究设想标注和导出入口可见。",
+      "scope_limit": "框架长文超出单帧范围；图中待验证研究设想不是已完成实验或新增成果。",
+      "source_time_seconds": 271.5,
+      "source_timecode": "04:31.500",
+      "frame_index_zero_based": 8145,
+      "frame_rate": "30/1",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 451298,
+      "sha256": "54b86321c84921d3ccd5bae1b4a45bd5f2731c185c53647762960ea705279602",
+      "visual_review": {
+        "method": "Full-frame local image inspection with view_image",
+        "passed": true,
+        "legible_real_ui": true,
+        "no_credential_or_private_chat_or_os_dialog_visible": true,
+        "subtitle_visible": false
+      }
+    },
+    {
+      "order": 6,
+      "id": "chart_or_graph",
+      "file": "06-chart-or-graph.png",
+      "caption": "数据与图表：将论文公开报告值绘制为柱状图，并标注“非复现实验”。",
+      "pdf_caption": "数据与图表：将论文公开报告值绘制为柱状图，并标注“非复现实验”。",
+      "showed_function": "真实数据与图表页面；六个模型的BLEU柱状图、坐标、图例和数据用途说明可见。",
+      "scope_limit": "展示的是论文表2公开报告值，不是本项目复现实验；原视频右上角导入按钮边缘裁切原样保留，未补画。",
+      "source_time_seconds": 301.0,
+      "source_timecode": "05:01.000",
+      "frame_index_zero_based": 9030,
+      "frame_rate": "30/1",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 197932,
+      "sha256": "546249f1839391be31c2c49a236d55e2f27909cec90cb616e800b7ad7c596432",
+      "visual_review": {
+        "method": "Full-frame local image inspection with view_image",
+        "passed": true,
+        "legible_real_ui": true,
+        "no_credential_or_private_chat_or_os_dialog_visible": true,
+        "subtitle_visible": false
+      }
+    }
+  ],
+  "integrity_rule": "Each frames[].sha256 hashes the corresponding PNG only. This manifest does not hash itself, avoiding a recursive checksum."
+}

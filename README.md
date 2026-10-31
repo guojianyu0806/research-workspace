@@ -4,7 +4,7 @@
 
 ## 2026年10月31日材料状态
 
-用户已选定真实页面演示v5作为提交视频，5分34秒、1080p、剪映原生男声正常1倍速，含四个本轮实际Flash任务。新版技术文稿、AI创作说明及打包工具位于docs/submission/20261031-v4和scripts；源码与完整Git历史以新提交包记录的冻结版本为准。运行与材料说明见[README_SUBMISSION.md](README_SUBMISSION.md)，本轮实录范围见[开发记录166](docs/development/166-v5-real-ai-capture-and-local-evidence-20261030.md)与[成片记录167](docs/development/167-v5-real-ui-film-delivery-20261030.md)。
+用户已选定真实页面演示v5作为提交视频，5分34秒、1080p、剪映原生男声正常1倍速，含四个本轮实际Flash任务。当前表单第6项需要完整作品介绍，已按七项内容准备新文稿及真实界面图片；技术文稿同步更新，位于docs/submission/20261031-v5。旧版300字AI说明保留为历史资料，不代替当前第6项。第5项填写完整作品网盘链接，第7项另填公开视频平台链接，不能使用网盘链接。源码与完整Git历史以新提交包记录的冻结版本为准。运行与材料说明见[README_SUBMISSION.md](README_SUBMISSION.md)，实录范围见[开发记录166](docs/development/166-v5-real-ai-capture-and-local-evidence-20261030.md)与[成片记录167](docs/development/167-v5-real-ui-film-delivery-20261030.md)。
 
 后续不再安排Pro付费复测，尚未完整验收的质量范围继续如实说明。代码托管、公网演示、评审账号及网盘分享尚未落实，本轮仅整理本地材料，不推送、不部署或外发。下方按日期记录的历史状态保留其原意，以本段作为当前材料状态。
 
