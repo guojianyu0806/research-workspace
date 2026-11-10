@@ -480,10 +480,73 @@
       }
       return row;
     }
-    function renderClaims(parent, claims, sources) {
-      for (const claim of Array.isArray(claims) ? claims : []) {
+    function reviewForClaim(claim, index, citations, sources, grounding) {
+      if (grounding?.status !== "passed") return null;
+      // A structured review saves factual verdicts in its accepted attempt.
+      // Its separate coverage audit links claims to dimensions, not to verdicts.
+      const attempt = grounding.response_kind === "review" && Array.isArray(grounding.attempts) ? grounding.attempts.at(-1) : null;
+      const coverage = Array.isArray(grounding.review_coverage) ? grounding.review_coverage.at(-1) : null;
+      const sectionAudit = !grounding.claim_catalog && Number.isInteger(attempt?.attempt)
+        && Array.isArray(attempt.claims) && Array.isArray(attempt.problems) && !attempt.problems.length
+        && coverage?.attempt === attempt.attempt;
+      const catalog = sectionAudit ? coverage.claim_catalog : grounding.claim_catalog;
+      const reviews = sectionAudit ? attempt.reviews : grounding.claim_reviews;
+      if (!Array.isArray(catalog) || !Array.isArray(reviews)) return null;
+      const identities = catalog.filter(entry => entry?.claim_index === index);
+      const verdicts = reviews.filter(entry => entry?.claim_index === index);
+      if (identities.length !== 1 || verdicts.length !== 1) return null;
+      const [identity] = identities, [review] = verdicts;
+      if (typeof identity.claim_id !== "string" || !identity.claim_id || identity.text !== claim.text
+          || (review.claim_id !== identity.claim_id && !(sectionAudit && review.claim_id == null))
+          || !Array.isArray(identity.citations) || identity.citations.length !== citations.length) return null;
+      if (sectionAudit) {
+        const own = attempt.claims.filter(entry => entry?.claim_index === index);
+        if (own.length !== 1 || own[0].claim_id !== identity.claim_id) return null;
+      }
+      const matches = citations.length && citations.every((citation, citationIndex) => {
+        const recorded = identity.citations[citationIndex], source = sources.get(citation.evidence_id);
+        return typeof citation.quote === "string" && citation.quote.trim() && recorded
+          && citation.evidence_id === recorded.evidence_id && citation.quote === recorded.quote
+          && (citation.quote_id ?? null) === (recorded.quote_id ?? null)
+          && (!source || (["document_id", "run_id", "block_id", "page"].every(key => source[key] === recorded[key])
+            && JSON.stringify(source.bbox) === JSON.stringify(recorded.bbox)));
+      });
+      return matches ? review : null;
+    }
+    function claimEvidenceCard(claim, index, sources, grounding) {
+      const citations = Array.isArray(claim.citations) ? claim.citations : [];
+      const review = reviewForClaim(claim, index, citations, sources, grounding);
+      const details = node("details", "rs-claim-evidence");
+      const summary = node("summary", "", citations.length ? `证据与审核 · ${citations.length} 条引文` : "证据与审核");
+      summary.setAttribute("aria-label", `第 ${index + 1} 条结论，${summary.textContent}`);
+      details.append(summary);
+      const contents = node("div", "rs-claim-evidence-body");
+      for (const citation of citations) {
+        const source = sources.get(citation.evidence_id);
+        const page = Number.isInteger(source?.page) && source.page > 0 ? `第 ${source.page} 页` : "页码未记录";
+        const title = source?.document_title || source?.filename || "原文";
+        const figure = node("figure", "rs-claim-excerpt");
+        figure.append(node("figcaption", "", `${title} · ${page}`));
+        if (typeof citation.quote === "string" && citation.quote.trim()) {
+          figure.append(node("blockquote", "rs-claim-quote", citation.quote));
+        } else figure.append(node("p", "rs-muted rs-small", "该引用未保存原文引句。"));
+        contents.append(figure);
+      }
+      if (!citations.length) contents.append(node("p", "rs-muted rs-small", "这条结论未保存原文引句。"));
+      const verdict = review?.verdict === "supported" ? "原文支持"
+        : review?.verdict === "unsupported" ? "原文支持不足" : "未记录可匹配的逐条审核";
+      const audit = node("div", "rs-claim-audit");
+      audit.append(node("strong", "", `逐条审核 · ${verdict}`));
+      if (typeof review?.reason === "string" && review.reason.trim()) audit.append(node("p", "", review.reason));
+      contents.append(audit); details.append(contents);
+      return details;
+    }
+    function renderClaims(parent, claims, sources, grounding, offset = 0) {
+      for (const [index, claim] of (Array.isArray(claims) ? claims : []).entries()) {
         const item = node("div", "rs-claim");
-        item.append(node("p", "rs-prose", claim.text || ""), citationButtons(claim, sources)); parent.append(item);
+        item.append(node("p", "rs-prose", claim.text || ""), citationButtons(claim, sources),
+          claimEvidenceCard(claim, offset + index, sources, grounding));
+        parent.append(item);
       }
     }
     function renderResult(job) {
@@ -588,15 +651,7 @@
             node("p", "rs-muted", `${direction.full_text_reviewed ? "正文引句审核通过" : "正文证据不足"} · ${direction.reason || '本阶段未形成完整正文判定，保留待核验。'}`));
           const answer = direction.answer || {};
           const sources = new Map((answer.sources || []).map(s => [s.evidence_id, s]));
-          for (const [index, claim] of (answer.claims || []).entries()) {
-            const item = node("article", "rs-future-direction"), identity = answer.grounding?.claim_catalog?.[index];
-            const review = answer.grounding?.claim_reviews?.find(r => r.claim_id === identity?.claim_id && r.claim_index === index);
-            item.append(node("p", "rs-small rs-muted", `结论 ${index+1} · ${identity?.claim_id || "未记录"} · ${review?.verdict || "未通过审核"}`));
-            renderClaims(item, [claim], sources);
-            for (const cite of claim.citations || []) item.append(node("blockquote", "rs-future-quote", cite.quote));
-            if (review?.reason) item.append(node("p", "rs-small rs-muted", "本条审核：" + review.reason));
-            card.append(item);
-          }
+          renderClaims(card, answer.claims, sources, answer.grounding);
           if (answer.message) card.append(node("p", "rs-muted", "模型保留的范围说明与证据缺口（不作为已核验事实结论）：" + answer.message));
           const details = node("details", "rs-events");
           details.append(node("summary", "", "核对本方向的引用与审核记录"),
@@ -613,15 +668,17 @@
       if (isFutureWork) renderFutureVerification(resultArea, output);
       const excludedSections = new Map((isFutureWork ? futureDirections(output).excluded : []).map((direction) => [futureSectionIndex(direction), direction]));
       const sources = new Map((output.sources || []).map((source) => [source.evidence_id, source]));
-      if (Array.isArray(output.claims) && output.claims.length) renderClaims(resultArea, output.claims, sources);
+      if (Array.isArray(output.claims) && output.claims.length) renderClaims(resultArea, output.claims, sources, output.grounding);
       else if (Array.isArray(output.sections) && output.sections.length) {
+        let claimOffset = 0;
         for (const [index, section] of output.sections.entries()) {
           const group = node("section", "rs-result-section"); group.append(node("h4", "", section.heading || "研究内容"));
           if (excludedSections.has(index)) {
             group.classList.add("is-excluded");
             group.append(node("p", "rs-future-excluded-note", output.future_direction_filter ? "本方向已有充分全文覆盖依据并通过联合审核，已移出重点候选。原始设想与记录保留。" : "此方向暂移出重点候选，需全文确认。以下保留原章节供核对，不作为当前推荐方向。"));
           }
-          renderClaims(group, section.claims, sources);
+          renderClaims(group, section.claims, sources, output.grounding, claimOffset);
+          claimOffset += Array.isArray(section.claims) ? section.claims.length : 0;
           if (section.proposed_work) group.append(node("p", "rs-proposal", "待验证研究设想：" + section.proposed_work));
           resultArea.append(group);
         }
@@ -658,6 +715,12 @@
       if (Array.isArray(output.agent_graphs) && output.agent_graphs.length) {
         const graphs = node("details", "rs-events rs-agent-graphs"); graphs.append(node("summary", "", `本次引用图谱摘要（${output.agent_graphs.length} 次）`),
           node("p", "rs-muted rs-small", "排序依据本次文献范围内的引用关系，不代表论文质量；每次最多显示前 10 个节点。"));
+        const graphSources = new Map();
+        for (const source of Array.isArray(output.evidence) ? output.evidence : []) {
+          if (typeof source?.evidence_id === "string") graphSources.set(source.evidence_id, source);
+        }
+        const normalizeTitle = value => typeof value === "string"
+          ? value.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}_]+/gu)?.join(" ") || "" : "";
         for (const [index, graph] of output.agent_graphs.entries()) {
           if (!graph || typeof graph !== "object") continue;
           const nodes = Array.isArray(graph.nodes) ? graph.nodes.filter(item => item && typeof item === "object") : [];
@@ -672,6 +735,57 @@
               node("td", "", typeof item.pagerank === "number" && Number.isFinite(item.pagerank) ? item.pagerank.toFixed(4) : "—")); body.append(tr);
           }
           table.append(body); const scroll = node("div", "rs-table-scroll"); scroll.append(table); graphs.append(scroll);
+          if (!edges.length) continue;
+
+          const graphNodes = new Map(nodes.map(item => [item.id || item.document_id, item]));
+          const relations = node("section", "rs-agent-edges"), list = node("ul", "rs-agent-edge-list");
+          relations.append(node("h5", "", "引用关系与原文"), node("p", "rs-small rs-muted", "箭头从引用论文指向被引用论文。"));
+          if (Number.isInteger(graph.evidence_omitted_due_to_budget) && graph.evidence_omitted_due_to_budget > 0) {
+            relations.append(node("p", "rs-small rs-muted", `受证据保存上限影响，${graph.evidence_omitted_due_to_budget} 处原文位置未保存。`));
+          }
+          for (const edge of edges) {
+            if (typeof edge?.source !== "string" || !edge.source || typeof edge.target !== "string" || !edge.target) continue;
+            const from = graphNodes.get(edge.source), to = graphNodes.get(edge.target);
+            const label = `${from?.title || edge.source} → ${to?.title || edge.target}`;
+            const item = node("li", "rs-agent-edge");
+            const evidenceIds = new Set(Array.isArray(edge.evidence_ids) ? edge.evidence_ids : []);
+            const anchors = [];
+            for (const [position, id] of [...evidenceIds].entries()) {
+              const source = graphSources.get(id), box = source?.bbox;
+              if (!source || typeof from?.document_id !== "string" || !from.document_id || typeof from.run_id !== "string" || !from.run_id ||
+                  source.document_id !== from.document_id || source.run_id !== from.run_id ||
+                  typeof source.block_id !== "string" || !source.block_id || !Number.isInteger(source.page) || source.page < 1 ||
+                  !Array.isArray(box) || box.length !== 4 || !box.every(value => Number.isFinite(value) && value >= 0 && value <= 1) ||
+                  box[2] <= box[0] || box[3] <= box[1]) continue;
+              anchors.push({source, position: position + 1});
+            }
+            if (anchors.length) {
+              // Prefer the title-bearing block when a bibliography entry spans multiple saved blocks.
+              const targetTitle = normalizeTitle(to?.title);
+              const primary = (targetTitle && anchors.find(({source}) => ` ${normalizeTitle(source.text)} `.includes(` ${targetTitle} `))) || anchors[0];
+              const open = button(); open.classList.add("rs-agent-edge-primary");
+              open.append(node("span", "rs-agent-edge-title", label), node("span", "rs-agent-edge-page", `查看参考文献 · PDF 第 ${primary.source.page} 页`));
+              open.disabled = typeof options.onEvidence !== "function";
+              open.addEventListener("click", () => openEvidence(primary.source)); item.append(open);
+              if (anchors.length > 1) {
+                const row = node("div", "rs-agent-edge-anchors");
+                for (const anchor of anchors) {
+                  if (anchor === primary) continue;
+                  const caption = `PDF 第 ${anchor.source.page} 页 · 参考文献位置 ${anchor.position}`;
+                  const cite = button(caption); cite.className = "rs-citation rs-agent-edge-anchor";
+                  cite.setAttribute("aria-label", `${label}，${caption}`);
+                  cite.disabled = open.disabled;
+                  cite.addEventListener("click", () => openEvidence(anchor.source)); row.append(cite);
+                }
+                item.append(row);
+              }
+              if (anchors.length < evidenceIds.size) item.append(node("p", "rs-agent-edge-note rs-muted rs-small", "部分已记录的原文位置无法定位。"));
+            } else {
+              item.append(node("p", "rs-agent-edge-title", label), node("p", "rs-agent-edge-note rs-muted rs-small", "此引用关系没有可定位的已保存原文。"));
+            }
+            list.append(item);
+          }
+          if (list.childElementCount) { relations.append(list); graphs.append(relations); }
         }
         resultArea.append(graphs);
       }

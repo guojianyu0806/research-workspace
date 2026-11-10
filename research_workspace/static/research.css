@@ -84,6 +84,25 @@
 .rs-result{margin-top:19px;min-width:0}
 .rs-prose{white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:1.85;margin:0}
 .rs-claim{margin-bottom:18px}
+.rs-claim-evidence{margin-top:9px;padding:0 11px;border:1px solid var(--line,#cbd7de);border-radius:6px;background:var(--surface,#f3f6f8);font-size:14px;line-height:1.6}
+.rs-claim-evidence summary{padding:7px 0;color:var(--muted,#49616e);font-weight:600;cursor:pointer}
+.rs-claim-evidence summary:focus-visible,.rs-agent-edge-primary:focus-visible{outline:2px solid var(--primary,#165f63);outline-offset:2px}
+.rs-claim-evidence-body{display:grid;gap:10px;padding:2px 0 11px;overflow-wrap:anywhere}
+.rs-claim-excerpt{margin:0;padding:8px 12px;border-inline-start:2px solid #b98247;background:var(--paper,#fff)}
+.rs-claim-excerpt figcaption{color:var(--muted,#49616e);font-weight:600}
+.rs-claim-quote{margin:5px 0 0;white-space:pre-wrap;color:var(--ink,#203440);line-height:1.75}
+.rs-claim-audit{padding-top:7px;border-top:1px solid var(--line,#cbd7de)}
+.rs-claim-audit p{margin:4px 0 0;color:var(--muted,#49616e)}
+.rs-agent-edges{margin-top:13px}
+.rs-agent-edges h5{margin:0 0 6px;font-size:14px;color:var(--ink,#203440)}
+.rs-agent-edge-list{list-style:none;padding:0;margin:0;display:grid;gap:7px}
+.rs-agent-edge{min-width:0;padding:7px 10px;border:1px solid var(--line,#cbd7de);border-radius:6px;background:var(--surface,#f3f6f8);overflow-wrap:anywhere}
+.rs-agent-edge-primary{display:grid;justify-content:stretch;gap:2px;width:100%;padding:3px 0;border:0;background:transparent;color:var(--ink,#203440);text-align:start;font:inherit;cursor:pointer}
+.rs-agent-edge-primary:hover .rs-agent-edge-title{text-decoration:underline;text-underline-offset:2px}
+.rs-agent-edge-title{font-weight:600}
+.rs-agent-edge-page{color:var(--primary,#165f63);font-size:14px}
+.rs-agent-edge-anchors{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+.rs-agent-edge-note{margin:3px 0 0;color:var(--muted,#49616e)}
 .rs-citations{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
 .rs-citation{max-width:100%;padding:5px 8px;border:1px solid #d8e4e3;border-radius:4px;background:#f3f8f7;color:var(--primary,#165f63);font:inherit;font-size:14px;line-height:1.6;cursor:pointer;overflow-wrap:anywhere;text-align:left}
 .rs-result-section{margin:0 0 22px}

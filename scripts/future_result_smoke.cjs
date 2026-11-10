@@ -83,6 +83,9 @@ async function main() {
           if (url === '/api/capabilities') return { intelligence: { configured: false }, llm: false };
           if (url === '/api/documents') return { documents: [] };
           if (url === '/api/research/tasks') return { jobs: [value] };
+          if (url === `/api/research/tasks/${value.id}?include_result=false`) {
+            return { job: { ...value, result: null, completed_items: [], items_deferred: true } };
+          }
           if (url === `/api/research/tasks/${value.id}`) return { job: value };
           throw new Error(`Unexpected synthetic fixture API path: ${url}`);
         };
@@ -143,9 +146,9 @@ async function main() {
     assert.deepEqual(report.networkRequests, []);
     assert.equal(await page.evaluate(() => window.__futureFixtureExecuted), false);
     report.apiCalls = await page.evaluate(() => window.__fixtureApiCalls);
-    assert.equal(report.apiCalls.length, 12);
+    assert.equal(report.apiCalls.length, 15);
     assert.ok(report.apiCalls.every(call => call.method === 'GET'));
-    report.checks.push('Exactly twelve read-only stub calls across three task states; zero browser network requests, console errors, or page errors.');
+    report.checks.push('Each task state reads its header and detail through the read-only stub; zero browser network requests, console errors, or page errors.');
     report.passed = true;
   } catch (error) {
     report.passed = false;

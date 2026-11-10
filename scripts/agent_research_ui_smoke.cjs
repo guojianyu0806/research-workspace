@@ -41,10 +41,31 @@ async function main() {
         if (url === '/api/research/tasks' && init.method !== 'POST') return {jobs:[]};
         if (url === '/api/research/tasks' && init.method === 'POST') {
           const payload = JSON.parse(init.body); window.__agentPosts.push(payload);
+          const twoClaims = ['agent_research', 'review'].includes(payload.kind);
+          const sources = [
+            {evidence_id:'e-one',document_id:'fixture-one',run_id:'run-fixture-one',page:2,block_id:'one-block',bbox:[.1,.1,.9,.2],document_title:'First synthetic paper'},
+            {evidence_id:'e-two',document_id:'fixture-two',run_id:'run-fixture-two',page:3,block_id:'two-block',bbox:[.1,.3,.9,.4],document_title:'Second synthetic paper'},
+          ].slice(0, twoClaims ? 2 : 1);
+          const claims = sources.map((source, index) => ({text:`SYNTHETIC grounded claim ${index + 1}`, citations:[
+            {evidence_id:source.evidence_id,quote_id:'Q1',quote:index ? 'Second exact quote\n' + attackText : 'First exact quote\ncontinued line'},
+          ]}));
+          const catalog = claims.map((claim, index) => ({claim_index:index,claim_id:`fixture-claim-${index}`,text:claim.text,
+            citations:[{...sources[index],...claim.citations[0]}]}));
+          const reviews = claims.map((_, index) => ({claim_index:index,verdict:'supported',reason:`Own review ${index + 1}`}));
+          const grounding = payload.kind === 'review' ? {
+            status:'passed',response_kind:'review',
+            attempts:[{attempt:2,problems:[],claims:catalog,reviews}],
+            review_coverage:[{attempt:2,claim_catalog:catalog}],
+          } : twoClaims ? {status:'passed',claim_catalog:catalog,claim_reviews:reviews.map((review,index) =>
+            ({...review,claim_id:index ? 'stale-second-review' : catalog[index].claim_id}))} : undefined;
+          const anchor = {document_id:'fixture-one',run_id:'run-fixture-one',page:3,bbox:[.1,.5,.9,.6]};
           return {job:{id:`fixture-job-${window.__agentPosts.length}`,kind:payload.kind,status:'completed',created_at:time,updated_at:time,payload,
             progress:2,total:2, events:[{created_at:time,stage:'tool_call',message:'已保存：检索原文证据'},{created_at:time,stage:'tool_return',message:'工具回执：'+attackText}],
-            result:{status:'generated',claims:[{text:'SYNTHETIC grounded claim',citations:[{evidence_id:'e-one',quote:'SYNTHETIC quote'}]}],
-              sources:[{evidence_id:'e-one',document_id:'fixture-one',run_id:'run-fixture-one',page:2,document_title:'SYNTHETIC paper'}],
+            result:{status:'generated',sources,grounding,
+              ...(payload.kind === 'review' ? {sections:claims.map((claim,index) => ({heading:`Section ${index + 1}`,claims:[claim]}))} : {claims}),
+              evidence:[...sources,{...anchor,evidence_id:'graph-author',block_id:'author-line',text:'Example authors.'},
+                {...anchor,evidence_id:'graph-title',block_id:'title-line',text:attackText},
+                {...anchor,evidence_id:'graph-other-run',block_id:'wrong-version',run_id:'newer-run',text:attackText}],
               agent_trace:payload.kind === 'agent_research' ? [
                 {tool:'search_evidence',status:'ok',code:'ok',attempt:1,elapsed_ms:12,reused:true,
                   retrieval:{mode:'bm25_lexical',semantic:{status:'failed_fallback'}},arguments:{reasoning:'PRIVATE_FIXTURE_REASONING'}},
@@ -56,7 +77,12 @@ async function main() {
                 {id:'arxiv:2601.00002v1',title:'SYNTHETIC lookalike URL',source_url:'https://arxiv.org.invalid.example/abs/2601.00002v1'},
                 {id:'arxiv:2601.00003v1',title:'SYNTHETIC insecure URL',source_url:'http://arxiv.org/abs/2601.00003v1'},
                 {id:'arxiv:2601.00004v1',title:'SYNTHETIC mismatched ID',source_url:'https://arxiv.org/abs/2601.00001v1'}] : [],
-              agent_graphs:payload.kind === 'agent_research' ? [{nodes:[{document_id:'fixture-two',title:attackText,rank:2,pagerank:0.2},{document_id:'fixture-one',title:'SYNTHETIC ranked first',rank:1,pagerank:0.8}],edges:[{source:'fixture-one',target:'fixture-two'}],method:{damping:0.85}}] : [],
+              agent_graphs:payload.kind === 'agent_research' ? [{
+                nodes:[{id:'fixture-two',document_id:'fixture-two',title:attackText,rank:2,pagerank:0.2},
+                  {id:'fixture-one',document_id:'fixture-one',run_id:'run-fixture-one',title:'SYNTHETIC ranked first',rank:1,pagerank:0.8}],
+                edges:[{source:'fixture-one',target:'fixture-two',evidence_ids:['graph-other-run','graph-author','graph-title','missing-anchor']}],
+                evidence_omitted_due_to_budget:1,method:{damping:0.85},
+              }] : [],
               reasoning:'PRIVATE_FIXTURE_REASONING'} }};
         }
         throw new Error(`Unexpected synthetic fixture request: ${init.method || 'GET'} ${url}`);
@@ -97,8 +123,30 @@ async function main() {
     await page.locator('.rs-agent-graphs summary').click();
     const graphText = await page.locator('.rs-agent-graphs').textContent();
     check('graph summary renders real counts damping and rank order safely', graphText.includes('2 个节点') && graphText.includes('1 条引用') && graphText.includes('0.85') && (await page.locator('.rs-agent-graphs tbody tr').first().innerText()).includes('SYNTHETIC ranked first') && graphText.includes(attack) && await page.locator('.rs-agent-graphs img').count() === 0);
-    await page.locator('.rs-citation').click();
+    const cards = page.locator('.rs-claim-evidence');
+    check('one collapsed evidence card per claim', await cards.count() === 2 && await cards.locator('blockquote:visible').count() === 0);
+    await cards.nth(0).locator('summary').press('Enter');
+    await cards.nth(1).locator('summary').click();
+    check('cards use only the claim’s own exact saved quote and page',
+      await cards.nth(0).locator('blockquote').textContent() === 'First exact quote\ncontinued line' &&
+      await cards.nth(1).locator('blockquote').textContent() === 'Second exact quote\n' + attack &&
+      (await cards.nth(0).locator('figcaption').textContent()).includes('第 2 页') &&
+      (await cards.nth(1).locator('figcaption').textContent()).includes('第 3 页') &&
+      await cards.locator('img').count() === 0);
+    check('claim audit matches identity and rejects a stale verdict',
+      (await cards.nth(0).locator('.rs-claim-audit').textContent()).includes('原文支持') &&
+      (await cards.nth(0).locator('.rs-claim-audit').textContent()).includes('Own review 1') &&
+      (await cards.nth(1).locator('.rs-claim-audit').textContent()).includes('未记录可匹配的逐条审核') &&
+      !(await cards.nth(1).locator('.rs-claim-audit').textContent()).includes('Own review 2'));
+    await page.locator('.rs-claim .rs-citation').first().click();
     check('final agent answer retains existing original-source navigation', (await page.evaluate(() => window.__agentEvidence))[0]?.document_id === 'fixture-one' && (await page.evaluate(() => window.__agentEvidence))[0]?.page === 2);
+    const edge = page.locator('.rs-agent-edge');
+    await edge.locator('.rs-agent-edge-primary').click();
+    await edge.locator('.rs-agent-edge-anchor').click();
+    check('graph edge opens only saved anchors from its citing document and run',
+      await page.evaluate(() => window.__agentEvidence.slice(1).map(item => [item.run_id,item.page,item.block_id])).then(items =>
+        JSON.stringify(items) === JSON.stringify([['run-fixture-one',3,'title-line'],['run-fixture-one',3,'author-line']])) &&
+      await edge.locator('.rs-agent-edge-note').isVisible());
     await page.screenshot({path:path.join(output,'agent-local-result.png'),fullPage:true});
     await mode.selectOption('compare'); await create.click();
     check('local comparison requires at least two selected documents', (await posts()).length === 1 && (await page.locator('.notice-text').last().textContent()).includes('至少两篇'));
@@ -145,6 +193,12 @@ async function main() {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     check('agent form and expanded metadata/graph remain within narrow viewport', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await page.screenshot({path:path.join(output,'agent-narrow-form.png'),fullPage:true});
+    await kind.selectOption('review');
+    await submit(9);
+    await cards.nth(1).locator('summary').click();
+    check('sectioned review keeps one final claim index across sections',
+      (await cards.nth(1).locator('.rs-claim-audit').textContent()).includes('Own review 2') &&
+      !(await cards.nth(1).locator('.rs-claim-audit').textContent()).includes('Own review 1'));
     check('no browser errors or real HTTP requests', report.pageErrors.length === 0 && report.networkRequests.length === 0, {pageErrors:report.pageErrors,networkRequests:report.networkRequests});
     report.payloads = await posts(); report.passed = true;
   } catch (error) {
