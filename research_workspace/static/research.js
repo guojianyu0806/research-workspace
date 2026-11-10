@@ -217,6 +217,7 @@
       taskRead: null, selectionRevision: 0, taskActions: new Set(),
       refreshGeneration: 0, readGeneration: 0, pollTimer: null, resultStamp: "", bilingual: null, posting: false,
       suspended: false, refreshing: false, refreshOnResume: false,
+      historyGeneration: 0, historyLoading: false, historyDocuments: null,
       streamSource: null, streamJobId: null, streamRevision: 0, phaseFromStream: false };
     const heading = node("header", "rs-heading");
     const headingText = node("div", "");
@@ -289,6 +290,13 @@
     const history = node("section", "rs-card");
     history.tabIndex = -1;
     history.append(node("h3", "rs-card-title", "任务历史"));
+    const historyDocument = select([["", "全部文献"]]);
+    const historyStatus = select([["", "全部状态"], ...Object.entries(statusLabels)]);
+    const historyFilters = node("div", "rs-history-filters");
+    historyFilters.append(field("按文献筛选", historyDocument), field("按状态筛选", historyStatus));
+    const historyNotice = node("p", "rs-muted rs-small rs-history-notice");
+    historyNotice.setAttribute("role", "status"); historyNotice.hidden = true;
+    history.append(historyFilters, historyNotice);
     const historyList = node("div", "rs-history"); history.append(historyList); sidebar.append(history);
     const detail = node("section", "rs-card rs-task-detail");
     detail.hidden = true; detail.tabIndex = -1;
@@ -313,9 +321,72 @@
     progress.setAttribute("aria-label", "已保存的任务进度");
     const actions = node("div", "rs-actions");
     const cancel = button("取消任务"), retry = button("继续重试");
+    const continueTask = button("基于此结果继续"); continueTask.hidden = true;
+    continueTask.setAttribute("aria-expanded", "false");
     const recheckDirections = button("按全文判定并筛选方向"); recheckDirections.hidden = true;
     const exportLink = link("导出任务与来源", "#"); exportLink.setAttribute("role", "link");
-    actions.append(cancel, retry, recheckDirections, exportLink); actions.hidden = true;
+    actions.append(cancel, retry, continueTask, recheckDirections, exportLink); actions.hidden = true;
+    const followUpForm = node("form", "rs-follow-up-form");
+    followUpForm.hidden = true;
+    const followUpOrigin = node("p", "rs-muted rs-small");
+    const followUpDocuments = node("ul", "rs-follow-up-documents");
+    const followUpQuestion = textarea("针对这批文献输入新的问题。", 3);
+    followUpQuestion.required = true; followUpQuestion.maxLength = 4000;
+    const followUpSubmit = button("提交追问", true); followUpSubmit.type = "submit";
+    const followUpCancel = button("取消追问");
+    const followUpActions = node("div", "rs-actions"); followUpActions.append(followUpSubmit, followUpCancel);
+    const followUpNotice = node("p", "rs-error-text rs-small"); followUpNotice.setAttribute("role", "status");
+    followUpForm.append(node("h4", "", "沿用原任务的文献与解析版本"), followUpOrigin, followUpDocuments,
+      field("追问", followUpQuestion), followUpNotice, followUpActions);
+    let followUpParent = null;
+    function closeFollowUp() {
+      followUpParent = null; followUpForm.hidden = true;
+      continueTask.setAttribute("aria-expanded", "false");
+      followUpQuestion.value = ""; followUpNotice.textContent = "";
+    }
+    life.on(continueTask, "click", () => {
+      const job = currentTask(), saved = job?.follow_up;
+      if (continueTask.disabled || !saved?.documents?.length) return;
+      if (followUpParent !== job.id) {
+        closeFollowUp(); followUpParent = job.id;
+        followUpOrigin.textContent = `来源任务 · ${taskTitle(job)}`;
+        followUpDocuments.replaceChildren();
+        for (const doc of saved.documents) {
+          const item = node("li", "");
+          item.append(node("span", "", doc.title || doc.document_id),
+            node("code", "", `解析版本 ${doc.run_id}`));
+          followUpDocuments.append(item);
+        }
+      }
+      followUpForm.hidden = false;
+      continueTask.setAttribute("aria-expanded", "true");
+      syncTaskActions(); followUpQuestion.focus();
+    });
+    life.on(followUpCancel, "click", () => { closeFollowUp(); continueTask.focus(); });
+    life.on(followUpForm, "submit", async event => {
+      event.preventDefault();
+      const job = currentTask(), question = followUpQuestion.value.trim();
+      if (!job || job.id !== followUpParent || followUpSubmit.disabled) return;
+      if (!question) { followUpNotice.textContent = "请输入追问。"; followUpQuestion.focus(); return; }
+      const revision = state.selectionRevision;
+      followUpNotice.textContent = "";
+      state.taskActions.add(job.id); syncTaskActions();
+      try {
+        const response = await life.api("/api/research/tasks", jsonOptions({
+          kind: "agent_research", source_task_id: job.id, question,
+        }));
+        if (acceptCreatedJob(response.job, revision)) {
+          life.show("追问任务已创建。"); revealSection(detail);
+        }
+      } catch (error) {
+        if (currentTask()?.id === job.id && followUpParent === job.id && revision === state.selectionRevision) {
+          followUpNotice.textContent = error.message;
+        }
+      } finally {
+        state.taskActions.delete(job.id);
+        if (life.alive) syncTaskActions();
+      }
+    });
     life.on(recheckDirections,"click",async()=>{
       const job = currentTask();
       if (!job || recheckDirections.disabled || recheckDirections.hidden) return;
@@ -338,7 +409,7 @@
     const eventDetails = node("details", "rs-events");
     eventDetails.append(node("summary", "", "执行记录"));
     const eventList = node("ol", "rs-event-list"); eventDetails.append(eventList); eventDetails.hidden = true;
-    detail.append(shortcuts, taskReadNotice, detailHeading, meta, status, phase, progress, usage, actions, streamPanel, resultArea, eventDetails);
+    detail.append(shortcuts, taskReadNotice, detailHeading, meta, status, phase, progress, usage, actions, followUpForm, streamPanel, resultArea, eventDetails);
     layout.append(sidebar, detail); life.shell.append(layout);
 
     function revealSection(section) {
@@ -437,12 +508,35 @@
         if (life.alive) { agentSubscription.disabled = false; agentSubscriptionRefresh.disabled = false; updateAgentImport(); }
       }
     }
+    function taskTitle(job) {
+      return job.title || kindLabels[job.kind] || job.kind;
+    }
+    function renderHistoryDocuments() {
+      const previous = historyDocument.value;
+      historyDocument.replaceChildren(new Option("全部文献", ""));
+      for (const doc of state.historyDocuments || state.documents) {
+        historyDocument.append(new Option(`${doc.title || doc.filename || doc.id}${doc.archived_at ? "（已归档）" : ""}`, doc.id));
+      }
+      if (previous && ![...historyDocument.options].some(option => option.value === previous)) {
+        historyDocument.append(new Option(`文献 ${previous.slice(0, 8)}`, previous));
+      }
+      historyDocument.value = previous;
+    }
     function renderHistory() {
-      if (!state.jobs.length) { historyList.replaceChildren(node("p", "rs-muted rs-small", "暂无研究任务。")); return; }
+      const documentId = historyDocument.value, status = historyStatus.value;
+      const jobs = state.jobs.filter(job => (!status || job.status === status) &&
+        (!documentId || (job.document_ids || []).includes(documentId)));
+      if (!jobs.length) {
+        historyList.replaceChildren();
+        if (!state.historyLoading) historyList.append(node("p", "rs-muted rs-small",
+          documentId || status ? "没有符合筛选条件的任务。" : "暂无研究任务。"));
+        return;
+      }
+      historyList.querySelector("p")?.remove();
       const existing = new Map([...historyList.querySelectorAll('.rs-history-item')].map(entry => [entry.dataset.jobId, entry]));
       const retained = new Set();
       let index = 0;
-      for (const job of state.jobs) {
+      for (const job of jobs) {
         let entry = existing.get(job.id);
         if (!entry) {
           entry = button(""); entry.className = "rs-history-item"; entry.dataset.jobId = job.id;
@@ -453,9 +547,10 @@
         entry.setAttribute("aria-pressed", String(job.id === state.selectedJob?.id));
         const requested = job.id === state.requestedJobId && state.taskRead;
         entry.classList.toggle("is-requested", Boolean(requested));
-        const title = kindLabels[job.kind] || job.kind;
+        const title = taskTitle(job);
+        const type = kindLabels[job.kind] || job.kind;
         const readStatus = requested ? (requested.error ? " · 读取失败" : " · 正在读取") : "";
-        const summary = `${statusLabels[job.status] || job.status} · ${dateLabel(job.created_at)}${readStatus}`;
+        const summary = `${title === type ? "" : `${type} · `}${statusLabels[job.status] || job.status} · ${dateLabel(job.created_at)}${readStatus}`;
         if (entry.firstChild.textContent !== title) entry.firstChild.textContent = title;
         if (entry.lastChild.textContent !== summary) entry.lastChild.textContent = summary;
         if (historyList.children[index] !== entry) historyList.insertBefore(entry, historyList.children[index] || null);
@@ -463,6 +558,39 @@
       }
       for (const entry of [...historyList.children]) if (!retained.has(entry)) entry.remove();
     }
+    async function loadHistory() {
+      const generation = ++state.historyGeneration;
+      const current = () => life.alive && !state.suspended && generation === state.historyGeneration;
+      const params = new URLSearchParams();
+      if (historyDocument.value) params.set("document_id", historyDocument.value);
+      if (historyStatus.value) params.set("status", historyStatus.value);
+      const priorJobs = new Map(state.jobs.map(job => [job.id, job]));
+      state.historyLoading = true;
+      historyNotice.textContent = "正在读取任务历史…"; historyNotice.hidden = false;
+      historyList.setAttribute("aria-busy", "true");
+      renderHistory();
+      try {
+        const response = await life.api("/api/research/tasks" + (params.size ? `?${params}` : ""));
+        if (!current()) return false;
+        const updatedJobs = state.jobs.filter(job => job !== priorJobs.get(job.id));
+        state.jobs = response.jobs || [];
+        for (const job of updatedJobs) rememberLatestJob(job);
+        if (Array.isArray(response.documents)) state.historyDocuments = response.documents;
+        renderHistoryDocuments();
+        historyNotice.hidden = true;
+        return true;
+      } catch (error) {
+        if (current()) historyNotice.textContent = `任务历史读取失败。刷新资料与任务可重试。 ${error.message}`;
+        return false;
+      } finally {
+        if (current()) {
+          state.historyLoading = false;
+          historyList.setAttribute("aria-busy", "false");
+          renderHistory();
+        }
+      }
+    }
+    for (const filter of [historyDocument, historyStatus]) life.on(filter, "change", () => { void loadHistory(); });
     function openEvidence(source) {
       if (typeof options.onEvidence !== "function") return Promise.resolve();
       return Promise.resolve().then(() => options.onEvidence(source)).catch((error) => life.show(error.message || "无法打开原文出处。", true));
@@ -897,6 +1025,10 @@
       cancel.disabled = locked || Boolean(job.cancel_requested);
       retry.disabled = locked || !state.configured;
       recheckDirections.disabled = locked || !state.configured;
+      continueTask.hidden = !state.selectedJob?.follow_up?.documents?.length;
+      continueTask.disabled = locked;
+      followUpSubmit.disabled = locked || job?.id !== followUpParent || !state.configured;
+      followUpCancel.disabled = Boolean(followUpParent && state.taskActions.has(followUpParent));
       exportLink.setAttribute("aria-disabled", String(!job));
       exportLink.tabIndex = job ? 0 : -1;
       if (job) exportLink.href = `/api/research/tasks/${encodeURIComponent(job.id)}/export`;
@@ -917,14 +1049,17 @@
     }
     function displayJob(job) {
       if (!life.alive || state.suspended) return;
-      if (state.selectedJob?.id !== job.id) { state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = ""; stopStream(); state.streamRevision = 0; }
+      if (state.selectedJob?.id !== job.id) {
+        closeFollowUp(); state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = ""; stopStream(); state.streamRevision = 0;
+      }
       state.selectedJob = job;
       showStream(job.stream, job.id);
       if (!pending(job)) stopStream();
       layout.classList.add("rs-has-task"); detail.hidden = false;
       rememberJob(job);
       detailHeading.textContent = kindLabels[job.kind] || "研究任务";
-      meta.textContent = `${dateLabel(job.created_at)} · 任务 ${job.id.slice(0, 8)}`;
+      const sourceTask = job.source_task_id || job.payload?.source_task_id;
+      meta.textContent = `${dateLabel(job.created_at)} · 任务 ${job.id.slice(0, 8)}${sourceTask ? ` · 来源任务 ${sourceTask.slice(0, 8)}` : ""}`;
       const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${['discover_qa','future_work','future_filter','agent_research'].includes(job.kind) ? '步' : '段'}` : "";
       const balanceError = /HTTP\s*402/.test(job.error || "") && (job.model_calls || []).some(call => call.http_status === 402 && call.provider_host === "api.deepseek.com");
       const errorText = balanceError ? "DeepSeek账户余额不足（HTTP 402）。请检查或补充账户余额；已保存阶段会保留，恢复后可重试。" : job.error;
@@ -1103,28 +1238,25 @@
       const generation = ++state.refreshGeneration;
       const revision = state.selectionRevision;
       const readPending = state.taskRead && !state.taskRead.error;
-      const priorJobs = new Map(state.jobs.map(job => [job.id, job]));
       state.refreshing = true;
       refreshButton.disabled = true;
       try {
-        const [capabilities, documents, jobs] = await Promise.all([
-          life.api("/api/capabilities"), life.api("/api/documents"), life.api("/api/research/tasks"),
+        const [capabilities, documents, historyLoaded] = await Promise.all([
+          life.api("/api/capabilities"), life.api("/api/documents"), loadHistory(),
         ]);
         if (!life.alive || state.suspended || generation !== state.refreshGeneration) return;
         state.configured = Boolean(capabilities.intelligence?.configured ?? capabilities.llm);
         configuration.textContent = state.configured ? "模型配置已就绪。任务会调用实际服务；输出仍需结合原文核验。" : "尚未配置大模型服务。可以准备任务输入，配置完成后刷新；当前不会生成模拟回答。";
         configuration.classList.toggle("is-ready", state.configured);
-        const updatedJobs = state.jobs.filter(job => job !== priorJobs.get(job.id));
-        state.documents = documents.documents || []; state.jobs = jobs.jobs || [];
-        for (const job of updatedJobs) rememberLatestJob(job);
-        renderDocuments(); renderHistory(); syncTaskActions();
+        state.documents = documents.documents || [];
+        renderDocuments(); renderHistoryDocuments(); syncTaskActions();
         submit.disabled = !state.configured || state.posting;
-        if (revision !== state.selectionRevision || readPending || (state.taskRead && !state.taskRead.error)) return;
+        if (!historyLoaded || revision !== state.selectionRevision || readPending || (state.taskRead && !state.taskRead.error)) return;
         const selectedId = preferredJobId || state.requestedJobId || state.jobs[0]?.id;
         if (selectedId) { if (!state.taskActions.has(selectedId)) await selectJob(selectedId); }
         else {
           stopStream(); state.streamRevision = 0; streamPanel.hidden = true; streamText.textContent = '';
-          state.selectedJob = null; state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = "";
+          closeFollowUp(); state.selectedJob = null; state.bilingual?.destroy(); state.bilingual = null; state.resultStamp = "";
           layout.classList.remove("rs-has-task"); detail.hidden = true;
           actions.hidden = true; eventDetails.hidden = true; progress.hidden = true; phase.hidden = true;
           detailHeading.textContent = "选择或创建一个任务"; meta.textContent = ""; status.textContent = "";
@@ -1260,10 +1392,10 @@
       getReturnLabel() { return ["translate", "translate_text"].includes(state.selectedJob?.kind) ? "返回翻译结果" : "返回任务结果"; },
       suspend() {
         if (!life.alive || state.suspended) return;
-        state.refreshOnResume = state.refreshOnResume || state.refreshing;
+        state.refreshOnResume = state.refreshOnResume || state.refreshing || state.historyLoading;
         state.suspended = true;
         stopStream(); stopTaskPoll(); syncTaskActions();
-        ++state.refreshGeneration; ++state.readGeneration;
+        ++state.refreshGeneration; ++state.readGeneration; ++state.historyGeneration;
         state.refreshing = false;
         refreshButton.disabled = false;
         state.bilingual?.suspend?.();

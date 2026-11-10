@@ -90,6 +90,133 @@ def model_input(request):
     return json.loads(request.content)
 
 
+def test_follow_up_reuses_the_saved_compare_runs_through_retry_and_model(app):
+    library = app.state.library
+    ids = [library.import_document(pdf_bytes(title, f"The {title} encoder has {layers} layers."),
+                                  f"{title}.pdf")["document"]["id"]
+           for title, layers in [("Alpha", 6), ("Beta", 12), ("Outside", 24)]]
+    while library.process_next_job():
+        pass
+    selected, outsider = ids[:2], ids[2]
+    pinned = {doc: library.get_document(doc)["available_run"]["id"] for doc in selected}
+    store = JobStore(library)
+    parent = store.create("compare", {"document_ids": selected, "question": "Original comparison"})
+    parent_result = {"status": "answered", "retrieval": {"selected_runs": pinned}}
+    store.finish(parent["id"], "completed", result=parent_result)
+    library.create_run(selected[0])
+    while library.process_next_job():
+        pass
+    replacement = library.get_document(selected[0])["available_run"]["id"]
+    assert replacement != pinned[selected[0]]
+
+    path = "/api/research/tasks"
+    body = {"kind": "agent_research", "source_task_id": parent["id"],
+            "question": "How many encoder layers do Alpha and Beta have?"}
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        preview = client.get(f"{path}/{parent['id']}").json()["job"]["follow_up"]
+        assert preview["mode"] == "compare"
+        assert [doc["document_id"] for doc in preview["documents"]] == selected
+        assert {doc["document_id"]: doc["run_id"] for doc in preview["documents"]} == pinned
+        assert [job["id"] for job in store.list()] == [parent["id"]]
+        store.finish(parent["id"], "completed", result={**parent_result,
+            "sources": [{"document_id": selected[0], "run_id": replacement}]})
+        assert client.get(f"{path}/{parent['id']}").json()["job"]["follow_up"] is None
+        assert client.post(path, json=body).status_code == 409
+        store.finish(parent["id"], "completed", result=parent_result)
+        for overrides in ({"document_ids": [outsider]}, {"agent_mode": "qa"},
+                          {"agent_public_query": "external search", "agent_import_limit": 1},
+                          {"run_id": pinned[selected[0]]}):
+            assert client.post(path, json={**body, **overrides}).status_code == 400
+        response = client.post(path, json=body)
+        assert response.status_code == 202, response.text
+        child = response.json()["job"]
+        assert child["payload"]["source_task_id"] == parent["id"]
+        assert child["payload"]["document_ids"] == selected
+        assert child["payload"]["agent_mode"] == "compare"
+        assert child["payload"]["agent_scope"]["documents"] == preview["documents"]
+        client.post(f"{path}/{child['id']}/cancel")
+        retried = client.post(f"{path}/{child['id']}/retry").json()["job"]
+        assert retried["status"] == "queued" and retried["payload"] == child["payload"]
+
+    def model(request):
+        call = model_input(request)
+        if "tools" not in call:
+            payload = json.loads(call["messages"][1]["content"])
+            assert all(block["run_id"] == pinned[block["document_id"]] for block in payload.get("evidence", []))
+            return completion(payload)
+        assert {tool["function"]["name"] for tool in call["tools"]} == {"search_evidence", "build_citation_graph"}
+        last = call["messages"][-1]
+        if last["role"] == "user":
+            return tool_turn("outside", "search_evidence", {"query": "encoder layers", "document_ids": [outsider]})
+        outcome = json.loads(last["content"])
+        if last["tool_call_id"] == "outside":
+            assert outcome["code"] == "document_out_of_scope"
+            return tool_turn("fixed", "search_evidence", {"query": "encoder layers", "document_ids": selected})
+        assert outcome["selected_runs"] == pinned
+        return stop_turn()
+
+    run_job(library, store, model)
+    saved = store.get(child["id"])
+    assert saved["status"] == "completed", saved["error"]
+    assert {doc["document_id"]: doc["run_id"] for doc in saved["result"]["sources"]} == pinned
+    assert store.get(parent["id"])["result"] == parent_result
+
+
+def test_follow_up_agent_import_uses_its_saved_run_without_reusing_external_permissions(app):
+    library = app.state.library
+    document = library.import_document(pdf_bytes("Imported", "The encoder has 6 layers."), "imported.pdf")["document"]
+    while library.process_next_job():
+        pass
+    document_id = document["id"]
+    pinned = library.get_document(document_id)["available_run"]["id"]
+    source = request_job(app, question="Original research", agent_public_query="test search", agent_import_limit=1)
+    store = JobStore(library)
+    store.save_agent_state(source["id"], {"imported": {"2401.00001": {"document_id": document_id}},
+                                         "run_ids": {document_id: pinned}})
+    store.finish(source["id"], "completed", result={"status": "answered"})
+    child = request_job(app, source_task_id=source["id"], question="Follow up about the imported paper")
+    scope = child["payload"]["agent_scope"]
+    assert scope["documents"] == [{"document_id": document_id, "run_id": pinned, "title": "Imported"}]
+    assert scope["allow_arxiv"] is False and scope["public_query"] == "" and scope["import_limit"] == 0
+    assert scope["subscription_id"] is None
+
+
+def test_follow_up_rejects_unknown_incomplete_and_unavailable_source_scope(app):
+    library = app.state.library
+    doc = library.import_document(pdf_bytes("Known", "Original evidence"), "known.pdf")["document"]
+    while library.process_next_job():
+        pass
+    doc_id = doc["id"]
+    run_id = library.get_document(doc_id)["available_run"]["id"]
+    store = JobStore(library)
+    source = store.create("qa", {"document_ids": [doc_id], "question": "Original research"})
+    legacy_result = {"status": "answered", "sources": [{"document_id": doc_id, "run_id": run_id}]}
+    path = "/api/research/tasks"
+    request = {"kind": "agent_research", "source_task_id": source["id"], "question": "Follow up"}
+    with TestClient(app, base_url="http://127.0.0.1:8765") as owner:
+        assert owner.post(path, json=request).status_code == 409
+        store.finish(source["id"], "completed", result={"status": "answered"})
+        assert owner.get(f"{path}/{source['id']}").json()["job"]["follow_up"] is None
+        assert owner.post(path, json=request).status_code == 409
+        store.finish(source["id"], "completed", result=legacy_result)
+        with TestClient(app, base_url="http://127.0.0.1:8765") as other:
+            assert other.post("/api/account/register", json={"name": "Other", "password": "fixture-only-password"}).status_code == 200
+            assert other.get(f"{path}/{source['id']}").status_code == 404
+            assert other.post(path, json=request).status_code == 404
+        assert owner.get(f"{path}/{source['id']}").json()["job"]["follow_up"]["documents"][0]["run_id"] == run_id
+        child = owner.post(path, json=request).json()["job"]
+        library.archive_document(doc_id)
+        assert owner.get(f"{path}/{source['id']}").json()["job"]["follow_up"] is None
+        assert owner.post(path, json=request).status_code == 409
+
+    def no_model(request):
+        pytest.fail("Archived source must stop the follow-up before any model call")
+
+    run_job(library, store, no_model)
+    saved = store.get(child["id"])
+    assert saved["status"] == "failed" and "解析版本已不可用" in saved["error"]
+
+
 @pytest.mark.parametrize("corrupt", [False, True])
 def test_local_compare_handles_tool_error_and_keeps_original_quote_gate(app, corrupt):
     library = app.state.library

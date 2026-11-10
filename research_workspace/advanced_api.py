@@ -14,6 +14,7 @@ from .accounts import Accounts, AuthenticationError
 from .intelligence import IntelligenceService
 from .jobs import JobStore
 from .library import Library
+from .research_scope import follow_up_preview
 from .visualization import DataStudio, render_chart, render_diagram, export_diagram_script
 
 
@@ -416,6 +417,17 @@ def build_router():
         return {'run':library.retry_page(document_id,page,run_id=run_id)}
 
     def create_task_locked(body:ResearchTask,library:Library):
+        store = None
+        follow_up = None
+        if body.kind == 'agent_research' and body.source_task_id is not None:
+            if body.model_fields_set - {'kind', 'source_task_id', 'question'}:
+                raise HTTPException(400, '继续研究的文献、版本和模式由来源任务确定。')
+            if not body.question.strip():
+                raise HTTPException(400, '请填写研究问题。')
+            store = JobStore(library)
+            follow_up = follow_up_preview(store, store.saved_result(body.source_task_id))
+            if follow_up is None:
+                raise HTTPException(409, '来源任务尚未完成，或其原始文献与解析版本无法完整复用。')
         service = IntelligenceService(library)
         if not service.capabilities()['configured']:
             raise HTTPException(503,'尚未配置大模型服务。请先完成本机模型配置；此处不会生成模拟结果。')
@@ -424,7 +436,13 @@ def build_router():
             from .intelligence import validate_glossary
             if body.kind not in {'translate','translate_text'}:raise HTTPException(400,'术语表仅适用于翻译任务。')
             payload['glossary']=validate_glossary(body.glossary)
-        if body.kind=='agent_research':
+        if follow_up is not None:
+            document_ids = [item['document_id'] for item in follow_up['documents']]
+            payload.update(document_ids=document_ids, agent_mode=follow_up['mode'], refresh_search=False,
+                           agent_scope={**follow_up, 'document_ids': document_ids, 'allow_arxiv': False,
+                                        'public_query': '', 'subscription_id': None, 'import_limit': 0,
+                                        'refresh_search': False, 'research_days': body.research_days})
+        elif body.kind=='agent_research':
             from .agent_workflow import prepare_scope
             payload['agent_scope'] = prepare_scope(library, payload)
         elif body.kind=='future_filter':
@@ -464,7 +482,7 @@ def build_router():
                 raise HTTPException(400,'请输入问题。')
             if body.kind=='compare' and len(set(body.document_ids))<2:
                 raise HTTPException(400,'比较需要至少两篇文献。')
-        return {'job':JobStore(library).create(body.kind,payload)}
+        return {'job':(store or JobStore(library)).create(body.kind,payload)}
 
     @router.post('/research/tasks',status_code=202)
     def create_task(body:ResearchTask,request:Request,library:Library=Depends(library_for)):
@@ -472,14 +490,21 @@ def build_router():
             return create_task_locked(body,library)
 
     @router.get('/research/tasks')
-    def tasks(library:Library=Depends(library_for)):
-        return {'jobs':JobStore(library).list()}
+    def tasks(document_id:str|None=Query(default=None,min_length=1,max_length=100),
+              status:Literal['queued','running','completed','failed','cancelled','interrupted']|None=None,
+              library:Library=Depends(library_for)):
+        store = JobStore(library)
+        return {'jobs':store.list(document_id=document_id,status=status),
+                'documents':store.history_documents()}
 
     @router.get('/research/tasks/{job_id}')
     def task(job_id:str,include_result:bool=True,library:Library=Depends(library_for)):
         store = JobStore(library)
         summary = store.summary(job_id)
-        return {'job':store.get(job_id,include_items=summary['status'] not in {'queued','running'},include_result=include_result)}
+        job = store.get(job_id,include_items=summary['status'] not in {'queued','running'},include_result=include_result)
+        if include_result:
+            job['follow_up'] = follow_up_preview(store, job)
+        return {'job': job}
 
     @router.get('/research/tasks/{job_id}/translation-blocks')
     def translation_blocks(job_id:str,offset:int=Query(0,ge=0),limit:int=Query(100,ge=1,le=200),
@@ -502,13 +527,13 @@ def build_router():
     @router.get('/research/tasks/{job_id}/events')
     async def events(job_id:str,request:Request,library:Library=Depends(library_for)):
         store = JobStore(library)
-        await run_in_threadpool(store.summary,job_id)
+        await run_in_threadpool(store.summary,job_id,include_history=False)
         async def stream():
             previous = None
             revision = None
             heartbeat = 0
             while not await request.is_disconnected():
-                job = await run_in_threadpool(store.summary,job_id,include_stage_event=True)
+                job = await run_in_threadpool(store.summary,job_id,include_stage_event=True,include_history=False)
                 preview = await run_in_threadpool(store.live_stream,job_id)
                 stamp = preview.get('revision') if preview else None
                 if stamp != revision:

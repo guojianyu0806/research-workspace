@@ -36,6 +36,8 @@ def test_two_accounts_cannot_read_documents_datasets_or_tasks(application):
             assert other.get('/api/documents/'+uploaded['id']).status_code==404
             assert other.get('/api/datasets/'+data['id']).status_code==404
             assert other.get('/api/research/tasks/'+job['id']).status_code==404
+            history = other.get('/api/research/tasks',params={'document_id':uploaded['id']}).json()
+            assert history == {'jobs':[], 'documents':[]}
         assert alice.get('/api/documents/'+uploaded['id']).status_code==200
         alice.post('/api/account/logout')
         assert alice.get('/api/documents/'+uploaded['id']).status_code==404
@@ -80,6 +82,37 @@ def test_missing_model_does_not_enqueue_fake_result(application):
         result = browser.post('/api/research/tasks',json={'kind':'qa','document_ids':['not-a-doc'],'question':'test'})
         assert result.status_code==503
         assert browser.get('/api/research/tasks').json()['jobs']==[]
+
+
+def test_task_history_filters_before_limit_and_lists_archived_document_choices(application):
+    with client(application) as browser:
+        old_doc = browser.post('/api/documents',files={'file':('old.pdf',pdf_bytes('Old evidence'))}).json()['document']
+        recent_doc = browser.post('/api/documents',files={'file':('recent.pdf',pdf_bytes('Recent evidence'))}).json()['document']
+        archived = browser.post(f'/api/documents/{old_doc["id"]}/archive').json()['document']
+        store = JobStore(application.state.library)
+        completed = store.create('qa',{'question':' 原文\n怎样验证？ ', 'document_ids':[old_doc['id']]})
+        store.finish(completed['id'],'completed',result={'answer':'private full answer'})
+        cancelled = store.create('translate',{'document_id':old_doc['id']})
+        store.cancel(cancelled['id'])
+        for _ in range(51):
+            store.create('qa',{'question':'Newer question','document_ids':[recent_doc['id']]})
+
+        path = '/api/research/tasks'
+        recent = browser.get(path).json()
+        assert len(recent['jobs']) == 50
+        assert all(job['document_ids'] == [recent_doc['id']] for job in recent['jobs'])
+        filtered = browser.get(path,params={'document_id':old_doc['id'],'status':'completed'})
+        assert filtered.status_code == 200
+        assert [job['id'] for job in filtered.json()['jobs']] == [completed['id']]
+        assert filtered.json()['jobs'][0]['title'] == '原文 怎样验证？'
+        assert 'private full answer' not in filtered.text
+        assert filtered.json()['documents'] == recent['documents']
+        assert {'id':old_doc['id'],'title':old_doc['title'],'archived_at':archived['archived_at']} in recent['documents']
+        assert [job['id'] for job in browser.get(path,params={'document_id':old_doc['id']}).json()['jobs']] == [
+            cancelled['id'], completed['id']]
+        assert [job['id'] for job in browser.get(path,params={'status':'completed'}).json()['jobs']] == [completed['id']]
+        assert browser.get(path,params={'document_id':recent_doc['id'],'status':'completed'}).json()['jobs'] == []
+        assert browser.get(path,params={'status':'complete'}).status_code == 422
 
 
 def test_runtime_model_settings_reject_pending_work_and_do_not_persist_key(application,monkeypatch):

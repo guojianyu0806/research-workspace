@@ -17,6 +17,42 @@ class TaskCancelled(Exception):
 class JobStore:
     KINDS = {'qa','compare','translate','translate_text','review','future_work','future_filter','draft','discover_qa','agent_research'}
     SUMMARY_COLUMNS = 'id,kind,status,error,progress,total,cancel_requested,created_at,updated_at,result IS NOT NULL AS has_result'
+    HISTORY_COLUMNS = """
+        json_extract(payload,'$.question') AS history_question,
+        CASE WHEN kind IN ('review','draft','future_work')
+            THEN json_extract(payload,'$.instruction')
+        END AS history_instruction,
+        CASE WHEN kind IN ('agent_research','future_filter')
+            THEN json_extract(payload,'$.source_task_id')
+        END AS history_parent,
+        CASE kind
+            WHEN 'agent_research' THEN COALESCE(json_extract(payload,'$.agent_scope.document_ids'),
+                                               json_extract(payload,'$.document_ids'))
+            WHEN 'translate' THEN json_array(json_extract(payload,'$.document_id'))
+            WHEN 'translate_text' THEN NULL
+            WHEN 'discover_qa' THEN (
+                SELECT json_array(json_extract(payload,'$.document_id'))
+                FROM research_job_items WHERE job_id=research_jobs.id AND item_key='download'
+            )
+            WHEN 'future_filter' THEN (
+                WITH RECURSIVE sources(id) AS (
+                    SELECT json_extract(research_jobs.payload,'$.source_task_id')
+                    UNION
+                    SELECT json_extract(source.payload,'$.source_task_id')
+                    FROM sources JOIN research_jobs AS source USING(id)
+                    WHERE source.kind='future_filter'
+                )
+                SELECT json_extract(source.payload,'$.document_ids')
+                FROM sources JOIN research_jobs AS source USING(id) WHERE source.kind='future_work'
+            )
+            ELSE json_extract(payload,'$.document_ids')
+        END AS history_documents,
+        CASE WHEN kind='agent_research' THEN (
+            SELECT json_object('run_ids',json_extract(payload,'$.run_ids'),
+                               'imported',json_extract(payload,'$.imported'))
+            FROM research_agent_state WHERE job_id=research_jobs.id
+        ) END AS history_agent
+    """
 
     def __init__(self, library: Library):
         self.library = library
@@ -25,6 +61,7 @@ class JobStore:
               CREATE TABLE IF NOT EXISTS research_jobs(
                 id TEXT PRIMARY KEY,kind TEXT,status TEXT,payload TEXT,result TEXT,error TEXT,
                 progress INTEGER,total INTEGER,cancel_requested INTEGER,created_at TEXT,updated_at TEXT);
+              CREATE INDEX IF NOT EXISTS research_jobs_created_at ON research_jobs(created_at);
               CREATE TABLE IF NOT EXISTS research_job_items(
                 job_id TEXT,item_key TEXT,payload TEXT,PRIMARY KEY(job_id,item_key));
               CREATE TABLE IF NOT EXISTS research_job_events(
@@ -63,6 +100,7 @@ class JobStore:
             item['usage']=self.usage_store.summary(db,job_id)
             item['model_calls']=self.usage_store.calls(db,job_id)
             item['stream']=self.stream_snapshot(db,job_id)
+            item.update(self._job_history(db,job_id))
         return item
 
     def header(self,job_id):
@@ -81,21 +119,25 @@ class JobStore:
             item['event_count']=db.execute('SELECT COUNT(*) FROM research_job_events WHERE job_id=?',(job_id,)).fetchone()[0]
             item['events_truncated']=item['event_count']>len(events)
             item['usage']=self.usage_store.summary(db,job_id);item['stream']=self.stream_snapshot(db,job_id)
+            item.update(self._job_history(db,job_id))
         return item
 
     def translation_page(self,job_id,**options):
         from .translation_pages import page
         return page(self.library,job_id,**options)
 
-    def summary(self,job_id,*,include_stage_event=False):
+    def summary(self,job_id,*,include_stage_event=False,include_history=True):
         """Bounded status payload for polling/SSE; full text stays behind get()."""
+        columns = self.SUMMARY_COLUMNS
+        if include_history:
+            columns += f',{self.HISTORY_COLUMNS}'
         with self.library._connection() as db:
             if include_stage_event:
                 db.execute('BEGIN')
-            row = db.execute(f'SELECT {self.SUMMARY_COLUMNS} FROM research_jobs WHERE id=?',(job_id,)).fetchone()
+            row = db.execute(f'SELECT {columns} FROM research_jobs WHERE id=?',(job_id,)).fetchone()
             if row is None:
                 raise KeyError(job_id)
-            item = self._summary(db,row)
+            item = self._summary(db,row,self._history_metadata(row) if include_history else {})
             if include_stage_event and item['kind'] == 'agent_research':
                 event = item['last_event']
                 if event and event['stage'] in {'model_call','model_response'}:
@@ -106,8 +148,28 @@ class JobStore:
             return item
 
     @staticmethod
-    def _summary(db,row):
-        item = dict(row)
+    def _history_metadata(row):
+        title = ' '.join((row['history_question'] or '').split())
+        if not title:
+            title = ' '.join((row['history_instruction'] or '').split())
+        if len(title) > 72:
+            title = title[:72].rstrip() + '…'
+        documents = json.loads(row['history_documents'] or '[]')
+        agent = json.loads(row['history_agent'] or '{}')
+        documents.extend(agent.get('run_ids') or {})
+        documents.extend(record.get('document_id') for record in (agent.get('imported') or {}).values())
+        return {'title':title or None,
+                'document_ids':list(dict.fromkeys(value for value in documents if isinstance(value,str) and value)),
+                'source_task_id':row['history_parent']}
+
+    def _job_history(self,db,job_id):
+        row = db.execute(f'SELECT {self.HISTORY_COLUMNS} FROM research_jobs WHERE id=?',(job_id,)).fetchone()
+        return self._history_metadata(row)
+
+    @staticmethod
+    def _summary(db,row,history):
+        item = {key:row[key] for key in row.keys() if not key.startswith('history_')}
+        item.update(history)
         item['has_result'] = bool(item['has_result'])
         event = db.execute('SELECT stage,message,created_at FROM research_job_events WHERE job_id=? ORDER BY id DESC LIMIT 1',(item['id'],)).fetchone()
         item['last_event'] = dict(event) if event else None
@@ -134,10 +196,30 @@ class JobStore:
             self._exists(db,job_id)
             return self.stream_snapshot(db,job_id)
 
-    def list(self):
+    def list(self,*,document_id=None,status=None):
         with self.library._connection() as db:
-            rows = db.execute(f'SELECT {self.SUMMARY_COLUMNS} FROM research_jobs ORDER BY created_at DESC LIMIT 50').fetchall()
-            return [self._summary(db,row) for row in rows]
+            db.execute('BEGIN')
+            query = f'SELECT {self.SUMMARY_COLUMNS},{self.HISTORY_COLUMNS} FROM research_jobs'
+            parameters = ()
+            if status is not None:
+                query += ' WHERE status=?'
+                parameters = (status,)
+            query += ' ORDER BY created_at DESC,rowid DESC'
+            if document_id is None:
+                query += ' LIMIT 50'
+            items = []
+            for row in db.execute(query,parameters):
+                history = self._history_metadata(row)
+                if document_id is not None and document_id not in history['document_ids']:
+                    continue
+                items.append(self._summary(db,row,history))
+                if len(items) == 50:
+                    break
+            return items
+
+    def history_documents(self):
+        with self.library._connection() as db:
+            return [dict(row) for row in db.execute('SELECT id,title,archived_at FROM documents ORDER BY created_at DESC')]
 
     def event(self,job_id,stage,message):
         with self.library._connection() as db:
@@ -168,6 +250,15 @@ class JobStore:
             db.execute('INSERT OR REPLACE INTO research_job_items VALUES(?,?,?)',(job_id,key,json.dumps(payload,ensure_ascii=False)))
             count = db.execute("SELECT COUNT(*) FROM research_job_items WHERE job_id=? AND item_key NOT IN ('review_validation','grounding_validation') AND item_key NOT LIKE 'diagnostic:%'",(job_id,)).fetchone()[0]
             db.execute('UPDATE research_jobs SET progress=?,total=?,updated_at=? WHERE id=?',(count,total,_now(),job_id))
+
+    def saved_result(self, job_id):
+        """Read only the persisted source task and result for continuation."""
+        with self.library._connection() as db:
+            row = db.execute('SELECT id,kind,status,payload,result FROM research_jobs WHERE id=?', (job_id,)).fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        return {**dict(row), 'payload': json.loads(row['payload']),
+                'result': json.loads(row['result']) if row['result'] else None}
 
     def load_agent_state(self, job_id):
         # The private protocol transcript is separate from browser-visible items.

@@ -9,6 +9,7 @@ from .agent_protocol import request_tool_turn
 from .agent_tools import AgentTools, decode_arguments
 from .intelligence import Evidence, MAX_DOCUMENTS, ModelOutputError, _prompt
 from .library import LibraryError
+from .research_scope import validate_pinned_documents
 
 MAX_ROUNDS = 8
 MAX_CALLS = 12
@@ -230,11 +231,15 @@ async def agent_step(store, service, job):
     job_id, payload = job["id"], job["payload"]
     scope = payload["agent_scope"]
     state = store.load_agent_state(job_id)
+    if state is not None and state.get("answer") is not None:
+        return state["answer"]
+    follow_up_runs = None
+    if payload.get("source_task_id"):
+        follow_up_runs = {item["document_id"]: item["run_id"] for item in scope["documents"]}
+        validate_pinned_documents(store.library, follow_up_runs)
     if state is None:
         store.event(job_id, "execute", "正在读取本次研究的固定文献和工具范围。")
         state = _new_state(scope, payload["question"])
-    if state.get("answer") is not None:
-        return state["answer"]
 
     def check_cancel():
         store.check_cancel(job_id)
@@ -269,6 +274,8 @@ async def agent_step(store, service, job):
 
     store.save_agent_state(job_id, state)
     check_cancel()
+    if follow_up_runs is not None:
+        validate_pinned_documents(store.library, follow_up_runs)
     result = await _final_answer(service, payload, scope, state, check_cancel, report_phase)
     state["answer"] = result
     store.save_agent_state(job_id, state)
