@@ -64,7 +64,7 @@ class DedupDecision(StrictInput):
 
 
 class ResearchTask(StrictInput):
-    kind: Literal['qa','compare','translate','translate_text','review','future_work','future_filter','draft','discover_qa']
+    kind: Literal['qa','compare','translate','translate_text','review','future_work','future_filter','draft','discover_qa','agent_research']
     source_task_id: str | None = Field(default=None,max_length=100)
     paper_id: str | None = Field(default=None,max_length=150)
     document_ids: list[str] = Field(default_factory=list,max_length=20)
@@ -82,6 +82,10 @@ class ResearchTask(StrictInput):
     assess_solved: bool = True
     refresh_search: bool = True
     research_days: int = Field(default=90,ge=1,le=3650)
+    agent_mode: Literal['qa','compare'] | None = None
+    agent_public_query: str | None = Field(default=None,max_length=300)
+    agent_import_limit: int | None = Field(default=None,ge=0,le=1,strict=True)
+    agent_subscription_id: str | None = Field(default=None,min_length=1,max_length=100)
 
 
 class SubscriptionInput(StrictInput):
@@ -420,7 +424,10 @@ def build_router():
             from .intelligence import validate_glossary
             if body.kind not in {'translate','translate_text'}:raise HTTPException(400,'术语表仅适用于翻译任务。')
             payload['glossary']=validate_glossary(body.glossary)
-        if body.kind=='future_filter':
+        if body.kind=='agent_research':
+            from .agent_workflow import prepare_scope
+            payload['agent_scope'] = prepare_scope(library, payload)
+        elif body.kind=='future_filter':
             if not body.source_task_id:raise HTTPException(400,'请选择已完成正文核验的来源任务。')
             source=JobStore(library).get(body.source_task_id)
             if source['status']!='completed' or not (source.get('result') or {}).get('future_fulltext'):

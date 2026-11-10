@@ -1884,16 +1884,22 @@ class IntelligenceService:
 
     async def answer(self, question: str, document_ids: list[str], *,
                      mode: Literal["qa", "compare"] = "qa", check_cancel=None, run_ids=None,
-                     fulltext_review: bool = False) -> dict:
+                     fulltext_review: bool = False, tool_retrieval: dict | None = None) -> dict:
         self._require_model()
         if mode not in {"qa", "compare"}:
             raise LibraryError("问答模式无效。")
         document_ids = self._validate_documents(document_ids)
         if mode == "compare" and len(document_ids) < 2:
             raise LibraryError("跨文献比较需要至少两篇文献。")
-        retrieval = await self.retrieve_for_question(question, document_ids, limit=MAX_EVIDENCE if fulltext_review else max(12, len(document_ids)),
-                                                     check_cancel=check_cancel, include_attribution_context=True,
-                                                     **({'run_ids':run_ids} if run_ids is not None else {}))
+        if tool_retrieval is None:
+            retrieval = await self.retrieve_for_question(question, document_ids,
+                limit=MAX_EVIDENCE if fulltext_review else max(12, len(document_ids)),
+                check_cancel=check_cancel, include_attribution_context=True,
+                **({'run_ids':run_ids} if run_ids is not None else {}))
+        else:
+            # Agent evidence comes from the server's persisted tool results.
+            # The existing citation, claim support and coverage gates still apply.
+            retrieval = dict(tool_retrieval)
         evidence = retrieval["evidence"]
         snapshot = retrieval.get("_snapshot_blocks", evidence)
         if fulltext_review:

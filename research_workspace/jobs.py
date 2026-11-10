@@ -15,7 +15,7 @@ class TaskCancelled(Exception):
 
 
 class JobStore:
-    KINDS = {'qa','compare','translate','translate_text','review','future_work','future_filter','draft','discover_qa'}
+    KINDS = {'qa','compare','translate','translate_text','review','future_work','future_filter','draft','discover_qa','agent_research'}
     SUMMARY_COLUMNS = 'id,kind,status,error,progress,total,cancel_requested,created_at,updated_at,result IS NOT NULL AS has_result'
 
     def __init__(self, library: Library):
@@ -31,6 +31,8 @@ class JobStore:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,job_id TEXT,stage TEXT,message TEXT,created_at TEXT);
               CREATE TABLE IF NOT EXISTS research_job_stream(
                 job_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL);
+              CREATE TABLE IF NOT EXISTS research_agent_state(
+                job_id TEXT PRIMARY KEY, payload TEXT NOT NULL, ready_at TEXT NOT NULL);
             ''')
             from .translation_pages import create_schema
             create_schema(db)
@@ -157,6 +159,20 @@ class JobStore:
             count = db.execute("SELECT COUNT(*) FROM research_job_items WHERE job_id=? AND item_key NOT IN ('review_validation','grounding_validation') AND item_key NOT LIKE 'diagnostic:%'",(job_id,)).fetchone()[0]
             db.execute('UPDATE research_jobs SET progress=?,total=?,updated_at=? WHERE id=?',(count,total,_now(),job_id))
 
+    def load_agent_state(self, job_id):
+        # The private protocol transcript is separate from browser-visible items.
+        with self.library._connection() as db:
+            row = db.execute('SELECT payload FROM research_agent_state WHERE job_id=?', (job_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def save_agent_state(self, job_id, state, *, wait_seconds=0):
+        ready_at = (datetime.now(timezone.utc) + timedelta(seconds=wait_seconds)).isoformat() if wait_seconds else ''
+        with self.library._connection() as db:
+            self._exists(db, job_id)
+            db.execute('INSERT INTO research_agent_state VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET payload=excluded.payload,ready_at=excluded.ready_at',
+                       (job_id, json.dumps(state, ensure_ascii=False, allow_nan=False), ready_at))
+            db.execute('UPDATE research_jobs SET updated_at=? WHERE id=?', (_now(), job_id))
+
     def retry(self,job_id,*,include_result=True):
         with self.library._connection() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -190,7 +206,10 @@ class JobStore:
         with self.library._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             threshold=(datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat()
-            row = db.execute("SELECT id FROM research_jobs WHERE status='queued' AND NOT(kind='discover_qa' AND progress=1 AND updated_at>?) ORDER BY updated_at,created_at LIMIT 1",(threshold,)).fetchone()
+            row = db.execute("""SELECT id FROM research_jobs WHERE status='queued'
+                AND NOT(kind='discover_qa' AND progress=1 AND updated_at>?)
+                AND NOT EXISTS(SELECT 1 FROM research_agent_state s WHERE s.job_id=research_jobs.id AND s.ready_at>?)
+                ORDER BY updated_at,created_at LIMIT 1""", (threshold, _now())).fetchone()
             if not row:
                 return None
             db.execute("UPDATE research_jobs SET status='running',updated_at=? WHERE id=?",(_now(),row[0]))
@@ -282,7 +301,12 @@ class JobStore:
                 self.finish(job_id,'completed',result=job['result'])
                 return True
             self.event(job_id,'execute','读取选定资料并执行'+kind+'任务。')
-            if kind=='discover_qa':
+            if kind=='agent_research':
+                from .agent_workflow import agent_step
+                result = await agent_step(self, service, job)
+                if result is None:
+                    return True
+            elif kind=='discover_qa':
                 from .reading_workflow import reading_step
                 result=await reading_step(self,service,job)
                 if result is None:return True

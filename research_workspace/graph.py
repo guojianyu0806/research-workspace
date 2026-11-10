@@ -159,13 +159,26 @@ class GraphService:
             return None
         return text, evidence
 
-    def build(self, document_ids: list[str] | None = None) -> dict:
+    def build(self, document_ids: list[str] | None = None, *,
+              run_ids: dict[str, str | None] | None = None) -> dict:
         if document_ids is not None and (not isinstance(document_ids, list) or not all(isinstance(item, str) for item in document_ids)):
             raise LibraryError("图谱文献列表格式不正确。")
         documents = ([doc for doc in self.library.list_documents() if doc.get("is_current_version", True) and not doc.get("archived_at")]
                      if document_ids is None else [self.library.get_document(identifier) for identifier in dict.fromkeys(document_ids)])
         if len(documents) > 100:
             raise LibraryError("一次最多构建100篇本地文献的局域引用图谱。")
+        if run_ids is not None:
+            if (document_ids is None or not isinstance(run_ids, dict)
+                    or set(run_ids) != {doc['id'] for doc in documents}
+                    or any(value is not None and not isinstance(value, str) for value in run_ids.values())):
+                raise LibraryError("固定图谱解析版本必须与明确选择的文献一一对应。")
+            frozen = []
+            for doc in documents:
+                run = self.library.get_run(run_ids[doc['id']]) if run_ids[doc['id']] else None
+                if run and (run['document_id'] != doc['id'] or run['status'] not in {'completed', 'partial'}):
+                    raise LibraryError("图谱解析版本不属于选定文献或尚未完成。")
+                frozen.append({**doc, 'available_run': run})
+            documents = frozen
         catalog, imported = self._catalog()
         metadata_by_document = defaultdict(list)
         for record in catalog:
