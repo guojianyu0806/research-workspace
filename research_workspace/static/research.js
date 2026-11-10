@@ -47,7 +47,7 @@
   }
   const jsonOptions = (body) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const pending = (job) => job && ["queued", "running"].includes(job.status);
-  const kindLabels = { qa: "文献问答", compare: "多篇比较", translate: "文献翻译", translate_text: "学术文本翻译", review: "专题综述", future_work: "未来方向", future_filter: "全文方向筛选", draft: "论文框架" };
+  const kindLabels = { qa: "文献问答", compare: "多篇比较", agent_research: "智能研究（工具调用）", translate: "文献翻译", translate_text: "学术文本翻译", review: "专题综述", future_work: "未来方向", future_filter: "全文方向筛选", draft: "论文框架" };
   const statusLabels = { queued: "排队中", running: "执行中", completed: "已完成", failed: "失败", cancelled: "已取消", interrupted: "调用中断，结果未知" };
   function dateLabel(value) {
     const date = new Date(value);
@@ -260,6 +260,21 @@
     const glossaryField=field("统一术语（可选，最多50项）",glossaryInput);form.append(glossaryField);
     const prompt = textarea("输入希望从原文核验的问题。", 6);
     const promptField = field("研究问题", prompt); form.append(promptField);
+    const agentOptions = node("fieldset", "rs-fieldset rs-agent-options");
+    agentOptions.append(node("legend", "rs-label", "智能研究范围"));
+    const agentMode = select([["qa", "回答问题"], ["compare", "比较文献"]]);
+    agentMode.setAttribute("aria-label", "研究方式");
+    const agentPublicQuery = input("text", "例如 retrieval augmented generation；留空不追加关键词检索");
+    agentPublicQuery.maxLength = 500;
+    const agentSubscription = select([["", "不使用订阅"]]); agentSubscription.setAttribute("aria-label", "检查已有 arXiv 订阅（可选）");
+    const agentSubscriptionRefresh = button("刷新订阅列表"), agentSubscriptionNote = node("p", "rs-muted rs-small", "选择已有订阅将允许本任务检查其更新，不修改订阅的定期设置。");
+    let agentSubscriptionsLoaded = false, agentSubscriptionsLoading = false;
+    const agentImport = input("checkbox"), agentImportLabel = node("label", "rs-check-label");
+    agentImportLabel.append(agentImport, node("span", "", "允许将本次检索或订阅更新中的最多 1 篇论文下载、导入并解析到当前空间"));
+    agentOptions.append(field("研究方式", agentMode), field("arXiv 公开检索词（可选）", agentPublicQuery),
+      field("检查已有 arXiv 订阅（可选）", agentSubscription), agentSubscriptionRefresh, agentSubscriptionNote,
+      agentImportLabel, node("p", "rs-muted rs-small", "填写检索词或选择订阅才启用相应公开检索；不勾选导入时不下载论文。工具执行记录会随任务保存。"));
+    form.append(agentOptions);
     const futureSearchOptions=node('fieldset','rs-fieldset');
     futureSearchOptions.append(node('legend','rs-label','最新研究检索范围'));
     const liveSearch=input('checkbox');liveSearch.checked=true;
@@ -353,6 +368,10 @@
     }
     function changeKind() {
       const taskKind = kind.value, isDocumentTranslation = taskKind === "translate", isTextTranslation = taskKind === "translate_text";
+      const isAgent = taskKind === "agent_research";
+      agentOptions.hidden = !isAgent; agentOptions.disabled = !isAgent;
+      if (isAgent && !agentSubscriptionsLoaded) loadAgentSubscriptions();
+      updateAgentImport();
       documentsGroup.hidden = isDocumentTranslation || isTextTranslation;
       singleField.hidden = !isDocumentTranslation; scopeGroup.hidden = !isDocumentTranslation;
       pageField.hidden = scope.value !== "page"; page.required = isDocumentTranslation && scope.value === "page";
@@ -360,14 +379,48 @@
       glossaryField.hidden = !isDocumentTranslation && !isTextTranslation;
       futureSearchOptions.hidden=taskKind!=='future_work';
       promptField.hidden = isDocumentTranslation;
-      prompt.required = ["qa", "compare", "draft", "translate_text"].includes(taskKind);
+      prompt.required = ["qa", "compare", "agent_research", "draft", "translate_text"].includes(taskKind);
       const label = taskKind === "draft" ? "研究idea与论文框架要求" : isTextTranslation ? "待翻译学术文本" : ["review", "future_work"].includes(taskKind) ? "关注方向（可选）" : "研究问题";
       promptField.firstChild.textContent = label;
-      prompt.maxLength = isTextTranslation ? 60000 : ["qa", "compare"].includes(taskKind) ? 4000 : 10000;
+      prompt.maxLength = isTextTranslation ? 60000 : ["qa", "compare", "agent_research"].includes(taskKind) ? 4000 : 10000;
       prompt.placeholder = isTextTranslation ? "粘贴需要翻译的摘要或正文。" : taskKind === "draft" ? "描述研究目标、已有工作与准备验证的想法。" : "说明希望核验的问题或关注的研究方向。";
       inputNote.textContent = taskKind === "future_work" ? "按所选提交时间范围检索arXiv，保存真实检索回执，获取最多3篇公开PDF并逐条件审核。仅同一论文充分、共同覆盖全部条件且联合审核通过时移出候选；部分覆盖和证据不足保留，原始记录不删除。"
+        : isAgent ? "模型会在所选范围内调用检索、引用图谱等工具，再依据可用原文生成答案；证据不足时会说明缺口。可在执行记录中核对实际操作。"
         : isDocumentTranslation ? "整篇翻译覆盖全部可用文本块；扫描或失败页面会单独标注，不会假装完成。"
         : taskKind === "draft" ? "生成的是待验证研究框架，不会把计划中的实验当成已完成结果。" : "";
+    }
+    function updateAgentImport() {
+      agentImport.disabled = !agentPublicQuery.value.trim() && !agentSubscription.value;
+      if (agentImport.disabled) agentImport.checked = false;
+    }
+    async function loadAgentSubscriptions() {
+      if (agentSubscriptionsLoading || !life.alive) return;
+      agentSubscriptionsLoading = true; agentSubscription.disabled = true; agentSubscriptionRefresh.disabled = true;
+      agentSubscriptionNote.textContent = "正在读取当前空间的订阅列表…";
+      try {
+        const response = await life.api("/api/subscriptions");
+        if (!life.alive) return;
+        if (!Array.isArray(response.subscriptions)) throw new Error("订阅列表格式无效。");
+        const prior = agentSubscription.value;
+        agentSubscription.replaceChildren();
+        const empty = node("option", "", "不使用订阅"); empty.value = ""; agentSubscription.append(empty);
+        for (const item of response.subscriptions) {
+          if (typeof item.id !== "string" || !item.id) continue;
+          const option = node("option", "", `${item.query || item.id}${item.enabled === false ? "（定期检查已暂停）" : ""}`);
+          option.value = item.id; agentSubscription.append(option);
+        }
+        if ([...agentSubscription.options].some(option => option.value === prior)) agentSubscription.value = prior;
+        agentSubscriptionsLoaded = true;
+        agentSubscriptionNote.textContent = response.subscriptions.length ? "选择已有订阅将允许本任务检查其更新，不修改订阅的定期设置。" : "当前空间暂无订阅；可在“发现与追踪”中创建，也可直接填写本次检索词。";
+      } catch (error) {
+        if (!life.alive) return;
+        agentSubscriptionsLoaded = false;
+        const empty = node("option", "", "不使用订阅"); empty.value = ""; agentSubscription.replaceChildren(empty);
+        agentSubscriptionNote.textContent = `订阅列表读取失败：${error.message} 可点击“刷新订阅列表”重试；仍可使用本地资料或检索词。`;
+      } finally {
+        agentSubscriptionsLoading = false;
+        if (life.alive) { agentSubscription.disabled = false; agentSubscriptionRefresh.disabled = false; updateAgentImport(); }
+      }
     }
     function renderHistory() {
       if (!state.jobs.length) { historyList.replaceChildren(node("p", "rs-muted rs-small", "暂无研究任务。")); return; }
@@ -568,6 +621,65 @@
       if (output.limitations?.length) {
         const list = node("ul", "rs-limitations"); for (const text of output.limitations) list.append(node("li", "", text)); resultArea.append(list);
       }
+      if (Array.isArray(output.agent_public_papers) && output.agent_public_papers.length) {
+        const papers = node("details", "rs-events rs-agent-papers");
+        papers.append(node("summary", "", `本次检索到的公开论文（${output.agent_public_papers.length} 篇）`),
+          node("p", "rs-muted rs-small", "此列表展示公开元数据，不能据此认定已阅读全文；可核验的原文证据见答案引用。"));
+        const list = node("ul", "rs-event-list");
+        for (const paper of output.agent_public_papers) {
+          if (!paper || typeof paper !== "object") continue;
+          const id = String(paper.id || ""), sourceId = id.startsWith("arxiv:") ? id : `arxiv:${id}`;
+          const url = safeArxivUrl(sourceId, paper.source_url), item = node("li", "");
+          if (url?.startsWith("https://arxiv.org/abs/")) {
+            const source = link(paper.title || id, url); source.target = "_blank"; source.rel = "noopener noreferrer"; item.append(source);
+          } else item.append(node("span", "", `${paper.title || id || "未命名论文"} · 来源链接未通过校验`));
+          item.append(node("p", "rs-muted rs-small", `${id || "标识未记录"} · 发布日期：${paper.published || "未记录"}`)); list.append(item);
+        }
+        papers.append(list); resultArea.append(papers);
+      }
+      if (Array.isArray(output.agent_graphs) && output.agent_graphs.length) {
+        const graphs = node("details", "rs-events rs-agent-graphs"); graphs.append(node("summary", "", `本次引用图谱摘要（${output.agent_graphs.length} 次）`),
+          node("p", "rs-muted rs-small", "排序依据本次文献范围内的引用关系，不代表论文质量；每次最多显示前 10 个节点。"));
+        for (const [index, graph] of output.agent_graphs.entries()) {
+          if (!graph || typeof graph !== "object") continue;
+          const nodes = Array.isArray(graph.nodes) ? graph.nodes.filter(item => item && typeof item === "object") : [];
+          const edges = Array.isArray(graph.edges) ? graph.edges : [], damping = graph.method?.damping;
+          graphs.append(node("p", "rs-small", `图谱 ${index + 1} · ${nodes.length} 个节点 · ${edges.length} 条引用${typeof damping === "number" && Number.isFinite(damping) ? ` · PageRank 阻尼系数 ${damping}` : ""}${graph.truncated ? " · 记录已截断" : ""}`));
+          const table = node("table", "rs-table"), head = node("thead", ""), row = node("tr", "");
+          for (const title of ["排名", "文献", "PageRank"]) { const th = node("th", "", title); th.scope = "col"; row.append(th); }
+          head.append(row); table.append(head); const body = node("tbody", "");
+          const ranked = [...nodes].sort((a, b) => (Number.isFinite(a.rank) ? a.rank : Infinity) - (Number.isFinite(b.rank) ? b.rank : Infinity)).slice(0, 10);
+          for (const item of ranked) {
+            const tr = node("tr", ""); tr.append(node("td", "", Number.isInteger(item.rank) ? item.rank : "—"), node("td", "", item.title || item.document_id || "未命名文献"),
+              node("td", "", typeof item.pagerank === "number" && Number.isFinite(item.pagerank) ? item.pagerank.toFixed(4) : "—")); body.append(tr);
+          }
+          table.append(body); const scroll = node("div", "rs-table-scroll"); scroll.append(table); graphs.append(scroll);
+        }
+        resultArea.append(graphs);
+      }
+      if (Array.isArray(output.agent_trace) && output.agent_trace.length) {
+        const toolLabels = {search_evidence: "检索原文证据", build_citation_graph: "构建引用图谱", search_arxiv: "检索 arXiv", check_arxiv_updates: "检查订阅更新", import_paper: "导入公开论文", prepare_parse: "解析论文"};
+        const traceStatuses = {ok: "已完成", error: "失败", waiting: "等待中"};
+        const trace = node("details", "rs-events rs-agent-trace");
+        trace.append(node("summary", "", `工具调用记录（${output.agent_trace.length} 次）`));
+        const list = node("ol", "rs-event-list");
+        for (const entry of output.agent_trace) {
+          if (!entry || typeof entry !== "object") continue;
+          const tool = String(entry.tool || "未知工具"), status = String(entry.status || "未记录状态");
+          const parts = [Object.hasOwn(toolLabels, tool) ? toolLabels[tool] : tool,
+            Object.hasOwn(traceStatuses, status) ? traceStatuses[status] : status];
+          if (typeof entry.code === "string" && entry.code) parts.push(`状态码：${entry.code}`);
+          if (Number.isInteger(entry.attempt) && entry.attempt > 0) parts.push(`第 ${entry.attempt} 次尝试`);
+          if (typeof entry.elapsed_ms === "number" && Number.isFinite(entry.elapsed_ms) && entry.elapsed_ms >= 0) parts.push(`${entry.elapsed_ms} 毫秒`);
+          if (["bm25_dense_rrf", "bilingual_bm25_dense_rrf"].includes(entry.retrieval?.mode)) parts.push("BM25＋BGE＋RRF");
+          else if (entry.retrieval?.mode === "bm25_lexical") parts.push("BM25 词法检索");
+          if (entry.retrieval?.semantic?.status === "failed_fallback") parts.push("本地向量检索降级");
+          if (entry.cached === true) parts.push("公开结果来自缓存");
+          if (entry.reused === true) parts.push("复用已保存结果");
+          list.append(node("li", "", parts.join(" · ")));
+        }
+        trace.append(node("p", "rs-muted rs-small", "以下记录来自已保存的工具回执；工具完成不代表研究结论已通过原文核验。"), list); resultArea.append(trace);
+      }
       if (output.trace?.length) {
         const trace = node("details", "rs-events"); trace.append(node("summary", "", "查看结果验证步骤"));
         const list = node("ol", "rs-event-list"); for (const event of output.trace) list.append(node("li", "", event.detail || event.step || ""));
@@ -608,7 +720,7 @@
       state.jobs = [job, ...state.jobs.filter((item) => item.id !== job.id)].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       detailHeading.textContent = kindLabels[job.kind] || "研究任务";
       meta.textContent = `${dateLabel(job.created_at)} · 任务 ${job.id.slice(0, 8)}`;
-      const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${['discover_qa','future_work','future_filter'].includes(job.kind) ? '步' : '段'}` : "";
+      const counter = job.total > 0 ? ` · 已保存 ${job.progress}/${job.total} ${['discover_qa','future_work','future_filter','agent_research'].includes(job.kind) ? '步' : '段'}` : "";
       const balanceError = /HTTP\s*402/.test(job.error || "") && (job.model_calls || []).some(call => call.http_status === 402 && call.provider_host === "api.deepseek.com");
       const errorText = balanceError ? "DeepSeek账户余额不足（HTTP 402）。请检查或补充账户余额；已保存阶段会保留，恢复后可重试。" : job.error;
       status.textContent = (job.cancel_requested && pending(job) ? "已请求取消，等待当前操作结束" : statusLabels[job.status] || job.status) + counter + (errorText ? `：${errorText}` : "")
@@ -628,6 +740,8 @@
       retry.textContent = job.status === "interrupted" ? "确认重试（可能重复消耗）" : "继续重试";
       exportLink.href = `/api/research/tasks/${encodeURIComponent(job.id)}/export`; exportLink.download = `research-${job.id}.md`;
       eventList.replaceChildren();
+      eventDetails.firstChild.textContent = job.kind === "agent_research" ? "执行与工具记录" : "执行记录";
+      if (eventDetails.dataset.jobId !== job.id) { eventDetails.open = job.kind === "agent_research"; eventDetails.dataset.jobId = job.id; }
       for (const event of job.events || []) eventList.append(node("li", "", `${dateLabel(event.created_at)} ${event.message || event.stage || ""}`));
       for (const call of job.model_calls || []) eventList.append(node("li", "", `${call.model} · ${call.output_schema} · ${call.state} · ${call.duration_ms ?? "待返回"} ms · ${call.usage?.total_tokens ?? "未知"} Tokens · 请求 ${call.id.slice(0,8)}`));
       if (job.model_calls_deferred && job.usage?.calls) eventList.append(node("li", "", "本页面按摘要加载；全部模型调用回执保存在完整任务导出中。"));
@@ -771,6 +885,9 @@
     life.on(older, "change", renderDocuments); life.on(single, "change", updatePageLimit);
     life.on(kind, "change", () => { if (kind.value === "translate_text") target.value = "en"; changeKind(); });
     life.on(scope, "change", changeKind);
+    life.on(agentPublicQuery, "input", updateAgentImport);
+    life.on(agentSubscription, "change", updateAgentImport);
+    life.on(agentSubscriptionRefresh, "click", loadAgentSubscriptions);
     life.on(form, "submit", async (event) => {
       event.preventDefault(); if (state.posting || !form.reportValidity()) return;
       if (!state.configured) { life.show("请先配置真实模型服务。", true); return; }
@@ -789,6 +906,15 @@
         payload.run_id = doc.available_run.id;
         if (scope.value === "page") payload.page = Number(page.value);
       } else if (kind.value === "translate_text") { payload.text = prompt.value.trim(); payload.target_language = target.value; }
+      else if (kind.value === "agent_research") {
+        payload.question = prompt.value.trim(); payload.document_ids = [...state.selectedDocuments];
+        payload.agent_mode = agentMode.value; payload.agent_public_query = agentPublicQuery.value.trim();
+        if (agentSubscription.value) payload.agent_subscription_id = agentSubscription.value;
+        payload.agent_import_limit = (payload.agent_public_query || payload.agent_subscription_id) && agentImport.checked ? 1 : 0;
+        if (!payload.question) { life.show("请填写需要研究的问题。", true); return; }
+        if (!payload.document_ids.length && !payload.agent_public_query && !payload.agent_subscription_id) { life.show("请选择至少一篇文献，或明确填写 arXiv 公开检索词、选择已有订阅。", true); return; }
+        if (payload.agent_mode === "compare" && payload.document_ids.length + payload.agent_import_limit < 2) { life.show("比较任务需要至少两篇可用文献：请选择两篇，或选择一篇并明确允许导入一篇公开论文。", true); return; }
+      }
       else {
         payload.document_ids = [...state.selectedDocuments];
         if (!payload.document_ids.length || (kind.value === "compare" && payload.document_ids.length < 2)) {
