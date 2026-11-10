@@ -599,27 +599,39 @@ class IntelligenceService:
             return []
         counts, lengths, average, reference_blocks = index
         document_frequency = Counter(term for count in counts for term in terms if count[term])
+        inverse_frequency = {
+            term: math.log(1 + (len(blocks) - document_frequency[term] + 0.5)
+                           / (document_frequency[term] + 0.5))
+            for term in terms if document_frequency[term]
+        }
+        if not inverse_frequency:
+            return []
+        possible_matches = len(inverse_frequency)
         candidates = []
         for block, count, length in zip(blocks, counts, lengths):
             score = 0.0
             matches = 0
-            for term in terms:
+            length_penalty = 1.2 * (0.25 + 0.75 * length / average)
+            for term, inverse in inverse_frequency.items():
                 frequency = count[term]
                 if not frequency:
                     continue
                 matches += 1
-                inverse = math.log(1 + (len(blocks) - document_frequency[term] + 0.5)
-                                   / (document_frequency[term] + 0.5))
-                score += inverse * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * length / average))
-            score *= math.sqrt(matches / max(sum(bool(document_frequency[term]) for term in terms), 1))
-            score *= IntelligenceService._evidence_quality(block, question, reference_blocks)
+                score += inverse * frequency * 2.2 / (frequency + length_penalty)
+            if not matches:
+                continue
+            quality = IntelligenceService._evidence_quality(block, question, reference_blocks)
+            score *= math.sqrt(matches / possible_matches)
+            score *= quality
             if score > 0:
-                candidates.append(block.model_copy(update={"score": round(score, 6)}))
-        candidates.sort(key=lambda block: (
-            IntelligenceService._evidence_quality(block, question, reference_blocks) < 0.5,
-            objective_search and not objective_terms.intersection(IntelligenceService._search_terms(block.text)),
-            -block.score, block.document_id, block.page, block.block_id))
-        return candidates
+                scored = block.model_copy(update={"score": round(score, 6)})
+                # The index already contains the terms of the unchanged block.
+                # Reuse them and the quality weight for the tie-breaking key.
+                key = (quality < 0.5, objective_search and objective_terms.isdisjoint(count),
+                       -scored.score, scored.document_id, scored.page, scored.block_id)
+                candidates.append((key, scored))
+        candidates.sort(key=lambda item: item[0])
+        return [block for _, block in candidates]
 
     @staticmethod
     def _fair_blocks(candidates: list[Evidence], document_ids: list[str], limit: int) -> list[Evidence]:

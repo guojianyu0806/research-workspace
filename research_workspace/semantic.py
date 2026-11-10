@@ -49,9 +49,13 @@ def _load_model():
             if hashlib.sha256(path.read_bytes()).hexdigest()!=item['sha256']:
                 raise ValueError('Model file checksum mismatch')
         from fastembed import TextEmbedding
+        cpu_count = (getattr(os, 'process_cpu_count', os.cpu_count)() or 2)
+        # The web reader and background worker can each own a session. Keep
+        # the per-session budget small enough for both to run on one machine.
+        threads = min(cpu_count, 4 if cpu_count >= 8 else 2)
         model=TextEmbedding(model_name=MODEL,specific_model_path=str(directory),
             cache_dir=str(ROOT/'data/models'),local_files_only=True,
-            threads=2,providers=['CPUExecutionProvider'])
+            threads=threads,providers=['CPUExecutionProvider'])
         _models[fingerprint]=(model,threading.Lock())
         return _models[fingerprint]
 
