@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from research_workspace.intelligence import (
-    AnswerPayload, ChatCompletionProvider, ClaimSupportPayload, CoveragePayload, Evidence,
+    AnswerPayload, ChatCompletionProvider, ClaimRepairPayload, ClaimSupportPayload, CoveragePayload, Evidence,
     IntelligenceService, ModelConfig, ModelOutputError,
 )
 from research_workspace.library import Library
@@ -238,6 +238,111 @@ def test_adjacent_claim_and_uncited_source_text_are_isolated_until_cited(tmp_pat
     # Whole-response coverage is reached only after all individual claims pass.
     assert [model for _, model in provider.calls].count(CoveragePayload) == 1
     assert provider.calls[-1][1] is CoveragePayload
+
+
+_TRANSFORMER_LAYER_USAGE = (
+    "The Transformer follows this overall architecture using stacked self-attention and point-wise, fully "
+    "connected layers for both the encoder and decoder, shown in the left and right halves of Figure 1, respectively."
+)
+_TRANSFORMER_CLASSIFICATION = "We presented the Transformer, the first sequence transduction model based entirely on attention."
+_TRANSFORMER_LAYER_COMPOSITION = (
+    "The Transformer encoder and decoder each consist of stacked self-attention and point-wise, fully connected layers."
+)
+_GENERAL_TRANSDUCTION = "Most competitive neural sequence transduction models have an encoder-decoder structure."
+_LAYER_COUNTS_ONLY = "The encoder consists of six layers. The decoder consists of six layers."
+_USAGE_CLAIM = "Transformer 的编码器和解码器均使用堆叠自注意力层和逐位置全连接层。"
+_COMPOSITION_CLAIM = "Transformer 的编码器和解码器均由堆叠自注意力层和逐位置全连接层构成。"
+_CLASSIFICATION_CLAIM = "Transformer 是序列转导模型。"
+_CLASSIFICATION_ALIAS_CLAIM = "Transformer 是序列转换模型。"
+
+
+def comparison_answer(transformer_text, transformer_quote_ids):
+    return AnswerPayload(status="answered", claims=[
+        {"text": transformer_text, "citations": [
+            {"evidence_id": "E_transformer", "quote_id": quote_id} for quote_id in transformer_quote_ids]},
+        {"text": "BERT 使用双向 Transformer 编码器。", "citations": [
+            {"evidence_id": "E_bert", "quote_id": "Q1"}]},
+    ])
+
+
+def comparison_evidence():
+    transformer = evidence().model_copy(update={
+        "evidence_id": "E_transformer", "document_id": "transformer", "document_title": "Transformer",
+        "run_id": "transformer-original-run", "block_id": "transformer-architecture", "page": 3,
+        "text": " ".join((_TRANSFORMER_LAYER_USAGE, _TRANSFORMER_CLASSIFICATION,
+                          _TRANSFORMER_LAYER_COMPOSITION, _GENERAL_TRANSDUCTION, _LAYER_COUNTS_ONLY)),
+    })
+    bert = evidence().model_copy(update={
+        "evidence_id": "E_bert", "document_id": "bert", "document_title": "BERT", "run_id": "bert-original-run",
+        "block_id": "bert-architecture", "page": 4,
+        "text": "BERT uses a bidirectional Transformer encoder, adapted from the Transformer, a sequence transduction model.",
+    })
+    return [transformer, bert]
+
+
+@pytest.mark.parametrize(("overstatement", "quote_ids", "reason"), [
+    (_COMPOSITION_CLAIM, ["Q1"], "composition"),
+    (_COMPOSITION_CLAIM, ["Q1", "Q5", "Q6"], "composition"),
+    (_CLASSIFICATION_CLAIM, ["Q1", "Q4"], "sequence transduction"),
+    (_CLASSIFICATION_ALIAS_CLAIM, ["Q1", "Q4"], "sequence transduction"),
+    ("该架构是序列转换模型。", ["Q1", "Q4"], "sequence transduction"),
+])
+def test_comparison_scope_guard_checks_the_current_claims_own_quotes(tmp_path, overstatement, quote_ids, reason):
+    source = comparison_evidence()
+    initial = comparison_answer(overstatement, quote_ids)
+    corrected = comparison_answer(_USAGE_CLAIM, ["Q1"])
+    # The unsupported Transformer claim must be rejected before consulting the
+    # provider. The adjacent BERT claim is independently verified and cached.
+    provider = SequenceProvider([initial, review("supported"), ClaimRepairPayload(claim=corrected.claims[0]),
+                                 review("supported"), coverage()])
+    service = IntelligenceService(Library(tmp_path), provider)
+    saved, used, audit = asyncio.run(service._generate_grounded(
+        "fixture", {"task": "compare", "question": "Compare the models' architectures.",
+                    "allow_isolated_claim_repair": True},
+        AnswerPayload, source, required_documents=["transformer", "bert"]))
+
+    first, final = audit["attempts"]
+    rejected = first["reviews"][0]
+    assert rejected["claim_index"] == 0 and rejected["claim_id"] == first["claims"][0]["claim_id"]
+    assert rejected["verdict"] == "unsupported" and rejected["method"] == "literal_scope_guard"
+    assert reason in rejected["reason"].lower()
+    assert [payload["claim_index"] for payload, model in provider.calls if model is ClaimSupportPayload] == [1, 0]
+    repair_payload, repair_model = provider.calls[2]
+    assert repair_model is ClaimRepairPayload and repair_payload["rejection_reason"] == rejected["reason"]
+    assert {block["document_id"] for block in repair_payload["evidence"]} == {"transformer"}
+    assert used == {"E_transformer", "E_bert"} and saved.claims[0].text == _USAGE_CLAIM
+    assert [citation.quote for citation in saved.claims[0].citations] == [_TRANSFORMER_LAYER_USAGE]
+    assert [item["verdict"] for item in final["reviews"]] == ["supported", "supported"]
+    assert final["claims"][0]["claim_id"] != rejected["claim_id"]
+    assert final["claims"][1]["claim_id"] == first["claims"][1]["claim_id"]
+    repair, = audit["claim_repairs"]
+    assert repair["original_claim_id"] == rejected["claim_id"]
+    assert repair["repaired_claim_id"] == final["claims"][0]["claim_id"]
+    assert repair["claim_index"] == repair["result_claim_index"] == 0
+    for index, (entry, review_entry) in enumerate(zip(final["claims"], final["reviews"], strict=True)):
+        assert entry["claim_index"] == review_entry["claim_index"] == index
+        assert entry["claim_id"] == review_entry["claim_id"]
+        assert entry["citations"][0]["run_id"] == source[index].run_id
+    assert audit["response_coverage"][0]["claim_ids"] == [claim["claim_id"] for claim in final["claims"]]
+
+
+@pytest.mark.parametrize(("claim", "quote_id", "quote"), [
+    (_CLASSIFICATION_CLAIM, "Q2", _TRANSFORMER_CLASSIFICATION),
+    (_CLASSIFICATION_ALIAS_CLAIM, "Q2", _TRANSFORMER_CLASSIFICATION),
+    (_COMPOSITION_CLAIM, "Q3", _TRANSFORMER_LAYER_COMPOSITION),
+])
+def test_comparison_scope_guard_accepts_explicit_support_on_the_same_card(tmp_path, claim, quote_id, quote):
+    result = comparison_answer(claim, [quote_id])
+    provider = SequenceProvider([result, review("supported"), review("supported"), coverage()])
+    service = IntelligenceService(Library(tmp_path), provider)
+    saved, _, audit = asyncio.run(service._generate_grounded(
+        "fixture", {"task": "compare", "question": "Compare the models' architectures."},
+        AnswerPayload, comparison_evidence(), required_documents=["transformer", "bert"]))
+
+    assert [citation.quote for citation in saved.claims[0].citations] == [quote]
+    assert [item["method"] for item in audit["attempts"][0]["reviews"]] == ["isolated_review", "isolated_review"]
+    assert len(audit["attempts"]) == 1
+    assert audit["status"] == "passed"
 
 
 def test_unchanged_unsupported_claim_is_cached_but_never_accepted(tmp_path):

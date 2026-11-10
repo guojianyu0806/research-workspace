@@ -1289,6 +1289,66 @@ class IntelligenceService:
         return missing
 
     @classmethod
+    def _missing_comparison_qualifiers(cls, claim: Claim, names: set[str]) -> list[str]:
+        """Check two explicit scope distinctions before the semantic review."""
+        text = " ".join(unicodedata.normalize("NFKC", claim.text).split())
+        pair = (r"(?:编码[器端]\s*(?:和|与|及|以及|、)\s*解码[器端]|"
+                r"解码[器端]\s*(?:和|与|及|以及|、)\s*编码[器端]|编解码(?:器|两端)|两端|"
+                r"\b(?:encoders? and (?:the )?decoders?|decoders? and (?:the )?encoders?|both ends)\b)")
+        composition = (r"(?:\s*(?:均|都|皆)?\s*(?:是\s*)?(?:仅|只|完全|主要)?由[^。!?；;]{1,140}?(?:构成|组成)|"
+                       r"\s+(?:(?:both|each)\s+)?(?:consists?\s+(?:(?:entirely|solely|only)\s+)?of|"
+                       r"(?:is|are)\s+(?:(?:each|both|entirely|solely|only)\s+)?(?:composed|made up)\s+of|comprises?)\b)")
+        transduction = r"(?:\bsequence[-\s]+(?:transduction|transformation)\b|序列(?:转导|转换|变换))"
+        claims_composition = re.search(pair + composition, text, re.I)
+        claims_transduction = re.search(transduction, text, re.I)
+        if not (claims_composition or claims_transduction):
+            return []
+        quotes = [" ".join(form.split()) for citation in claim.citations
+                  for form in cls._identifier_text_forms(citation.quote)]
+        missing = []
+        if claims_composition:
+            layer_terms = (r"\bself[-\s]+attention\b|自注意力", r"\bfully[-\s]+connected\b|全连接")
+            sentence_end = r"(?<=[.!?])\s+|[。！？；;]"
+            claim_sentence = re.split(sentence_end, text[claims_composition.start():], maxsplit=1)[0]
+            stated_layers = [term for term in layer_terms if re.search(term, claim_sentence, re.I)]
+            # Do not borrow layer names from a usage sentence to turn a
+            # separate statement about the number of layers into composition.
+            composition_sources = [sentence for quote in quotes
+                                   for sentence in re.split(sentence_end, quote)
+                                   if all(re.search(term, sentence, re.I) for term in stated_layers)]
+            roles = (r"(?:编码[器端]|\bencoders?\b)", r"(?:解码[器端]|\bdecoders?\b)")
+            pair_composition = any(re.search(pair + composition, source, re.I) for source in composition_sources)
+            separate_composition = all(any(re.search(role + composition, source, re.I)
+                                           for source in composition_sources) for role in roles)
+            if not pair_composition and not separate_composition:
+                missing.append("The attached quotations do not establish encoder/decoder composition. "
+                               "If the paper says both use those layers, say both use them. "
+                               "Keep a composition claim only with explicit composition evidence.")
+        if claims_transduction:
+            # An adjacent sentence about other sequence transduction models is
+            # not a classification of the model named in this claim.
+            subject_names = cls._identifier_tokens(text[:claims_transduction.start()]) & names
+            model_kind = (r"(?:" + transduction + r"\s*(?:的\s*)?(?:models?\b|architectures?\b|systems?\b|模型|架构|系统|网络)|"
+                          r"\b(?:models?|architectures?|systems?)\s+(?:for|designed for)\s+" + transduction + r")")
+            claims_model_kind = re.search(model_kind, text, re.I)
+            model_predicate = r"(?:\b(?:is|was|are|were)\s+|(?:是|为|属于)\s*)"
+            qualifiers = r"(?:(?:a|an|the|first|new|neural)\s+|(?:一种|一个|首个|第一个|用于)\s*)*"
+            if subject_names:
+                subject = r"(?<![A-Za-z0-9_-])(?:" + "|".join(re.escape(name) for name in sorted(subject_names)) + r")(?![A-Za-z0-9_-])"
+                introduction = r"\s*(?:[,，:：(\[]\s*|\bas\s+|" + model_predicate + r")" + qualifiers
+                pattern = (subject + introduction + model_kind + "|" + model_kind
+                           + r"\s+(?:called|named)\s+" + subject)
+                if not claims_model_kind:
+                    pattern += ("|" + subject + r"\s*(?:performs?\s+|is (?:designed|used) for\s+|用于|执行)"
+                                + transduction)
+            else:
+                pattern = model_predicate + qualifiers + model_kind if claims_model_kind else transduction
+            if not any(re.search(pattern, quote, re.I) for quote in quotes):
+                missing.append("The sequence transduction classification needs an original passage on this card "
+                               "that explicitly classifies the named model. Attach it or omit the classification.")
+        return missing
+
+    @classmethod
     def _missing_quantitative_result_scope(cls, claim: Claim, names: set[str]) -> list[str]:
         if not (re.search(r"\d",claim.text) and re.search(
                 r"\bBLEU\b|\bF1\b|accurac|\bscore\b|\bscores\b|得分|分数|准确率|正确率",claim.text,re.I)):
@@ -1733,10 +1793,14 @@ class IntelligenceService:
                     missing_names = self._missing_named_attribution(claim, named_identifiers)
                     missing_scope = self._missing_review_qualifiers(claim) if structured_review else []
                     missing_scope += self._missing_quantitative_result_scope(claim,named_identifiers)
+                    scope_reasons = (self._missing_comparison_qualifiers(claim, named_identifiers)
+                                     if payload.get("task") == "compare" and not direct[index] else [])
                     if missing_scope:
-                        verdict = ClaimSupportPayload(verdict="unsupported", reason=(
+                        scope_reasons.append(
                             "This claim adds scope not explicitly present in its own quotations: " + ", ".join(missing_scope)
-                            + ". Attach the actual scope passage to this same claim or narrow the wording; other cards and unquoted context are unavailable."))
+                            + ". Attach the actual scope passage to this same claim or narrow the wording; other cards and unquoted context are unavailable.")
+                    if scope_reasons:
+                        verdict = ClaimSupportPayload(verdict="unsupported", reason=" ".join(scope_reasons)[:600])
                         method = "literal_scope_guard"
                     elif missing_names:
                         verdict = ClaimSupportPayload(verdict="unsupported", reason=(
