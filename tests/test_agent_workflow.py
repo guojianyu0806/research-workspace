@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
+import re
 
 import httpx
 import pymupdf
@@ -152,6 +153,82 @@ def test_tool_budget_records_one_receipt_for_each_call_in_the_last_batch(app, mo
     assert last_trace["code"] == rejected["code"] and last_trace["attempt"] == 0
     assert sum(event["stage"] == "agent_tool_started" for event in saved["events"]) == 3
     assert not state["pending"] and state["current"] is None
+
+
+def test_agent_repairs_an_unknown_short_citation_and_preserves_canonical_audit(app, monkeypatch):
+    monkeypatch.setenv("RESEARCH_SEMANTIC_ENABLED", "0")
+    library = app.state.library
+    facts = {"Alpha": "The Alpha encoder has 6 layers.", "Beta": "The Beta encoder has 12 layers."}
+    ids = [library.import_document(pdf_bytes(title, fact), f"{title}.pdf")["document"]["id"]
+           for title, fact in facts.items()]
+    while library.process_next_job():
+        pass
+    job = request_job(app, question="Compare the encoder layers.", document_ids=ids, agent_mode="compare")
+    store = JobStore(library)
+    generation = []
+    checked = []
+    citations = []
+    provenance = []
+
+    def model(request):
+        body = model_input(request)
+        if "tools" in body:
+            if body["messages"][-1]["role"] == "tool":
+                return stop_turn()
+            return tool_turn("retrieve", "search_evidence", {"query": "encoder layers", "document_ids": ids})
+        payload = json.loads(body["messages"][1]["content"])
+        task = payload["task"]
+        if task == "verify_single_claim":
+            index = payload["claim_index"]
+            assert payload["claim"]["citations"] == [citations[index]]
+            assert [{key: source[key] for key in provenance[index]}
+                    for source in payload["citation_provenance"]] == [provenance[index]]
+            checked.append(index)
+            return completion(payload)
+        if task == "verify_response_coverage":
+            assert [claim["citations"] for claim in payload["claims"]] == [[cite] for cite in citations]
+            return completion(payload)
+        assert task == "compare"
+        all_refs = [span["reference_id"] for block in payload["evidence"] for span in block["citation_spans"]]
+        assert all(re.fullmatch(r"R[1-9][0-9]*", ref) for ref in all_refs)
+        assert len(set(all_refs)) == len(all_refs)
+        selected = {block["document_id"]: (block, span)
+                    for block in payload["evidence"] for span in block["citation_spans"]
+                    if span["text"] in facts.values()}
+        refs = [selected[document_id][1]["reference_id"] for document_id in ids]
+        if not generation:
+            assert "correction" not in payload
+            returned = ["R999999", refs[1]]
+            for document_id in ids:
+                block, span = selected[document_id]
+                citations.append({"evidence_id": block["evidence_id"], "quote_id": span["quote_id"],
+                                  "quote": span["text"]})
+                provenance.append({key: block[key] for key in ("document_id", "run_id", "block_id", "page", "bbox")})
+        else:
+            assert payload["correction"]["problems"]
+            assert refs == generation[0]
+            returned = refs
+        generation.append(refs)
+        claims = [{"text": text, "citations": [{"evidence_id": ref, "quote_id": None, "quote": ""}]}
+                  for text, ref in zip(("Alpha 编码器有 6 层。", "Beta 编码器有 12 层。"), returned)]
+        return stop_turn(json.dumps({"status": "answered", "claims": claims}))
+
+    run_job(library, store, model)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        saved = client.get(f"/api/research/tasks/{job['id']}").json()["job"]
+    assert saved["status"] == "completed", saved["error"]
+    assert len(generation) == 2 and checked == [0, 1]
+    result = saved["result"]
+    assert [claim["citations"] for claim in result["claims"]] == [[cite] for cite in citations]
+    assert all(cite["evidence_id"].startswith("E_") for cite in citations)
+    grounding = result["grounding"]
+    assert [item["citation_validation"] for item in grounding["attempts"]] == ["failed", "passed"]
+    assert not grounding["attempts"][0]["reviews"]
+    for index, (claim, review) in enumerate(zip(grounding["claim_catalog"], grounding["claim_reviews"], strict=True)):
+        assert claim["claim_index"] == review["claim_index"] == index
+        assert claim["claim_id"] == review["claim_id"] and review["verdict"] == "supported"
+        assert [{key: source[key] for key in citations[index] | provenance[index]}
+                for source in claim["citations"]] == [citations[index] | provenance[index]]
 
 
 def test_follow_up_reuses_the_saved_compare_runs_through_retry_and_model(app):

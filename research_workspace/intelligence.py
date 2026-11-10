@@ -1151,13 +1151,25 @@ class IntelligenceService:
         return catalog
 
     @staticmethod
-    def _resolve_citation_spans(claims: list[Claim], catalog: dict[str, dict[str, str]]) -> None:
+    def _resolve_citation_spans(claims: list[Claim], catalog: dict[str, dict[str, str]],
+                                references: dict[str, tuple[str, str]] | None = None) -> None:
         for index, claim in enumerate(claims):
-            for citation in claim.citations:
+            for citation_index, citation in enumerate(claim.citations):
+                if references:
+                    reference = references.get(citation.evidence_id)
+                    location = f"claim[{index}].citations[{citation_index}]"
+                    if reference is not None:
+                        if citation.quote_id is not None:
+                            raise ModelOutputError(f"{location} 使用短引用编号时，quote_id 必须为 null。")
+                        citation.evidence_id, citation.quote_id = reference
+                    elif citation.evidence_id not in catalog:
+                        raise ModelOutputError(f"{location} 引用编号不在本次目录中。请选择 citation_spans 中列出的 reference_id。")
                 if citation.quote_id is None:
                     continue  # Legacy quote-only responses still face exact membership.
                 quote = catalog.get(citation.evidence_id, {}).get(citation.quote_id)
                 if quote is None:
+                    if references:
+                        raise ModelOutputError(f"{location} 的原文片段编号不属于所选证据块。请改用对应片段的 reference_id。")
                     raise ModelOutputError(f"claim[{index}] 引用了无效的原文片段编号，结果已拒绝。")
                 if citation.quote.strip() and _quote_normalized(citation.quote) != _quote_normalized(quote):
                     raise ModelOutputError(f"claim[{index}] 的原文片段编号与引句不一致，结果已拒绝。")
@@ -1557,8 +1569,16 @@ class IntelligenceService:
                                  required_sections: set[str] | None = None,
                                  initial_result: T | None = None,
                                  shared_state: dict | None = None,
+                                 use_citation_references: bool = False,
                                  report_phase: Callable[[str], None] | None = None) -> tuple[T, set[str], dict]:
         """Bounded repair against one frozen retrieval snapshot; never waive checks."""
+        reference_instruction = (
+            'Select one listed citation_spans.reference_id per citation. Put that exact short code in '
+            'evidence_id, set quote_id to null, and leave quote empty. Each reference_id identifies a single '
+            'original span in this request. Do not use block IDs or combine a reference_id with a quote_id.'
+        )
+        if use_citation_references:
+            prompt += '\n\nAgent citation format for this answer and its correction, replacing the pair format above: ' + reference_instruction
         audit = {"prompt_version": "claim-support-v1", "coverage_prompt_version": "coverage-v1",
                  "mode": "isolated_claim_citations", "attempts": [], "model_checked": False,
                  "claim_model_calls": 0, "coverage_model_calls": 0, "cache_hits": 0,
@@ -1619,9 +1639,23 @@ class IntelligenceService:
         if payload.get("allow_isolated_claim_repair"):
             audit["citation_catalog_policy"] = "omit_unfinished_trailing_prose; preserve_original_ids_and_standalone_headings_formulas_tables; bounded_complete_antecedent_paragraph_v1"
         named_identifiers = self._named_attribution_identifiers(catalog)
-        payload = {**payload, "evidence": [{**block.model_dump(), "citation_spans": [
-            {"quote_id": quote_id, "text": text} for quote_id, text in catalog[block.evidence_id].items()]}
-            for block in evidence]}
+        reference_ids, references = {}, {}
+        model_evidence = []
+        for block in evidence:
+            spans = []
+            for quote_id, text in catalog[block.evidence_id].items():
+                span = {"quote_id": quote_id, "text": text}
+                if use_citation_references:
+                    pair = (block.evidence_id, quote_id)
+                    identifier = f"R{len(references) + 1}"
+                    reference_ids[pair] = identifier
+                    references[identifier] = pair
+                    span["reference_id"] = identifier
+                spans.append(span)
+            model_evidence.append({**block.model_dump(), "citation_spans": spans})
+        if references:
+            audit["citation_reference_policy"] = "request_local_span_reference_v1"
+        payload = {**payload, "evidence": model_evidence}
         current_payload = dict(payload)
         for attempt in range(2):
             attempt_number = len(audit["attempts"]) + 1
@@ -1650,7 +1684,7 @@ class IntelligenceService:
             if report_phase:
                 report_phase("review")
             try:
-                self._resolve_citation_spans(claims, catalog)
+                self._resolve_citation_spans(claims, catalog, references)
                 used = self._validate_claims(claims, evidence)
                 if payload.get("allow_isolated_claim_repair") and payload.get("required_training_tasks"):
                     from .task_scope import attach_task_scope
@@ -1906,11 +1940,18 @@ class IntelligenceService:
                                                            for claim in section.get("claims", [])]
             for claim in previous_claims:
                 for citation in claim["citations"]:
-                    if citation.get("quote_id"):
+                    if references:
+                        reference_id = reference_ids.get((citation["evidence_id"], citation.get("quote_id")))
+                        if reference_id is None and citation.get("quote_id") is None and citation["evidence_id"] in references:
+                            reference_id = citation["evidence_id"]
+                        citation.update(evidence_id=reference_id or "", quote_id=None, quote="")
+                    elif citation.get("quote_id"):
                         citation["quote"] = ""  # Keep the repair request on the ID-selection protocol.
+            citation_rule = (reference_instruction if references else
+                             "Select citation_spans by evidence_id and quote_id; leave quote empty.")
             current_payload = {**payload, "correction": {
                 "previous_result": previous, "problems": problems,
-                "rule": "Fix only against the original supplied evidence. Select citation_spans by evidence_id and quote_id; leave quote empty. Preserve qualifications and narrow claims. "
+                "rule": f"Fix only against the original supplied evidence. {citation_rule} Preserve qualifications and narrow claims. "
                         "Each claim is checked in isolation using ONLY its own quotations. Add missing supporting passage IDs to that claim itself, "
                         "including explicit model attribution, or narrow/split the claim. Adjacent claims cannot lend their citations. "
                         "Preserve unchanged supported claims. Use multiple citations when necessary. Do not fill gaps from memory; explicitly state missing aspects or return insufficient_evidence.",
@@ -2003,7 +2044,8 @@ class IntelligenceService:
             "coverage_contract":coverage_contract,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,
-            required_documents=document_ids if mode == "compare" else None, report_phase=report_phase)
+            required_documents=document_ids if mode == "compare" else None,
+            use_citation_references=tool_retrieval is not None, report_phase=report_phase)
         if mode == "compare" and result.status == "answered":
             cited_documents = {block.document_id for block in evidence if block.evidence_id in used}
             if cited_documents != set(document_ids):
