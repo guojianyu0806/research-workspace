@@ -53,6 +53,42 @@ def test_exact_reference_title_edges_have_source_evidence(library):
     assert result["network_used"] is False
 
 
+@pytest.mark.parametrize(("verified_marker", "prominent_title", "expected_edge"), [
+    (True, True, True),
+    (False, True, False),
+    (True, False, False),
+])
+def test_arxiv_filename_placeholder_uses_only_anchored_native_title(
+        library, verified_marker, prominent_title, expected_edge):
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        page.insert_text((40, 70), "Publisher's attribution notice preceding the title.")
+        for y, line in [(140, "Foundations of Reliable"), (160, "Evidence Retrieval")]:
+            size = 18 if prominent_title else 11
+            start = (page.rect.width - pymupdf.get_text_length(line, fontname="hebo", fontsize=size)) / 2
+            page.insert_text((start, y), line, fontname="hebo", fontsize=size)
+        page.insert_text((240, 230), "Example Author")
+        page.insert_text((40, 275), "Text from the main paper.")
+        if verified_marker:
+            page.insert_text((30, 500), "arXiv:2401.12345v2", rotate=90)
+        target = library.import_document(pdf.tobytes(), "2401.12345v2.pdf")["document"]
+    assert target["title"] == "2401.12345v2"
+    source = import_paper(library, "Applying a Reliable Evidence Framework",
+                          references="[1] Example Author. Foundations of Reliable Evidence Retrieval. 2024.")
+    graph = GraphService(library).build([source["id"], target["id"]])
+    if expected_edge:
+        edge, = graph["edges"]
+        assert (edge["source"], edge["target"]) == (source["id"], target["id"])
+        assert edge["match_method"] == "exact_title_in_reference"
+        assert edge["evidence"][0]["page"] == 2
+        node = next(node for node in graph["nodes"] if node["id"] == target["id"])
+        assert node["title"] == "Foundations of Reliable Evidence Retrieval"
+        assert all(evidence["page"] == 1 for evidence in node["evidence"])
+        assert library.get_document(target["id"])["title"] == "2401.12345v2"
+    else:
+        assert graph["edges"] == []
+
+
 def test_body_similarity_or_title_mention_is_not_a_citation(library):
     target = import_paper(library, "Foundations of Reliable Evidence Retrieval")
     source = import_paper(library, "Related Research on Evidence Retrieval", body="Foundations of Reliable Evidence Retrieval is a phrase mentioned in prose.")

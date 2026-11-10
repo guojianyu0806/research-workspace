@@ -154,6 +154,70 @@ def test_local_compare_handles_tool_error_and_keeps_original_quote_gate(app, cor
     assert result["grounding"]["mode"] == "isolated_claim_citations"
 
 
+@pytest.mark.parametrize("first_error", ["duplicate", "mixed_sources", "repeated_duplicate"])
+def test_compare_enforces_requested_one_claim_per_paper(app, first_error):
+    library = app.state.library
+    statements = {
+        "Transformer": "The Transformer model architecture uses an encoder and a decoder.",
+        "BERT": "The BERT model architecture uses a bidirectional Transformer encoder.",
+    }
+    documents = {title: library.import_document(pdf_bytes(title, statement), title + ".pdf")["document"]["id"]
+                 for title, statement in statements.items()}
+    while library.process_next_job():
+        pass
+    ids = list(documents.values())
+    job = request_job(app, document_ids=ids, agent_mode="compare",
+        question="正式回答只写两条事实，每篇各用一句中文改述。第一条说明 Transformer 的总体模型架构，"
+                 "第二条说明 BERT 的总体模型架构。每条引用对应论文的原文。不要讨论层数、训练目标或实验结果。")
+    generated = []
+    checked = []
+
+    def model(request):
+        body = model_input(request)
+        if "tools" in body:
+            if body["messages"][-1]["role"] == "tool":
+                return stop_turn()
+            return tool_turn("retrieve", "search_evidence", {"query": "model architecture encoder", "document_ids": ids})
+        payload = json.loads(body["messages"][1]["content"])
+        if payload["task"] != "compare":
+            checked.append(payload["task"])
+            return completion(payload)
+        assert payload["coverage_contract"]["claims_per_document"] == 1
+        generated.append(payload)
+        citations = {block["document_id"]: {"evidence_id": block["evidence_id"], "quote_id": span["quote_id"], "quote": ""}
+                     for block in payload["evidence"] for span in block["citation_spans"]
+                     if span["text"] in statements.values()}
+        claims = [{"text": "Transformer 采用编码器和解码器。", "citations": [citations[ids[0]]]},
+                  {"text": "BERT 采用双向 Transformer 编码器。", "citations": [citations[ids[1]]]}]
+        if len(generated) == 1 or first_error == "repeated_duplicate":
+            if first_error == "mixed_sources":
+                claims[0]["citations"].append(citations[ids[1]])
+            else:
+                claims.insert(1, claims[0])
+        else:
+            assert "恰好对应一条结论" in payload["correction"]["problems"][0]
+        return stop_turn(json.dumps({"status": "answered", "claims": claims}))
+
+    store = JobStore(library)
+    run_job(library, store, model)
+    saved = store.get(job["id"])
+    assert len(generated) == 2, saved["error"]
+    if first_error == "repeated_duplicate":
+        assert saved["status"] == "failed" and saved["result"] is None
+        assert "恰好对应一条结论" in saved["error"]
+        assert checked == []
+        return
+    assert saved["status"] == "completed", saved["error"]
+    assert checked == ["verify_single_claim", "verify_single_claim", "verify_response_coverage"]
+    result = saved["result"]
+    assert len(result["claims"]) == 2
+    grounding = result["grounding"]
+    assert grounding["attempts"][0]["reviews"] == []
+    assert [claim["citations"][0]["document_id"] for claim in grounding["claim_catalog"]] == ids
+    assert [review["claim_id"] for review in grounding["claim_reviews"]] == [
+        claim["claim_id"] for claim in grounding["claim_catalog"]]
+
+
 @pytest.mark.parametrize("lost_checkpoint", [False, True])
 def test_public_import_resumes_same_tool_id_without_repeating_network(app, monkeypatch, lost_checkpoint):
     library = app.state.library

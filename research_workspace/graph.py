@@ -8,12 +8,16 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 import json
+from pathlib import Path
 import re
 import sqlite3
+from statistics import median
 import unicodedata
 
+import pymupdf
+
 from .discovery import ARXIV_ID
-from .library import Library, LibraryError
+from .library import Library, LibraryError, MUPDF_LOCK
 
 DOI = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.I)
 ARXIV_REFERENCE = re.compile(r"(?:arxiv\s*:\s*|arxiv\.org/(?:abs|pdf)/)((?:\d{4}\.\d{4,5}|[a-z][a-z.-]*/\d{7})(?:v[1-9]\d*)?)", re.I)
@@ -64,6 +68,57 @@ def _evidence(block: dict, document_id: str, run_id: str) -> dict:
     return {"document_id": document_id, "run_id": run_id, "page": block["page"],
             "block_id": block["id"], "bbox": json.loads(bbox) if isinstance(bbox, str) else bbox,
             "text": block["text"]}
+
+
+def _native_front_title(path: Path, blocks: list[dict]) -> tuple[str, list[dict]]:
+    """Recover a single prominent title with matching first-page block anchors."""
+    try:
+        with MUPDF_LOCK, pymupdf.open(path) as pdf:
+            page = pdf[0]
+            if page.rotation:
+                return "", []
+            width, height = page.rect.width, page.rect.height
+            raw = page.get_text("dict", flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
+    except (OSError, RuntimeError):
+        return "", []
+    lines = [line for block in raw["blocks"] for line in block.get("lines", ())
+             if line["dir"][0] > .99 and line["spans"]]
+    sizes = [span["size"] for line in lines for span in line["spans"] if span["text"].strip()]
+    if not sizes:
+        return "", []
+    min_size = median(sizes) * 1.3
+    candidates = []
+    for line in lines:
+        x0, y0, x1, y1 = line["bbox"]
+        if y0 >= .35 * height or abs((x0 + x1) / (2 * width) - .5) > .08:
+            continue
+        text = "".join(span["text"] for span in line["spans"]).strip()
+        size = max(span["size"] for span in line["spans"])
+        if size >= min_size and any(span["flags"] & 16 for span in line["spans"]) and 4 <= len(text) <= 300:
+            candidates.append((y0, y1, size, text, [x0 / width, y0 / height, x1 / width, y1 / height]))
+    if not candidates:
+        return "", []
+    largest = max(item[2] for item in candidates)
+    title_lines = sorted(item for item in candidates if item[2] >= .9 * largest)
+    if len(title_lines) > 4 or any(
+            current[0] - previous[1] > .8 * largest for previous, current in zip(title_lines, title_lines[1:])):
+        return "", []
+    title = " ".join(item[3] for item in title_lines)
+    if len(title) > 300 or not _specific_title(normalized_title(title)):
+        return "", []
+    anchors = {}
+    for _, _, _, text, box in title_lines:
+        matching = []
+        for block in blocks:
+            x0, y0, x1, y1 = json.loads(block["bbox"]) if isinstance(block["bbox"], str) else block["bbox"]
+            if (x0 <= box[0] + .002 and y0 <= box[1] + .002
+                    and x1 >= box[2] - .002 and y1 >= box[3] - .002
+                    and _contains_title(block["text"], normalized_title(text))):
+                matching.append(block)
+        if len(matching) != 1:
+            return "", []
+        anchors[matching[0]["id"]] = matching[0]
+    return title, list(anchors.values())
 
 
 def pagerank(node_ids: list[str], edges: list[dict], damping: float = .85) -> dict[str, float]:
@@ -210,6 +265,17 @@ class GraphService:
                 if own_arxiv or own_doi:
                     node_evidence.append(_evidence(block, doc["id"], run["id"]))
             metadata_sources = []
+            display_title = doc["title"]
+            filename_stem = Path(doc["filename"]).stem
+            if (not title_proof and display_title == filename_stem
+                    and filename_stem.casefold() in identity["arxiv_ids"]):
+                # The PDF itself must confirm the filename's arXiv marker before
+                # layout can supply a title for an otherwise unnamed import.
+                native_title, anchors = _native_front_title(self.library._source_path(doc["id"]), first_page)
+                if anchors:
+                    display_title = native_title
+                    identity["titles"].add(normalized_title(native_title))
+                    node_evidence.extend(_evidence(block, doc["id"], run["id"]) for block in anchors)
             for record in metadata_by_document[doc["id"]]:
                 if not record.get("metadata_verified"):
                     continue
@@ -219,7 +285,7 @@ class GraphService:
                 identity["titles"].add(normalized_title(record["title"]))
                 metadata_sources.append({"source_url": record["source_url"], "retrieved_at": record["retrieved_at"], "paper_id": record["id"]})
             nodes[doc["id"]] = {"id": doc["id"], "document_id": doc["id"], "run_id": run["id"] if run else None,
-                                "title": doc["title"], "filename": doc["filename"], "kind": "local_document",
+                                "title": display_title, "filename": doc["filename"], "kind": "local_document",
                                 "fulltext_available": bool(run), "evidence": node_evidence, "metadata_sources": metadata_sources}
             identities[doc["id"]] = identity
             if run:

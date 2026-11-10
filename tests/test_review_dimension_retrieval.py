@@ -1,7 +1,30 @@
 """Review supplementation finds missing tasks/corpora in the same parse snapshot."""
+import pytest
+
 from research_workspace.intelligence import Evidence, IntelligenceService
 from research_workspace.library import Library
-from research_workspace.review_retrieval import supplement_review_evidence, directly_named_training, subject_hints, focus_review_evidence
+from research_workspace.review_retrieval import (supplement_review_evidence, directly_named_training,
+    subject_hints, focus_review_evidence, request_aspects)
+
+
+@pytest.mark.parametrize(("question", "expected"), [
+    ("说明模型架构。不要讨论层数、训练目标或实验结果。", ["模型结构"]),
+    ("无需讨论训练目标，外部知识来源，比较模型架构。", ["模型结构"]),
+    ("比较模型架构但不要讨论训练目标；请描述知识来源。", ["模型结构", "外部知识的作用"]),
+    ("比较模型架构，训练目标不用讨论。", ["模型结构"]),
+    ("Compare architectures, but do not discuss training objectives or knowledge sources.", ["模型结构"]),
+    ("Without discussing training objectives, describe external knowledge sources.", ["外部知识的作用"]),
+    ("说明模型是否不需要特定训练任务。", ["训练目标"]),
+])
+def test_explicit_opt_outs_do_not_become_requested_dimensions(question, expected):
+    assert request_aspects(question, []) == expected
+
+
+def test_query_expansion_cannot_reintroduce_excluded_dimension():
+    question = "请说明运行延迟。不要讨论训练目标。"
+    expanded = [{"source_phrase": "运行延迟", "text": "inference latency"},
+                {"source_phrase": "训练目标", "text": "training objective"}]
+    assert request_aspects(question, expanded) == ["运行延迟"]
 
 
 def block(identifier, document, text, *, page=1, y=0.1, run="old"):

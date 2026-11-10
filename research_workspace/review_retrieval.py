@@ -246,20 +246,57 @@ def aspect_queries(aspect: str, expanded_queries: list[dict]) -> list[str]:
     return list(dict.fromkeys(groups))
 
 
+_REQUEST_BOUNDARY = re.compile(r"[。！？；;!?\n]+|\.(?=\s|$)|但是|不过|但|而是|\bbut\b", re.I)
+_POSITIVE_ACTION = re.compile(
+    r"(?:(?:请|需要|然后|并|只|仅)\s*)*(?:比较|讨论|说明|解释|描述|介绍|分析|回答|给出|列出|展示|写)"
+    r"|\b(?:(?:please|then|only)\s+)*(?:compare|discuss|explain|describe|analy[sz]e|give|list|show|write|cover)\b", re.I)
+_REQUEST_EXCLUSION = re.compile(
+    r"不要|不用|无需|不必|不需要|不要求|不讨论|不包括|勿"
+    r"|\b(?:do\s+not|don['’]t|no\s+need(?:\s+to)?|avoid|omit|skip|exclude"
+    r"|without\s+(?:discussing|comparing|covering|including|describing|mentioning))\b", re.I)
+_FACTUAL_QUESTION = re.compile(r"是否|能否|为什么|为何|\b(?:whether|why|how)\b", re.I)
+
+
+def positive_request_parts(request: str) -> list[str]:
+    """Keep requested clauses and exclude explicit opt-outs, including their lists."""
+    parts = []
+    for sentence in _REQUEST_BOUNDARY.split(request):
+        excluded = False
+        for clause in re.split(r"[，,]", sentence):
+            clause = clause.strip()
+            if not clause or (excluded and not _POSITIVE_ACTION.match(clause)):
+                continue
+            exclusion = _REQUEST_EXCLUSION.search(clause)
+            prefix = clause[:exclusion.start()] if exclusion else ""
+            excluded = exclusion is not None and not _FACTUAL_QUESTION.search(prefix)
+            if excluded:
+                # Keep a preceding instruction, but not a topic followed by "不用讨论".
+                if _POSITIVE_ACTION.search(prefix):
+                    parts.append(prefix.strip())
+            else:
+                parts.append(clause)
+    return parts
+
+
 def request_aspects(request: str, expanded_queries: list[dict]) -> list[str]:
     """Reserve search slots for explicit common dimensions, without adding facts."""
+    positive = " ".join(positive_request_parts(request))
     aspects = []
     for pattern, label in [
         (r"结构|架构|architecture|structure", "模型结构"),
         (r"训练目标|预训练任务|训练任务|training objectiv|training task|loss function", "训练目标"),
         (r"外部知识|知识来源|语料来源|external knowledge|knowledge source", "外部知识的作用"),
     ]:
-        if re.search(pattern, request, re.I):
+        if re.search(pattern, positive, re.I):
             aspects.append(label)
     # Unfamiliar dimensions still use the actual query expansion anchors.
     if not aspects:
+        normalized = " ".join(positive.casefold().split())
+        has_exclusions = bool(_REQUEST_EXCLUSION.search(request))
         aspects = list(dict.fromkeys(item["source_phrase"] for item in expanded_queries
-                                    if item.get("source_phrase")))[:6]
+                                    if item.get("source_phrase")
+                                    and (not has_exclusions
+                                         or " ".join(item["source_phrase"].casefold().split()) in normalized)))[:6]
     return aspects
 
 

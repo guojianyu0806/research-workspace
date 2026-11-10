@@ -24,7 +24,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .library import Library, LibraryError
-from .review_retrieval import (supplement_review_evidence, subject_hints, request_aspects,
+from .review_retrieval import (supplement_review_evidence, subject_hints, request_aspects, positive_request_parts,
                                focus_review_evidence, directly_named_training,
                                training_task_requirements, training_eligibility, is_training_aspect,
                                verified_training_corpus_role, is_information_role_comparison,
@@ -421,6 +421,14 @@ def _quote_normalized(text: str) -> str:
 
 def _normalized(text: str) -> str:
     return _quote_normalized(text).casefold()
+
+
+_ONE_CLAIM_PER_PAPER = re.compile(
+    r"每篇(?:论文|文献)?\s*(?:(?:各|只|仅|分别|需)\s*)*(?:用|写|给出|出|输出|提供|保留)?\s*"
+    r"(?:一|1)\s*(?:句|条(?:结论|事实|论断))"
+    r"|\b(?:one|1)\s+(?:claim|fact|sentence|conclusion)\s+(?:per|for each)\s+(?:paper|document)\b",
+    re.IGNORECASE,
+)
 
 
 _STOP_WORDS = frozenset("the a an of to in on for and or is are was were what which how does do this that from with paper papers please compare 比较 对比 请问 什么 如何 论文 研究 的 了 是 和 与 在 对 请".split())
@@ -1562,7 +1570,7 @@ class IntelligenceService:
         structured_review = payload.get("task") == "review" and output_model is SynthesisPayload
         if not structured_review:
             audit["claim_support_prompt_version"] = "claim-support-v1.7"
-            audit["coverage_prompt_version"] = "coverage-v2.1"
+            audit["coverage_prompt_version"] = "coverage-v2.2"
         if structured_review:
             audit["coverage_prompt_version"] = "review-coverage-v1.2"
             audit["coverage_link_prompt_version"] = "review-claim-coverage-v2.2"
@@ -1644,6 +1652,16 @@ class IntelligenceService:
                     if (required_documents and {block.document_id for block in evidence if block.evidence_id in used} != set(required_documents)
                             and not (structured_review and shared_state is not None)):
                         raise ModelOutputError("生成结果缺少选定文献的原文依据。")
+                    if required_documents and payload.get("coverage_contract", {}).get("claims_per_document") == 1:
+                        source_documents = {block.evidence_id: block.document_id for block in evidence}
+                        claim_documents = [{source_documents[citation.evidence_id] for citation in claim.citations}
+                                           for claim in claims]
+                        if (len(claim_documents) != len(required_documents)
+                                or any(len(documents) != 1 for documents in claim_documents)
+                                or set.union(*claim_documents) != set(required_documents)):
+                            raise ModelOutputError(
+                                "每篇选定文献必须恰好对应一条结论，每条结论只引用该篇文献。"
+                                "归并或移除同篇的额外论断，并保留各篇实际回答所需的原文引句。")
                     if required_sections and not required_sections.issubset(
                             {_normalized(section.heading) for section in result.sections}):
                         raise ModelOutputError("论文框架缺少规定章节：Abstract、Introduction、Related Work。")
@@ -1908,11 +1926,10 @@ class IntelligenceService:
             retrieval['fulltext_context']=context
         names = subject_hints(self, snapshot) if snapshot else {}
         from .question_facets import supplement_question_facets
-        evidence,facet_context=supplement_question_facets(self,snapshot,evidence,question,document_ids,names)
+        positive_request = positive_request_parts(question)
+        evidence,facet_context=supplement_question_facets(self,snapshot,evidence," ".join(positive_request),document_ids,names)
         retrieval['question_facet_context']=facet_context
         explicit_aspects = request_aspects(question, [])
-        positive_request=[part for part in re.split(r"[。；;，,]",question) if not re.search(
-            r"不要|不用|无需|不必|不需要|不要求|勿|do not|no need|without|avoid",part,re.I)]
         optimization_requested=any(re.search(r"优化目标|损失|交叉熵|loss|cross.?entropy|negative.?log|likelihood",part,re.I)
             for part in positive_request)
         formula_requested=any(re.search(r"公式|推导|equation|formula|derive",part,re.I) for part in positive_request)
@@ -1920,6 +1937,8 @@ class IntelligenceService:
             "optimization_loss_requested":optimization_requested,"loss_formula_requested":formula_requested,
             "training_goal_standard":"as_explicitly_requested" if optimization_requested else "actual_training_task_and_prediction_content",
             "architecture_standard":"state_published_components_or_model_type; do_not_require_both_encoder_and_decoder_for_every_model"}
+        if mode == "compare" and any(_ONE_CLAIM_PER_PAPER.search(part) for part in positive_request):
+            coverage_contract["claims_per_document"] = 1
         reading_sets, requirements = [], {}
         if explicit_aspects:
             evidence, dimensions = supplement_review_evidence(self, snapshot, evidence,
@@ -1927,12 +1946,14 @@ class IntelligenceService:
                 max_evidence=min(64,max(24,8*len(document_ids)*len(explicit_aspects))), subject_names=names)
             retrieval["response_dimension_search"] = dimensions
             spans = self._citation_spans(evidence, omit_trailing_fragment=True)
+            training_requested = any(is_training_aspect(aspect) for aspect in explicit_aspects)
             for document in document_ids:
                 own = [block for block in evidence if block.document_id == document]
-                requirement = training_task_requirements(self,
-                    [block for block in snapshot if block.document_id == document], names.get(document, []))
-                if requirement:
-                    requirements[document] = requirement
+                if training_requested:
+                    requirement = training_task_requirements(self,
+                        [block for block in snapshot if block.document_id == document], names.get(document, []))
+                    if requirement:
+                        requirements[document] = requirement
                 for aspect in explicit_aspects:
                     focused = focus_review_evidence(self, own, aspect, names.get(document, []))
                     reading_sets.append({"document_id":document,"aspect":aspect,
