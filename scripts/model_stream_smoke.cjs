@@ -25,18 +25,31 @@ async function main(){
   const api=async(url,body)=>{const r=await context.request.fetch(ready.origin+url,body?{method:'POST',data:body}:{});assert.ok(r.ok(),await r.text());return r.json();};
   const create=async body=>{const {job}=await api('/api/research/tasks',body);await page.getByRole('button',{name:'刷新资料与任务',exact:true}).click();await page.locator(`.rs-history-item[data-job-id="${job.id}"]`).click();return job;};
   const preview=page.locator('.rs-stream-preview');
+  const phase=page.locator('.rs-task-phase');
+  await preview.evaluate(panel=>{
+   const text=panel.querySelector('pre');
+   window.fixturePreviewLengths=[];
+   new MutationObserver(()=>{
+    if(!panel.hidden&&text.textContent.length)window.fixturePreviewLengths.push(text.textContent.length);
+   }).observe(text,{childList:true,characterData:true,subtree:true});
+  });
   const waitFinal=async(id,status='completed')=>{let saved;for(let i=0;i<200;i++){saved=(await api('/api/research/tasks/'+id)).job;if(!['queued','running'].includes(saved.status))break;await page.waitForTimeout(100);}assert.equal(saved.status,status,saved.error);return saved;};
   const qa=await create({kind:'qa',document_ids:[ready.documents[0]],question:'What architecture does the model use?'});
   await preview.waitFor({state:'visible'});
+  await phase.getByText('正在根据原文生成回答',{exact:true}).waitFor({state:'visible'});
   const early=(await api('/api/research/tasks/'+qa.id)).job;
   check('Preview appears before final answer and completion',early.status==='running'&&early.result===null);
-  const prefix=await preview.locator('pre').innerText();await page.waitForTimeout(300);
-  check('Actual deltas grow while request is in progress',(await preview.locator('pre').innerText()).length>prefix.length);
+  check('Task phase follows a live receipt and elapsed time, without a guessed total',
+    early.events.some(event=>event.stage==='model_call'&&event.message.includes('AnswerPayload'))&&
+    (await phase.innerText()).includes('已用')&&await page.locator('.rs-progress').isHidden());
+  await page.waitForFunction(()=>window.fixturePreviewLengths.some(length=>length>window.fixturePreviewLengths[0]));
+  check('Actual deltas grow while request is in progress',true);
   check('Unverified preview has no active citation links or HTML',await preview.locator('a,button,img,b').count()===0);
   check('Private reasoning absent from live page',!(await page.locator('body').innerText()).includes('PRIVATE_FIXTURE_REASONING'));
   await page.screenshot({path:path.join(output,'qa-streaming.png'),fullPage:false});
   const complete=await waitFinal(qa.id);
   await preview.waitFor({state:'hidden'});
+  await phase.waitFor({state:'hidden'});
   check('Final answer retains original quote, source and passed audit',complete.result.grounding.status==='passed'&&complete.result.sources[0].document_id===ready.documents[0]&&complete.result.claims[0].citations[0].quote==='The model uses an encoder and a decoder.');
   check('Only final result persists after completion',complete.stream===null&&complete.result.claims.length===1);
   check('Receipt tracks streamed and audit calls',complete.model_calls.length===2&&complete.usage.total_tokens===50);

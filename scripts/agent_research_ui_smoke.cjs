@@ -86,7 +86,10 @@ async function main() {
     await page.locator('.rs-agent-trace summary').click();
     const trace = await page.locator('.rs-agent-trace').textContent();
     check('persisted tool receipts show readable statuses attempts and reuse', ['检索原文证据','已完成','解析论文','等待中','导入公开论文','失败','第 3 次尝试','12 毫秒','复用已保存结果','BM25 词法检索','本地向量检索降级'].every(text => trace.includes(text)));
-    check('tool events are visible separately from final receipts', await page.getByText('执行与工具记录',{exact:true}).evaluate(el => el.parentElement.open) && (await page.locator('.rs-task-detail').textContent()).includes('已保存：检索原文证据'));
+    const toolLog = page.getByText('执行与工具记录',{exact:true});
+    check('detailed tool events start collapsed after completion', !await toolLog.evaluate(el => el.parentElement.open));
+    await toolLog.click();
+    check('tool events remain readable separately from final receipts', await toolLog.evaluate(el => el.parentElement.open) && (await page.locator('.rs-task-detail').innerText()).includes('已保存：检索原文证据'));
     check('untrusted trace text cannot create executable DOM or expose reasoning', trace.includes(attack) && await page.locator('.rs-task-detail img,.rs-task-detail [onerror]').count() === 0 && !(await page.locator('body').innerText()).includes('PRIVATE_FIXTURE_REASONING') && !await page.evaluate(() => window.__agentAttack));
     await page.locator('.rs-agent-papers summary').click();
     const publicLinks = await page.locator('.rs-agent-papers a').evaluateAll(items => items.map(item => ({href:item.href,rel:item.rel,target:item.target})));

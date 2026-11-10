@@ -69,7 +69,13 @@ async function main(){
   });
   await scenario('progress-replacement-and-cancel',async()=>{
    const job=ready.jobs.find(j=>j.id==='progress');await mount(job);await jump(job,42);const before=await position('progress-before');
+   let rejectedRevision=false;
+   await page.route(url=>url.pathname===`/api/research/tasks/${job.job_id}/translation-blocks`&&url.searchParams.get('include_index')==='true',async route=>{
+    rejectedRevision=true;
+    await route.fulfill({status:409,json:{detail:'译文保存版本已变化，请重新读取摘要。'}});
+   },{times:1});
    const appended=await command('progress','append');await count(appended.total);await settle(42,.37);
+   check('a stale translation revision is re-read without stopping progress',rejectedRevision);
    check('polling appended checkpoints keeps original block',(await position('progress-appended')).anchor.block_id===before.anchor.block_id);
    const replaced=await command('progress','replace');await page.waitForFunction(id=>lifecycleReader.getPosition()?.block_id===id&&lifecycleReader.getPosition()?.ordinal===159,before.anchor.block_id);await settle(159,.37);
    check('replaced checkpoint keeps source identity after row-order change',replaced.total===160);

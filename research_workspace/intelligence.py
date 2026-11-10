@@ -1544,7 +1544,8 @@ class IntelligenceService:
                                  required_documents: list[str] | None = None,
                                  required_sections: set[str] | None = None,
                                  initial_result: T | None = None,
-                                 shared_state: dict | None = None) -> tuple[T, set[str], dict]:
+                                 shared_state: dict | None = None,
+                                 report_phase: Callable[[str], None] | None = None) -> tuple[T, set[str], dict]:
         """Bounded repair against one frozen retrieval snapshot; never waive checks."""
         audit = {"prompt_version": "claim-support-v1", "coverage_prompt_version": "coverage-v1",
                  "mode": "isolated_claim_citations", "attempts": [], "model_checked": False,
@@ -1627,11 +1628,15 @@ class IntelligenceService:
             elif attempt == 0 and initial_result is not None:
                 result = initial_result.model_copy(deep=True)
             else:
+                if report_phase:
+                    report_phase("repair" if attempt else "generate")
                 result = await self.provider.generate(prompt, current_payload, output_model)
             claims = result.claims if isinstance(result, AnswerPayload) else [
                 claim for section in result.sections for claim in section.claims]
             problems = []
             citation_validation_passed = False
+            if report_phase:
+                report_phase("review")
             try:
                 self._resolve_citation_spans(claims, catalog)
                 used = self._validate_claims(claims, evidence)
@@ -1744,6 +1749,8 @@ class IntelligenceService:
                          or (shared_state is not None and coverage_source_documents.issubset(set(coverage_documents)))))
                 if (not problems or preview_supported_subset) and (structured_review or not all_direct or payload.get("require_request_coverage")):
                     await self._check_cancel(check_cancel)
+                    if report_phase:
+                        report_phase("coverage")
                     coverage_input = {
                         "task": "verify_response_coverage", "request": payload.get("question") or payload.get("instruction", ""),
                         "response_kind": payload["task"], "response_message": result.message,
@@ -1820,7 +1827,7 @@ class IntelligenceService:
                 if payload.get("task")!='future_work' and payload.get("allow_isolated_claim_repair") and len(reviews)==len(claims):
                     from .response_subset import complete_supported_subset
                     complete = await complete_supported_subset(self,result,reviews,evidence,payload,audit,
-                        required_documents=required_documents,check_cancel=check_cancel)
+                        required_documents=required_documents,check_cancel=check_cancel,report_phase=report_phase)
                     if complete is not None:
                         return complete
                 error = ModelOutputError("回答或引文复核未通过，纠正后仍缺乏可靠支持；结果已拒绝。" + problems[0][:200])
@@ -1834,6 +1841,8 @@ class IntelligenceService:
                     review["verdict"]=="unsupported" for review in reviews):
                 from .claim_repair import repair_rejected_claims
                 try:
+                    if report_phase:
+                        report_phase("repair")
                     isolated_repair_result = await repair_rejected_claims(self,result,reviews,evidence,catalog,payload,audit,
                         check_cancel=check_cancel)
                 except ModelOutputError as error:
@@ -1902,7 +1911,8 @@ class IntelligenceService:
 
     async def answer(self, question: str, document_ids: list[str], *,
                      mode: Literal["qa", "compare"] = "qa", check_cancel=None, run_ids=None,
-                     fulltext_review: bool = False, tool_retrieval: dict | None = None) -> dict:
+                     fulltext_review: bool = False, tool_retrieval: dict | None = None,
+                     report_phase: Callable[[str], None] | None = None) -> dict:
         self._require_model()
         if mode not in {"qa", "compare"}:
             raise LibraryError("问答模式无效。")
@@ -1981,7 +1991,7 @@ class IntelligenceService:
             "coverage_contract":coverage_contract,
             "evidence": [block.model_dump() for block in evidence],
         }, AnswerPayload, evidence, check_cancel=check_cancel,
-            required_documents=document_ids if mode == "compare" else None)
+            required_documents=document_ids if mode == "compare" else None, report_phase=report_phase)
         if mode == "compare" and result.status == "answered":
             cited_documents = {block.document_id for block in evidence if block.evidence_id in used}
             if cited_documents != set(document_ids):

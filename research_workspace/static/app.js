@@ -7,7 +7,7 @@
     "uploadButton", "emptyUploadButton", "fileInput", "dropZone", "uploadStatus", "uploadLimit",
     "connectionState", "connectionText", "libraryFooter", "appNotice", "noticeText", "dismissNotice",
     "readerTitle", "readerSubtitle", "reparseButton", "readerToolbar", "readerMessage", "readerViewport",
-    "readerEmpty", "pageLoading", "pageError", "pageErrorText", "retryPageButton", "paperPage", "pageImage",
+    "readerEmpty", "pageLoading", "pagePlaceholder", "pageError", "pageErrorText", "retryPageButton", "paperPage", "pageImage",
     "evidenceHighlight", "readerFooterText", "pageForm", "pageNumber", "pageTotal", "firstPage", "previousPage", "nextPage", "lastPage",
     "searchForm", "searchQuery", "searchScope", "searchMode", "searchEnglish", "searchEnglishDetails", "exportSearchButton", "currentScopeOption", "searchButton", "searchExplanation",
     "resultsHeading", "resultsTitle", "clearSearchButton", "searchResults",
@@ -16,10 +16,12 @@
   const state = {
     documents: [], capabilities: null, selectedId: null, selectedRunId: null, pinnedRun: false,
     page: 1, highlight: null, selectedHit: null, query: "", hits: [], uploading: false,
-    searching: false, reparsing: false, connected: false, pageHasText: null, searchRecord: null, showHistory: false,
+    searching: false, reparsing: false, connected: false, searchRecord: null, showHistory: false,
   };
   let listRequest = 0;
   let pageRequest = 0;
+  let pageLoadingTimer = null;
+  let displayedPage = null;
   let searchRequest = 0;
   let navigationRequest = 0;
   let pollTimer = null;
@@ -82,7 +84,9 @@
     let result;
     try { result = await response.json(); } catch { result = {}; }
     if (!response.ok) {
-      throw new Error(typeof result.detail === "string" ? result.detail : `请求未完成（${response.status}），请稍后重试。`);
+      const error = new Error(typeof result.detail === "string" ? result.detail : `请求未完成（${response.status}），请稍后重试。`);
+      error.status = response.status;
+      throw error;
     }
     return result;
   }
@@ -197,6 +201,7 @@
     ui.nextPage.disabled = state.page >= total;
     ui.firstPage.disabled = ui.previousPage.disabled;
     ui.lastPage.disabled = ui.nextPage.disabled;
+    const visiblePage = displayedPage?.id === doc.id ? displayedPage : null;
     const run = doc.current_run;
     let message = "";
     if (historical) message = "这条证据来自之前的处理结果，原文位置仍与该结果对应。";
@@ -208,12 +213,12 @@
     else if (isPending(run)) message = doc.available_run
       ? "新一轮文字提取正在进行，已有结果仍可阅读和检索。"
       : "正在提取文献文字，可先阅读原文。处理完成后可检索内容。";
-    else if (state.pageHasText === false) message = "这一页没有可检索文字，仍可查看原文页面。";
+    else if (visiblePage?.hasText === false) message = "这一页没有可检索文字，仍可查看原文页面。";
     ui.readerMessage.textContent = message;
     ui.readerMessage.hidden = !message;
-    ui.readerFooterText.textContent = state.highlight
-      ? `已定位第 ${state.page} 页的检索证据，请结合上下文核对。`
-      : `第 ${state.page} / ${total || "—"} 页 · 选择证据片段可定位原文`;
+    ui.readerFooterText.textContent = !ui.evidenceHighlight.hidden && visiblePage
+      ? `已定位第 ${visiblePage.page} 页的检索证据，请结合上下文核对。`
+      : `第 ${visiblePage?.page ?? state.page} / ${total || "—"} 页 · 选择证据片段可定位原文`;
   }
 
   async function refreshDocuments({ quiet = false } = {}) {
@@ -242,7 +247,6 @@
           state.page = clampedPage;
           state.highlight = null;
           state.selectedHit = null;
-          state.pageHasText = null;
           rememberReadingPage(selected);
           renderHitSelection();
         }
@@ -254,10 +258,15 @@
         } else if (pageChanged) loadPage();
         renderReaderHeading();
       } else {
+        pageRequest += 1;
+        hidePageLoading();
+        clearDisplayedPage();
         ui.readerTitle.textContent = "原文阅读";
         ui.readerSubtitle.textContent = "导入论文后阅读原文与证据。";
         ui.readerEmpty.hidden = false;
-        ui.paperPage.hidden = true;
+        ui.pageError.hidden = true;
+        ui.readerMessage.hidden = true;
+        ui.readerFooterText.textContent = "原文与检索证据将在这里关联";
         ui.readerToolbar.hidden = true;
         ui.reparseButton.disabled = true;
       }
@@ -299,7 +308,6 @@
     state.pinnedRun = Boolean(options.runId);
     state.page = clampReadingPage(options.page ?? rememberedPage(id), doc);
     rememberReadingPage(doc);
-    state.pageHasText = null;
     if ((changed || previousRun !== state.selectedRunId) && ui.searchScope.value === "current" && !options.fromSearch) clearSearch(false);
     // Clear evidence belonging to the previous search before applying the new
     // citation. Otherwise current-document scope erases a cross-paper bbox.
@@ -319,13 +327,27 @@
   }
 
   function renderHighlight() {
-    const box = state.highlight;
+    const box = displayedPage?.id === state.selectedId && displayedPage.page === state.page
+      && displayedPage.runId === state.selectedRunId ? state.highlight : null;
     ui.evidenceHighlight.hidden = !box;
     if (!box) return;
     ui.evidenceHighlight.style.left = `${box[0] * 100}%`;
     ui.evidenceHighlight.style.top = `${box[1] * 100}%`;
     ui.evidenceHighlight.style.width = `${(box[2] - box[0]) * 100}%`;
     ui.evidenceHighlight.style.height = `${(box[3] - box[1]) * 100}%`;
+  }
+
+  function hidePageLoading() {
+    window.clearTimeout(pageLoadingTimer);
+    ui.pageLoading.hidden = true;
+    ui.pagePlaceholder.hidden = true;
+  }
+
+  function clearDisplayedPage() {
+    displayedPage = null;
+    ui.paperPage.hidden = true;
+    ui.evidenceHighlight.hidden = true;
+    ui.pageImage.removeAttribute("src");
   }
 
   async function loadPage() {
@@ -335,74 +357,111 @@
     const id = doc.id;
     const page = state.page;
     const runId = state.selectedRunId;
+    const retained = displayedPage?.id === id ? displayedPage : null;
+    const sameImage = retained?.page === page;
+    const path = `/api/documents/${encodeURIComponent(id)}/pages/${page}`;
+    hidePageLoading();
     ui.readerEmpty.hidden = true;
-    ui.pageLoading.hidden = false;
     ui.pageError.hidden = true;
-    ui.paperPage.hidden = true;
     ui.evidenceHighlight.hidden = true;
-    ui.readerViewport.scrollTop = 0;
+    if (!retained) {
+      clearDisplayedPage();
+      ui.readerViewport.scrollTop = 0;
+      ui.pagePlaceholder.style.removeProperty("--page-ratio");
+      ui.pagePlaceholder.hidden = false;
+    }
+    if (!sameImage) pageLoadingTimer = window.setTimeout(() => {
+      if (request !== pageRequest) return;
+      ui.pageLoading.textContent = `正在打开第 ${page} 页…`;
+      ui.pageLoading.hidden = false;
+    }, 150);
     renderReaderHeading();
 
     const params = new URLSearchParams();
     if (runId) params.set("run_id", runId);
     const suffix = params.size ? `?${params}` : "";
     let pageGeometry = null;
-    const metadata = api(`/api/documents/${encodeURIComponent(id)}/pages/${page}${suffix}`).then((result) => {
+    let hasText = sameImage && retained.runId === runId ? retained.hasText : null;
+    const metadata = api(`${path}${suffix}`).then((result) => {
       if (request !== pageRequest) return;
       pageGeometry = result;
-      state.pageHasText = Boolean(result.text?.trim() || result.blocks?.some((block) => block.text?.trim()));
-      renderReaderHeading();
+      const width = Number(result.width), height = Number(result.height);
+      if (!ui.pagePlaceholder.hidden && width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height)) {
+        ui.pagePlaceholder.style.setProperty("--page-ratio", `${width} / ${height}`);
+      }
+      hasText = Boolean(result.text?.trim() || result.blocks?.some((block) => block.text?.trim()));
+      if (displayedPage?.request === request) {
+        displayedPage.hasText = hasText;
+        renderReaderHeading();
+      }
     }).catch(() => {
       // The original page can still be read while text extraction is pending.
-      if (request === pageRequest) state.pageHasText = null;
     });
 
-    let scale = 2;
-    const image = new Image();
-    image.onload = () => {
-      if (request !== pageRequest) return;
-      ui.pageImage.src = image.src;
-      ui.pageImage.alt = `${documentName(doc)}，第 ${page} 页原文`;
-      ui.pageImage.width = image.naturalWidth;
-      ui.pageImage.height = image.naturalHeight;
-      ui.pageImage.dataset.renderScale = String(scale);
-      ui.pageLoading.hidden = true;
-      ui.paperPage.hidden = false;
-      renderHighlight();
-      window.dispatchEvent(new CustomEvent("research:page-ready"));
-      if (state.highlight) {
-        window.requestAnimationFrame(() => {
-          if (request !== pageRequest || !state.highlight) return;
-          const top = ui.paperPage.offsetTop + ui.paperPage.clientHeight * state.highlight[1] - ui.readerViewport.clientHeight * .28;
-          const left = ui.paperPage.offsetLeft + ui.paperPage.clientWidth * (state.highlight[0] + state.highlight[2]) / 2 - ui.readerViewport.clientWidth / 2;
-          ui.readerViewport.scrollTo({ top: Math.max(0, top), left: Math.max(0, left), behavior: reducedMotion.matches ? "auto" : "smooth" });
-        });
-      }
-    };
-    image.onerror = async () => {
-      if (request !== pageRequest) return;
-      // Text availability must not delay ordinary image reading. Geometry is
-      // needed only after a failed large render, with a bounded wait if pending.
-      if (!pageGeometry) {
-        let timeout;
-        await Promise.race([metadata, new Promise(resolve => { timeout = setTimeout(resolve, 250); })]);
-        clearTimeout(timeout);
-        if (request !== pageRequest) return;
-      }
-      const area = Number(pageGeometry?.width) * Number(pageGeometry?.height);
-      if (Number.isFinite(area) && area > 0 && area * scale * scale > 16000000) {
-        const next = [1, .5, .25].find(value => value < scale && area * value * value <= 16000000);
-        if (next !== undefined) {
-          scale = next;
-          image.src = `/api/documents/${encodeURIComponent(id)}/pages/${page}/image?scale=${scale}`;
+    if (!sameImage) {
+      let scale = 2;
+      const image = new Image();
+      while (request === pageRequest) {
+        image.src = `${path}/image?scale=${scale}`;
+        try {
+          await image.decode();
+          break;
+        } catch {
+          if (request !== pageRequest) return;
+          // Only a failed render needs geometry. Give a pending metadata request
+          // a bounded head start before looking for a safe lower scale.
+          if (!pageGeometry) {
+            let timeout;
+            await Promise.race([metadata, new Promise(resolve => { timeout = setTimeout(resolve, 250); })]);
+            clearTimeout(timeout);
+            if (request !== pageRequest) return;
+          }
+          const area = Number(pageGeometry?.width) * Number(pageGeometry?.height);
+          const oversized = Number.isFinite(area) && area * scale * scale > 16_000_000;
+          const next = oversized ? [1, .5, .25].find(value => value < scale && area * value * value <= 16_000_000) : undefined;
+          if (next !== undefined) {
+            scale = next;
+            continue;
+          }
+          hidePageLoading();
+          clearDisplayedPage();
+          ui.pageErrorText.textContent = oversized
+            ? `第 ${page} 页超过本机安全渲染上限，最小倍率仍无法打开。`
+            : `第 ${page} 页暂时无法打开，请确认服务可用后重试。`;
+          ui.pageError.hidden = false;
+          renderReaderHeading();
           return;
         }
-        ui.pageErrorText.textContent = "原页尺寸超过本机安全渲染上限，降低至最小倍率仍无法打开；原PDF和已提取内容保留。";
-      } else ui.pageErrorText.textContent = "这一页暂时无法打开。请确认服务可用后重试。";
-      ui.pageLoading.hidden = true;
-      ui.pageError.hidden = false;
-    };
-    image.src = `/api/documents/${encodeURIComponent(id)}/pages/${page}/image?scale=2`;
+      }
+      if (request !== pageRequest) return;
+      image.id = "pageImage";
+      image.alt = `${documentName(doc)}，第 ${page} 页原文`;
+      image.width = image.naturalWidth;
+      image.height = image.naturalHeight;
+      image.draggable = false;
+      image.dataset.renderScale = String(scale);
+      if (!reducedMotion.matches) {
+        image.classList.add("reader-page-arrival");
+        image.addEventListener("animationend", () => image.classList.remove("reader-page-arrival"), { once: true });
+      }
+      ui.pageImage.replaceWith(image);
+      ui.pageImage = image;
+      ui.readerViewport.scrollTop = 0;
+    }
+    displayedPage = { id, page, runId, request, hasText };
+    hidePageLoading();
+    ui.paperPage.hidden = false;
+    renderHighlight();
+    renderReaderHeading();
+    if (!sameImage) window.dispatchEvent(new CustomEvent("research:page-ready"));
+    if (state.highlight) {
+      window.requestAnimationFrame(() => {
+        if (request !== pageRequest || !state.highlight) return;
+        const top = ui.paperPage.offsetTop + ui.paperPage.clientHeight * state.highlight[1] - ui.readerViewport.clientHeight * .28;
+        const left = ui.paperPage.offsetLeft + ui.paperPage.clientWidth * (state.highlight[0] + state.highlight[2]) / 2 - ui.readerViewport.clientWidth / 2;
+        ui.readerViewport.scrollTo({ top: Math.max(0, top), left: Math.max(0, left), behavior: reducedMotion.matches ? "auto" : "smooth" });
+      });
+    }
   }
 
   function goToPage(value) {
@@ -419,7 +478,6 @@
     rememberReadingPage(doc);
     state.highlight = null;
     state.selectedHit = null;
-    state.pageHasText = null;
     renderHitSelection();
     loadPage();
   }

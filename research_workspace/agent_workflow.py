@@ -21,9 +21,15 @@ TOOL_LABELS = {
     "search_arxiv": "搜索公开论文",
     "check_arxiv_updates": "检查已有订阅",
     "import_paper": "导入公开论文",
-    "prepare_parse": "等待固定解析版本",
+    "prepare_parse": "检查固定版本解析",
 }
 EXTERNAL_TOOLS = {"search_arxiv", "check_arxiv_updates", "import_paper"}
+ANSWER_PHASE_MESSAGES = {
+    "generate": "正在根据固定版本原文证据生成回答。",
+    "repair": "正在根据原文证据修正待审核回答。",
+    "review": "正在核验原文引句与论断支持度。",
+    "coverage": "正在核验回答是否覆盖研究问题。",
+}
 
 
 def prepare_scope(library, payload: dict) -> dict:
@@ -172,7 +178,7 @@ async def _execute_pending(store, job_id, state, tools, check_cancel):
         else:
             check_cancel()
             state["current"] = current
-            store.event(job_id, "agent_tool_started", f'正在执行{TOOL_LABELS.get(name, "工具校验")}。')
+            store.event(job_id, "agent_tool_started", f'正在{TOOL_LABELS.get(name, "校验工具调用")}。')
             store.save_agent_state(job_id, state)
             outcome = await tools.execute(name, arguments)
     if outcome["status"] == "waiting" and time.time() - current["started_at"] >= PARSE_WAIT_SECONDS:
@@ -183,7 +189,8 @@ async def _execute_pending(store, job_id, state, tools, check_cancel):
         current["waiting"] = True
         state["current"] = current
         store.save_agent_state(job_id, state, wait_seconds=1)
-        store._yield_step(job_id, message="等待后台解析完成，已保存工具调用。")
+        store._yield_step(job_id, stage="agent_waiting_parse", message="等待后台解析完成，已保存工具调用。",
+                          repeat_event=False)
         return False
     outcome = _planning_result(outcome)
     state["outcomes"][key] = {"attempt": current["attempt"], "result": outcome}
@@ -192,10 +199,12 @@ async def _execute_pending(store, job_id, state, tools, check_cancel):
     state["current"] = None
     _record(store, job_id, state, name, outcome, current, reused=reused)
     store.save_agent_state(job_id, state)
+    if current["waiting"]:
+        store.event(job_id, "agent_resume_parse", "固定版本解析检查已返回，继续执行研究任务。")
     return True
 
 
-async def _final_answer(service, payload, scope, state, check_cancel):
+async def _final_answer(service, payload, scope, state, check_cancel, report_phase):
     # Only successful tool results, never planner prose, reach answer generation.
     runs = {doc: run for doc, run in state["run_ids"].items() if run}
     evidence = [Evidence.model_validate(item) for item in state.get("evidence", [])
@@ -203,7 +212,7 @@ async def _final_answer(service, payload, scope, state, check_cancel):
     mode = scope["mode"]
     if runs and evidence and (mode != "compare" or len(runs) >= 2):
         answer = await service.answer(payload["question"], list(runs), mode=mode, run_ids=runs,
-            check_cancel=check_cancel, tool_retrieval={
+            check_cancel=check_cancel, report_phase=report_phase, tool_retrieval={
                 "evidence": evidence, "mode": "agent_tool_evidence",
                 "trace": [service._trace("agent", "已固定本任务工具返回的原文证据。")],
             })
@@ -220,12 +229,18 @@ async def _final_answer(service, payload, scope, state, check_cancel):
 async def agent_step(store, service, job):
     job_id, payload = job["id"], job["payload"]
     scope = payload["agent_scope"]
-    state = store.load_agent_state(job_id) or _new_state(scope, payload["question"])
+    state = store.load_agent_state(job_id)
+    if state is None:
+        store.event(job_id, "execute", "正在读取本次研究的固定文献和工具范围。")
+        state = _new_state(scope, payload["question"])
     if state.get("answer") is not None:
         return state["answer"]
 
     def check_cancel():
         store.check_cancel(job_id)
+
+    def report_phase(phase):
+        store.event(job_id, f"agent_answer_{phase}", ANSWER_PHASE_MESSAGES[phase])
 
     tools = AgentTools(service, scope=scope, state=state, check_cancel=check_cancel)
     while not state["stop_reason"]:
@@ -254,7 +269,7 @@ async def agent_step(store, service, job):
 
     store.save_agent_state(job_id, state)
     check_cancel()
-    result = await _final_answer(service, payload, scope, state, check_cancel)
+    result = await _final_answer(service, payload, scope, state, check_cancel, report_phase)
     state["answer"] = result
     store.save_agent_state(job_id, state)
     return result

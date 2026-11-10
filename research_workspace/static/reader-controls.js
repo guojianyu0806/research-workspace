@@ -7,7 +7,7 @@
   const reader = byId("readerPanel");
   const viewport = byId("readerViewport");
   const paper = byId("paperPage");
-  const image = byId("pageImage");
+  let image = byId("pageImage");
   const zoomSelect = byId("pageZoom");
   if (!workspace || !reader || !viewport || !paper || !image || !zoomSelect) return;
 
@@ -41,7 +41,6 @@
   let nativePending = false;
   let nativeEntered = false;
   let leavingReader = false;
-  let lastImage = "";
   let horizontalPosition = .5;
   let pan = null;
   let suppressPanClick = false;
@@ -88,7 +87,6 @@
   }
 
   function pageRatio() {
-    // app.js updates these attributes before the displayed image finishes decoding.
     return (Number(image.getAttribute("width")) || image.naturalWidth || 1)
       / (Number(image.getAttribute("height")) || image.naturalHeight || 1);
   }
@@ -477,7 +475,6 @@
   document.addEventListener("pointerdown", (event) => {
     if (!adjustPopover?.hidden && !adjustPopover?.contains(event.target) && !adjustButton?.contains(event.target)) setAdjustOpen(false);
   });
-  image.draggable = false;
   viewport.addEventListener("dragstart", (event) => { if (paper.contains(event.target)) event.preventDefault(); });
   viewport.addEventListener("pointerdown", (event) => {
     if (event.pointerType !== "mouse" || event.button !== 0 || paper.hidden || !image.getAttribute("src")) return;
@@ -584,17 +581,12 @@
     } else scheduleReflow();
   });
   window.addEventListener("research:page-ready", () => {
+    image = byId("pageImage");
+    endPan();
     layoutRevision += 1;
     anchorLocked = false;
     anchor = null;
-    lastImage = image.getAttribute("src");
     reflow(null);
-  });
-  image.addEventListener("load", () => {
-    const changed = lastImage !== image.getAttribute("src");
-    lastImage = image.getAttribute("src");
-    if (changed) anchor = null;
-    reflow(changed ? null : anchor);
   });
   new MutationObserver(() => { syncPanels(); scheduleReflow(); }).observe(workspace, { attributes: true, attributeFilter: ["hidden"] });
   new MutationObserver(syncZoomButtons).observe(paper, { attributes: true, attributeFilter: ["hidden"] });

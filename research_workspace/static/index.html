@@ -12,16 +12,16 @@
   <link rel="stylesheet" href="/static/manage.css?v=20261019-front1">
   <link rel="stylesheet" href="/static/bilingual.css?v=20261020-window1">
   <link rel="stylesheet" href="/static/explore.css?v=20261018-collaboration1">
-  <link rel="stylesheet" href="/static/research.css?v=20261018-model-stream1">
+  <link rel="stylesheet" href="/static/research.css?v=20261110-task-feedback1">
   <link rel="stylesheet" href="/static/model-settings.css">
-  <link rel="stylesheet" href="/static/reader.css?v=20261013-floating-notice1">
+  <link rel="stylesheet" href="/static/reader.css?v=20261110-page-arrival1">
   <link rel="stylesheet" href="/static/examples.css?v=20261009-demo1">
   <link rel="stylesheet" href="/static/navigation-motion.css?v=20261013-floating-notice1">
   <link rel="stylesheet" href="/static/modern-theme.css?v=20261014-modern1">
   <script defer src="/static/notices.js?v=20261013-shared-notices1"></script>
   <script defer src="/static/navigation-motion.js?v=20261013-navigation-motion1"></script>
-  <script defer src="/static/app.js?v=20261020-large-page1"></script>
-  <script defer src="/static/reader-controls.js?v=20261009-sizing3"></script>
+  <script defer src="/static/app.js?v=20261110-page-arrival1"></script>
+  <script defer src="/static/reader-controls.js?v=20261110-page-arrival1"></script>
   <script defer src="/static/reader-layout.js?v=20261009-sizing3"></script>
   <script defer src="/static/bilingual.js?v=20261020-lifecycle1"></script>
   <script defer src="/static/explore.js?v=20261018-collaboration1"></script>
@@ -29,7 +29,7 @@
   <script defer src="/static/references.js?v=20261017-author-year1"></script>
   <script defer src="/static/dedup.js?v=20261018-dedup1"></script>
   <script defer src="/static/manage.js?v=20261020-large-preview1"></script>
-  <script defer src="/static/research.js?v=20261110-agent1"></script>
+  <script defer src="/static/research.js?v=20261110-task-feedback1"></script>
   <script defer src="/static/model-settings.js?v=20261017-current-model1"></script>
   <script defer src="/static/examples.js?v=20261013-shared-notices1"></script>
   <script defer src="/static/shell.js?v=20261017-settings-preserve-task1"></script>
@@ -138,6 +138,7 @@
       </div>
       <div class="reader-message" id="readerMessage" role="status" hidden></div>
       <div class="reader-viewport" id="readerViewport">
+        <div class="reader-page-status" role="status"><span class="page-loading" id="pageLoading" hidden></span></div>
         <div class="reader-empty" id="readerEmpty">
           <div class="empty-paper" aria-hidden="true"><span></span><span></span><span></span><span></span><i></i></div>
           <span class="eyebrow">YOUR RESEARCH STARTS HERE</span>
@@ -146,7 +147,7 @@
           <button class="button button-primary" id="emptyUploadButton" type="button"><svg class="icon"><use href="#i-upload"></use></svg>导入第一篇论文</button>
           <span class="empty-footnote">文件不会在这里被修改或覆盖</span>
         </div>
-        <div class="page-loading" id="pageLoading" role="status" hidden><span class="spinner" aria-hidden="true"></span><span>正在打开这一页</span></div>
+        <div class="reader-page-placeholder" id="pagePlaceholder" aria-hidden="true" hidden></div>
         <div class="page-error" id="pageError" hidden><svg class="icon" aria-hidden="true"><use href="#i-file"></use></svg><p id="pageErrorText"></p><button class="button button-secondary" id="retryPageButton" type="button">重新打开</button></div>
         <figure class="paper-page" id="paperPage" hidden><img id="pageImage" alt="论文原文页面"><div class="evidence-highlight" id="evidenceHighlight" hidden><span>原文证据</span></div></figure>
       </div>

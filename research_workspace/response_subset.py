@@ -1,7 +1,7 @@
 """Discard rejected extras only when retained own facts actually answer the request."""
 from __future__ import annotations
 
-async def complete_supported_subset(service,result,reviews,evidence,payload,audit,*,required_documents=None,check_cancel=None):
+async def complete_supported_subset(service,result,reviews,evidence,payload,audit,*,required_documents=None,check_cancel=None,report_phase=None):
     from .intelligence import CoveragePayload, _prompt
     claims=(result.claims if hasattr(result,"claims") else [c for s in result.sections for c in s.claims])
     kept=[v["claim_index"] for v in reviews if v["verdict"]=="supported"]
@@ -18,6 +18,8 @@ async def complete_supported_subset(service,result,reviews,evidence,payload,audi
     if required_documents and {e.document_id for e in evidence if e.evidence_id in used}!=set(required_documents):return None
     source_attempt=audit["attempts"][-1]["attempt"]
     await service._check_cancel(check_cancel)
+    if report_phase:
+        report_phase("coverage")
     verdict=await service.provider.generate(_prompt("coverage_v1"),{
         "task":"verify_response_coverage","response_kind":payload["task"],"actual_answers_only":True,
         "request":payload.get("question") or payload.get("instruction",""),

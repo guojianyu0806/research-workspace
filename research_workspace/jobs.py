@@ -87,13 +87,23 @@ class JobStore:
         from .translation_pages import page
         return page(self.library,job_id,**options)
 
-    def summary(self,job_id):
+    def summary(self,job_id,*,include_stage_event=False):
         """Bounded status payload for polling/SSE; full text stays behind get()."""
         with self.library._connection() as db:
+            if include_stage_event:
+                db.execute('BEGIN')
             row = db.execute(f'SELECT {self.SUMMARY_COLUMNS} FROM research_jobs WHERE id=?',(job_id,)).fetchone()
             if row is None:
                 raise KeyError(job_id)
-            return self._summary(db,row)
+            item = self._summary(db,row)
+            if include_stage_event and item['kind'] == 'agent_research':
+                event = item['last_event']
+                if event and event['stage'] in {'model_call','model_response'}:
+                    event = db.execute('''SELECT stage,message,created_at FROM research_job_events
+                        WHERE job_id=? AND stage NOT IN ('model_call','model_response') ORDER BY id DESC LIMIT 1''',
+                        (job_id,)).fetchone()
+                item['last_stage_event'] = dict(event) if event else None
+            return item
 
     @staticmethod
     def _summary(db,row):
@@ -230,14 +240,23 @@ class JobStore:
         with self.library._connection() as db:
             db.execute('UPDATE research_jobs SET total=?,updated_at=? WHERE id=?',(total,_now(),job_id))
 
-    def _yield_step(self,job_id,*,message=None):
+    def _yield_step(self,job_id,*,message=None,stage='queued',repeat_event=True):
         """Release the queue after one step, including a racing cancellation."""
         with self.library._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             cancelled = db.execute('SELECT cancel_requested FROM research_jobs WHERE id=?',(job_id,)).fetchone()[0]
             status = 'cancelled' if cancelled else 'queued'
-            db.execute('UPDATE research_jobs SET status=?,updated_at=? WHERE id=?',(status,_now(),job_id))
-        self.event(job_id,status,'已保存当前片段并停止后续调用。' if cancelled else message or '已保存当前片段，等待下一轮继续。')
+            now = _now()
+            db.execute('UPDATE research_jobs SET status=?,updated_at=? WHERE id=?',(status,now,job_id))
+            if not cancelled and not repeat_event:
+                previous = db.execute('SELECT stage FROM research_job_events WHERE job_id=? ORDER BY id DESC LIMIT 1',
+                                      (job_id,)).fetchone()
+                if previous and previous['stage'] == stage:
+                    return
+            event_stage = status if cancelled else stage
+            event_message = '已保存当前片段并停止后续调用。' if cancelled else message or '已保存当前片段，等待下一轮继续。'
+            db.execute('INSERT INTO research_job_events(job_id,stage,message,created_at) VALUES(?,?,?,?)',
+                       (job_id,event_stage,event_message,now))
 
     async def _text_step(self,service,job):
         """Save one segment per step; share the service's bounded language repair."""
@@ -300,7 +319,8 @@ class JobStore:
                 # that task should expose its saved answer, not purchase it again.
                 self.finish(job_id,'completed',result=job['result'])
                 return True
-            self.event(job_id,'execute','读取选定资料并执行'+kind+'任务。')
+            if kind != 'agent_research':
+                self.event(job_id,'execute','读取选定资料并执行'+kind+'任务。')
             if kind=='agent_research':
                 from .agent_workflow import agent_step
                 result = await agent_step(self, service, job)

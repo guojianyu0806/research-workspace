@@ -508,15 +508,17 @@ def build_router():
             revision = None
             heartbeat = 0
             while not await request.is_disconnected():
-                job = await run_in_threadpool(store.summary,job_id)
+                job = await run_in_threadpool(store.summary,job_id,include_stage_event=True)
                 preview = await run_in_threadpool(store.live_stream,job_id)
                 stamp = preview.get('revision') if preview else None
                 if stamp != revision:
                     yield 'event: model_stream\ndata: '+json.dumps({'job_id':job_id,'preview':preview},ensure_ascii=False)+'\n\n'
                     revision = stamp
-                if job['updated_at'] != previous:
+                status_stamp = (job['updated_at'],job['status'],job['cancel_requested'],
+                                job['last_event'],job.get('last_stage_event'))
+                if status_stamp != previous:
                     yield 'data: '+json.dumps(job,ensure_ascii=False)+'\n\n'
-                    previous = job['updated_at']
+                    previous = status_stamp
                 if job['status'] not in {'queued','running'}:
                     break
                 heartbeat += 1

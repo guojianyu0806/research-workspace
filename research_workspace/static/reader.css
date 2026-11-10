@@ -61,7 +61,14 @@
 #readerToolbar #pageZoom{max-width:144px;min-height:32px;height:32px;padding:4px 6px;font-size:14px}
 .reader-zoom-step{font-size:18px;width:32px;padding:0}
 #readerPanel #readerViewport{flex:1;min-height:0;min-width:0;padding:10px 12px;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;align-items:stretch;background:#dce5ec}
-#readerPanel #paperPage{max-width:none;margin:0 auto;flex-shrink:0;border-color:#a9bdc9;box-shadow:0 3px 14px #18343f24}
+#readerPanel #paperPage,#readerPanel .reader-page-placeholder{max-width:none;margin:0 auto;flex-shrink:0;border:1px solid #a9bdc9;box-shadow:0 3px 14px #18343f24}
+.reader-page-placeholder{width:100%;aspect-ratio:var(--page-ratio,210 / 297);background:#fff}
+.reader-page-status{position:sticky;top:0;left:0;z-index:2;flex:0 0 0;pointer-events:none}
+.reader-page-status .page-loading{position:absolute;top:4px;right:4px;display:block;margin:0;padding:3px 9px;border:1px solid var(--line);border-radius:5px;background:var(--paper);white-space:nowrap}
+@media(prefers-reduced-motion:no-preference){
+  #pageImage.reader-page-arrival{animation:reader-page-arrival .14s cubic-bezier(.2,0,0,1)}
+  @keyframes reader-page-arrival{from{opacity:.83}to{opacity:1}}
+}
 #readerPanel #readerFooter{min-height:0;padding:4px 12px;font-size:14px;line-height:1.5}
 #readerPanel #readerMessage{padding:6px 12px;font-size:14px;line-height:1.5}
 #readerPanel .reader-empty{min-height:0;padding:20px 12px}

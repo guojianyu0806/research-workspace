@@ -138,8 +138,10 @@ def test_local_compare_handles_tool_error_and_keeps_original_quote_gate(app, cor
     run_job(library, store, model)
     saved = store.get(job["id"])
     assert len(plans) == 4, saved["error"]
+    phases = [event["stage"] for event in saved["events"] if event["stage"].startswith("agent_answer_")]
     if corrupt:
         assert saved["status"] == "failed" and saved["result"] is None
+        assert phases == ["agent_answer_generate", "agent_answer_review", "agent_answer_repair", "agent_answer_review"]
         audit = saved["completed_items"][0]
         assert audit["stage"] == "grounding_validation" and audit["result"]["diagnostic_only"]
         assert "原文片段编号" in json.dumps(audit, ensure_ascii=False)
@@ -147,6 +149,7 @@ def test_local_compare_handles_tool_error_and_keeps_original_quote_gate(app, cor
     assert saved["completed_items"] == []
     result = saved["result"]
     assert saved["status"] == "completed" and result["status"] == "answered"
+    assert phases == ["agent_answer_generate", "agent_answer_review", "agent_answer_coverage"]
     assert [item["code"] for item in result["agent_trace"]] == ["graph_built", "invalid_arguments", "evidence_found"]
     assert {item["run_id"] for item in result["sources"]} == set(pinned.values())
     assert all(citation["quote"] and citation["quote_id"] == "Q1"
@@ -171,6 +174,7 @@ def test_compare_enforces_requested_one_claim_per_paper(app, first_error):
                  "第二条说明 BERT 的总体模型架构。每条引用对应论文的原文。不要讨论层数、训练目标或实验结果。")
     generated = []
     checked = []
+    store = JobStore(library)
 
     def model(request):
         body = model_input(request)
@@ -179,9 +183,15 @@ def test_compare_enforces_requested_one_claim_per_paper(app, first_error):
                 return stop_turn()
             return tool_turn("retrieve", "search_evidence", {"query": "model architecture encoder", "document_ids": ids})
         payload = json.loads(body["messages"][1]["content"])
+        summary = store.summary(job["id"], include_stage_event=True)
+        assert summary["last_event"]["stage"] == "model_call"
+        phase = summary["last_stage_event"]["stage"]
         if payload["task"] != "compare":
+            expected_phase = {"verify_single_claim": "agent_answer_review", "verify_response_coverage": "agent_answer_coverage"}
+            assert phase == expected_phase[payload["task"]]
             checked.append(payload["task"])
             return completion(payload)
+        assert phase == ("agent_answer_repair" if generated else "agent_answer_generate")
         assert payload["coverage_contract"]["claims_per_document"] == 1
         generated.append(payload)
         citations = {block["document_id"]: {"evidence_id": block["evidence_id"], "quote_id": span["quote_id"], "quote": ""}
@@ -198,7 +208,6 @@ def test_compare_enforces_requested_one_claim_per_paper(app, first_error):
             assert "恰好对应一条结论" in payload["correction"]["problems"][0]
         return stop_turn(json.dumps({"status": "answered", "claims": claims}))
 
-    store = JobStore(library)
     run_job(library, store, model)
     saved = store.get(job["id"])
     assert len(generated) == 2, saved["error"]
@@ -279,7 +288,17 @@ def test_public_import_resumes_same_tool_id_without_repeating_network(app, monke
 
     run_job(library, store, model)
     assert len(calls) == 3 and len(network) == 2, store.get(job["id"])["error"]
-    assert store.get(job["id"])["status"] == "queued" and store.claim() is None
+    waiting = store.summary(job["id"])
+    assert waiting["status"] == "queued" and waiting["last_event"]["stage"] == "agent_waiting_parse"
+    assert store.claim() is None
+    # Make the queued check eligible before the parser has finished.
+    checkpoint = store.load_agent_state(job["id"])
+    store.save_agent_state(job["id"], checkpoint)
+    run_job(library, store, model)
+    still_waiting = store.header(job["id"])
+    assert still_waiting["status"] == "queued" and len(calls) == 3
+    assert [event["stage"] for event in still_waiting["events"]].count("agent_waiting_parse") == 1
+    assert not any(event["stage"] == "agent_resume_parse" for event in still_waiting["events"])
     assert library.process_next_job()
     # A resumed worker first checks the run. A completed parse remains usable
     # even if the task spent longer than the polling deadline paused.
@@ -287,7 +306,11 @@ def test_public_import_resumes_same_tool_id_without_repeating_network(app, monke
     checkpoint["current"]["started_at"] -= 180
     store.save_agent_state(job["id"], checkpoint)
     run_job(library, store, model)
-    result = store.get(job["id"])["result"]
+    saved = store.get(job["id"])
+    phases = [event["stage"] for event in saved["events"]]
+    assert phases.count("agent_waiting_parse") == phases.count("agent_resume_parse") == 1
+    assert phases.index("agent_waiting_parse") < phases.index("agent_resume_parse") < phases.index("agent_answer_generate")
+    result = saved["result"]
     assert result["status"] == "answered" and len(network) == 2
     assert len(library.list_documents()) == 1
     assert [item["code"] for item in result["agent_trace"]] == [
@@ -309,4 +332,37 @@ def test_planner_prose_without_tools_cannot_be_published(app):
     saved = store.get(job["id"])
     assert saved["status"] == "completed" and len(calls) == 1
     assert saved["result"]["status"] == "insufficient_evidence" and saved["result"]["claims"] == []
+    assert not any(event["stage"].startswith("agent_answer_") for event in saved["events"])
     assert "unverified factual claim" not in json.dumps(saved)
+
+
+def test_agent_sse_emits_stage_and_terminal_changes_with_same_update_timestamp(app, monkeypatch):
+    job = request_job(app, question="Describe new results.", agent_public_query="encoder")
+    store = JobStore(app.state.library)
+    store.claim()
+    store.event(job["id"], "agent_answer_review", "正在核验原文引句与论断支持度。")
+    store.event(job["id"], "model_call", "正在调用模型：ClaimSupportPayload（本轮第1次请求）。")
+    summary = JobStore.summary
+    reads = 0
+
+    def frozen_update_time(self, job_id, **options):
+        nonlocal reads
+        reads += 1
+        if reads == 3:
+            self.event(job_id, "agent_answer_coverage", "正在核验回答是否覆盖研究问题。")
+            self.event(job_id, "model_call", "正在调用模型：CoveragePayload（本轮第1次请求）。")
+        item = summary(self, job_id, **options)
+        item["updated_at"] = job["updated_at"]
+        if reads == 4:
+            # A terminal status can be observed before its final journal entry.
+            item["status"] = "completed"
+        return item
+
+    monkeypatch.setattr(JobStore, "summary", frozen_update_time)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        response = client.get(f'/api/research/tasks/{job["id"]}/events')
+    assert response.status_code == 200
+    items = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+    assert [item["status"] for item in items] == ["running", "running", "completed"]
+    assert [item["last_stage_event"]["stage"] for item in items] == [
+        "agent_answer_review", "agent_answer_coverage", "agent_answer_coverage"]

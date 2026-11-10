@@ -61,6 +61,18 @@
 .rs-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:13px 0}
 .rs-link{color:var(--primary,#165f63);font-size:14px;line-height:1.8;text-underline-offset:3px}
 .rs-job-status{font-size:14px;line-height:1.8;margin:12px 0;overflow-wrap:anywhere}
+.rs-task-phase,.rs-task-read{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:9px 12px;margin:0 0 12px;border:1px solid var(--line,#cbd7de);border-radius:8px;background:var(--surface,#f3f6f8);font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.rs-task-phase[hidden],.rs-task-read[hidden]{display:none}
+.rs-phase-label{font-weight:600;overflow-wrap:anywhere}
+.rs-phase-time{margin-inline-start:auto;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rs-task-phase .rs-phase-spinner,.rs-task-read[data-state="loading"]::before{width:14px;height:14px;flex:none;opacity:0;animation:spin .85s linear 180ms infinite,rs-busy-visible 100ms ease-out 180ms forwards}
+.rs-task-read[data-state="loading"]::before{content:"";border:2px solid var(--line,#cbd7de);border-top-color:var(--primary,#165f63);border-radius:50%}
+.rs-task-read[data-state="error"] .rs-task-read-message{color:var(--danger,#a33838)}
+.rs-history-item.is-requested{outline:1px dashed var(--primary,#165f63);outline-offset:-2px}
+@keyframes rs-busy-visible{to{opacity:1}}
+@media(prefers-reduced-motion:reduce){
+  .rs-task-phase .rs-phase-spinner,.rs-task-read[data-state="loading"]::before{animation:none;opacity:1}
+}
 .rs-progress{width:100%;height:7px;accent-color:var(--primary,#165f63);margin:0 0 8px}
 .rs-history{display:flex;flex-direction:column;gap:5px;max-height:390px;overflow:auto;scrollbar-width:thin}
 
