@@ -90,6 +90,70 @@ def model_input(request):
     return json.loads(request.content)
 
 
+def test_tool_budget_records_one_receipt_for_each_call_in_the_last_batch(app, monkeypatch):
+    from research_workspace import agent_workflow
+    from research_workspace.agent_tools import AgentTools
+
+    library = app.state.library
+    ids = [library.import_document(pdf_bytes(title, f"The {title} encoder has {layers} layers."),
+                                   f"{title}.pdf")["document"]["id"]
+           for title, layers in [("Alpha", 6), ("Beta", 12)]]
+    while library.process_next_job():
+        pass
+    monkeypatch.setattr(agent_workflow, "MAX_CALLS", 3)
+    monkeypatch.setenv("RESEARCH_SEMANTIC_ENABLED", "0")
+    job = request_job(app, question="Compare the encoder layers.", document_ids=ids, agent_mode="compare")
+    store = JobStore(library)
+    batches = [
+        [("graph", "build_citation_graph", {"document_ids": ids}),
+         ("alpha", "search_evidence", {"query": "Alpha encoder layers", "document_ids": ids[:1]})],
+        [("beta", "search_evidence", {"query": "Beta encoder layers", "document_ids": ids[1:]}),
+         ("over-budget", "search_evidence", {"query": "Extra search", "document_ids": ids[1:]})],
+    ]
+    executed = []
+    execute = AgentTools.execute
+
+    async def track_execution(self, name, arguments, **kwargs):
+        executed.append((name, json.loads(arguments)))
+        return await execute(self, name, arguments, **kwargs)
+
+    monkeypatch.setattr(AgentTools, "execute", track_execution)
+    plans = 0
+
+    def model(request):
+        nonlocal plans
+        body = model_input(request)
+        if "tools" not in body:
+            return completion(json.loads(body["messages"][1]["content"]))
+        batch = batches[plans]
+        plans += 1
+        return httpx.Response(200, json={"choices": [{"finish_reason": "tool_calls", "message": {
+            "role": "assistant", "content": None, "tool_calls": [
+                {"id": identifier, "type": "function",
+                 "function": {"name": name, "arguments": json.dumps(arguments)}}
+                for identifier, name, arguments in batch],
+        }}]})
+
+    run_job(library, store, model)
+    saved = store.get(job["id"])
+    assert saved["status"] == "completed", saved["error"]
+    assert saved["result"]["agent_stop_reason"] == "tool_limit"
+    assert len(saved["result"]["grounding"]["claim_reviews"]) == 2
+    state = store.load_agent_state(job["id"])
+    calls = [call for batch in batches for call in batch]
+    assert plans == len(batches)
+    assert executed == [(name, arguments) for _, name, arguments in calls[:3]]
+    assert state["calls"] == 3
+    receipts = [message for message in state["messages"] if message["role"] == "tool"]
+    assert [message["tool_call_id"] for message in receipts] == [identifier for identifier, _, _ in calls]
+    rejected = json.loads(receipts[-1]["content"])
+    assert rejected["status"] == "error" and rejected["code"] == "tool_budget_exhausted"
+    last_trace = saved["result"]["agent_trace"][-1]
+    assert last_trace["code"] == rejected["code"] and last_trace["attempt"] == 0
+    assert sum(event["stage"] == "agent_tool_started" for event in saved["events"]) == 3
+    assert not state["pending"] and state["current"] is None
+
+
 def test_follow_up_reuses_the_saved_compare_runs_through_retry_and_model(app):
     library = app.state.library
     ids = [library.import_document(pdf_bytes(title, f"The {title} encoder has {layers} layers."),

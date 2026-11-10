@@ -139,7 +139,8 @@ def _record(store, job_id, state, name, outcome, current, *, reused=False):
     tool = name if name in TOOL_LABELS else "unknown"
     record = {
         "tool": tool, "status": outcome["status"], "code": outcome["code"],
-        "attempt": current["attempt"], "elapsed_ms": max(0, round((time.time() - current["started_at"]) * 1000)),
+        "attempt": current["attempt"] if current else 0,
+        "elapsed_ms": max(0, round((time.time() - current["started_at"]) * 1000)) if current else 0,
     }
     if reused:
         record["reused"] = True
@@ -149,7 +150,10 @@ def _record(store, job_id, state, name, outcome, current, *, reused=False):
         record["cached"] = outcome["cached"]
     state["trace"].append(record)
     status = {"ok": "完成", "error": "未完成", "waiting": "等待"}[record["status"]]
-    store.event(job_id, "agent_tool", f'{TOOL_LABELS.get(tool, "未注册工具")} · {status}（{record["code"]}）')
+    label = TOOL_LABELS.get(tool, "未注册工具")
+    message = (f'{label} · 超出本次工具调用上限，未执行。' if record["code"] == "tool_budget_exhausted"
+               else f'{label} · {status}（{record["code"]}）')
+    store.event(job_id, "agent_tool", message)
 
 
 async def _execute_pending(store, job_id, state, tools, check_cancel):
@@ -254,8 +258,18 @@ async def agent_step(store, service, job):
             if not await _execute_pending(store, job_id, state, tools, check_cancel):
                 return None
             continue
-        if state["calls"] >= MAX_CALLS or state["rounds"] >= MAX_ROUNDS:
-            state["stop_reason"] = "tool_limit" if state["calls"] >= MAX_CALLS else "round_limit"
+        if state["calls"] >= MAX_CALLS:
+            # A saved assistant turn can contain more calls than the remaining
+            # budget. Close each unexecuted call without consuming an attempt.
+            for call in state["pending"]:
+                outcome = _error("tool_budget_exhausted")
+                state["messages"].append(_tool_message(call, outcome))
+                _record(store, job_id, state, call["function"]["name"], outcome, None)
+            state["pending"].clear()
+            state["stop_reason"] = "tool_limit"
+            break
+        if state["rounds"] >= MAX_ROUNDS:
+            state["stop_reason"] = "round_limit"
             break
         definitions = tools.schemas()
         if not definitions:

@@ -926,11 +926,12 @@
         for (const entry of output.agent_trace) {
           if (!entry || typeof entry !== "object") continue;
           const tool = String(entry.tool || "未知工具"), status = String(entry.status || "未记录状态");
+          const overBudget = entry.code === "tool_budget_exhausted";
           const parts = [Object.hasOwn(toolLabels, tool) ? toolLabels[tool] : tool,
-            Object.hasOwn(traceStatuses, status) ? traceStatuses[status] : status];
+            overBudget ? "超出调用上限，未执行" : (Object.hasOwn(traceStatuses, status) ? traceStatuses[status] : status)];
           if (typeof entry.code === "string" && entry.code) parts.push(`状态码：${entry.code}`);
           if (Number.isInteger(entry.attempt) && entry.attempt > 0) parts.push(`第 ${entry.attempt} 次尝试`);
-          if (typeof entry.elapsed_ms === "number" && Number.isFinite(entry.elapsed_ms) && entry.elapsed_ms >= 0) parts.push(`${entry.elapsed_ms} 毫秒`);
+          if (!overBudget && typeof entry.elapsed_ms === "number" && Number.isFinite(entry.elapsed_ms) && entry.elapsed_ms >= 0) parts.push(`${entry.elapsed_ms} 毫秒`);
           if (["bm25_dense_rrf", "bilingual_bm25_dense_rrf"].includes(entry.retrieval?.mode)) parts.push("BM25＋BGE＋RRF");
           else if (entry.retrieval?.mode === "bm25_lexical") parts.push("BM25 词法检索");
           if (entry.retrieval?.semantic?.status === "failed_fallback") parts.push("本地向量检索降级");
