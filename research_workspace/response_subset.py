@@ -58,8 +58,9 @@ async def complete_supported_subset(service,result,reviews,evidence,payload,audi
         "removed_claim_ids":[source[i]["claim_id"] for i in removed],"retained_claim_ids":[c["claim_id"] for c in identities],
         "policy":"remove_rejected_extras_only_after_all_requested_positive_aspects_are_actually_answered"}
     audit.update(status="passed",claim_catalog=identities,claim_reviews=final_reviews,coverage_method="model_actual_answer_coverage")
+    final_positions = {original: current for current, original in enumerate(kept)}
     for repair in audit.get("claim_repairs",[]):
-        target=repair["repaired_claim_id"]
-        repair["result_claim_index"]=next((i for i,c in enumerate(identities) if c["claim_id"]==target),None)
-        repair["retained_in_final"]=repair["result_claim_index"] is not None
+        final_index = final_positions.get(repair.get("result_claim_index"))
+        repair.update(result_claim_index=final_index, retained_in_final=final_index is not None,
+            index_space="claim_index is zero-based in source_attempt.claims; result_claim_index is zero-based in final claim_catalog")
     return type(result).model_validate(rebuilt.model_dump()),used,audit

@@ -82,11 +82,10 @@ async def repair_rejected_claims(service, result, reviews, evidence, catalog, pa
                 count=len(section.claims)
                 section.claims=[c for i,c in enumerate(section.claims,offset) if i not in removed]
                 offset+=count
-    final=(rebuilt.claims if hasattr(rebuilt,"claims") else [c for s in rebuilt.sections for c in s.claims])
-    final_ids=[service._review_claim_identity(c,evidence)["claim_id"] for c in final]
+    result_positions = {original: current for current, original in enumerate(
+        index for index in range(len(claims)) if index not in removed)}
     for record in records[first_record:]:
-        target=record["repaired_claim_id"]
         record.update(source_attempt=len(audit["attempts"]),
             index_space="claim_index is zero-based in source_attempt.claims; result_claim_index is zero-based after local repairs",
-            result_claim_index=final_ids.index(target) if target is not None else None)
+            result_claim_index=result_positions.get(record["claim_index"]))
     return type(result).model_validate(rebuilt.model_dump())

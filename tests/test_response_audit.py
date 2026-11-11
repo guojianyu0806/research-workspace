@@ -186,6 +186,48 @@ def test_isolated_repair_freezes_supported_fact_and_rechecks_replacement_identit
     assert g["attempts"][-1]["reviews"][0]["method"]=="cached_isolated_review"
 
 
+@pytest.mark.parametrize("preceding", ["none", "relocated", "pruned"])
+def test_identical_repaired_claims_keep_their_own_result_positions(tmp_path, preceding):
+    fixed = answer().claims[0]
+    rejected = [answer("ORION预测99个词。", "Q2").claims[0],
+                answer("ORION预测100个词。", "Q2").claims[0]]
+    replacements = [ClaimRepairPayload(claim=fixed.model_copy(deep=True)) for _ in rejected]
+    if preceding == "relocated":
+        caution = answer("不同任务上的分数不能直接比较。", "Q2").claims[0]
+        rejected.insert(0, caution)
+        replacements.insert(0, ClaimRepairPayload(claim=None, limitation=caution.text))
+    elif preceding == "pruned":
+        optional = answer("ORION预测1000个词。", "Q2").claims[0]
+        rejected.insert(0, optional)
+        replacements.insert(0, ClaimRepairPayload(claim=optional.model_copy(deep=True)))
+    initial = AnswerPayload(status="answered", claims=rejected)
+    unsupported = [ClaimSupportPayload(verdict="unsupported", reason="Unsupported by this quotation.")
+                   for _ in rejected]
+    provider = Sequence([initial, *unsupported, *replacements,
+        ClaimSupportPayload(verdict="supported", reason="The attached passage establishes attention."),
+        CoveragePayload(unverified_statements=[], missing_aspects=[])])
+    service = IntelligenceService(Library(tmp_path), provider)
+    result, _, grounding = asyncio.run(service._generate_grounded(
+        "fixture", {"task": "qa", "question": "Architecture?", "allow_isolated_claim_repair": True,
+                    "require_request_coverage": True}, AnswerPayload, [source()]))
+
+    assert [claim.text for claim in result.claims] == [fixed.text, fixed.text]
+    repairs = grounding["claim_repairs"]
+    final = grounding["claim_catalog"]
+    assert final[0]["claim_id"] == final[1]["claim_id"]
+    expected_positions = [0, 1] if preceding == "none" else [None, 0, 1]
+    assert [record["result_claim_index"] for record in repairs] == expected_positions
+    assert [record["original_claim_id"] for record in repairs] == [
+        claim["claim_id"] for claim in grounding["attempts"][0]["claims"]]
+    for record in repairs[-2:]:
+        assert record["repaired_claim_id"] == final[record["result_claim_index"]]["claim_id"]
+    if preceding == "relocated":
+        assert result.message == caution.text
+    if preceding == "pruned":
+        assert grounding["optional_prune"]["removed_original_indices"] == [0]
+        assert [record["retained_in_final"] for record in repairs] == [False, True, True]
+
+
 def test_only_conditional_methodology_can_move_outside_fact_cards_without_being_deleted(tmp_path):
     valid=answer().claims[0]
     caution=answer("不同任务上的分数不能直接比较。","Q2").claims[0]

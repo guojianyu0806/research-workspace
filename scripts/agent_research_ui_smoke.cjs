@@ -72,6 +72,8 @@ async function main() {
                 {tool:'prepare_parse',status:'waiting',code:'parse_pending',attempt:2},
                 {tool:'import_paper',status:'error',code:attackText,attempt:3},
                 {tool:'search_evidence',status:'error',code:'tool_budget_exhausted',attempt:0,elapsed_ms:0},
+                {tool:'search_evidence',status:'error',code:'tool_result_too_large',attempt:1,elapsed_ms:24},
+                {tool:'build_citation_graph',status:'ok',code:'tool_result_too_large',attempt:1,elapsed_ms:18},
                 {tool:attackText,status:'unexpected_status',code:'unknown_tool',attempt:4}] : [],
               agent_public_papers:payload.kind === 'agent_research' ? [
                 {id:'arxiv:2601.00001v1',title:'SYNTHETIC public metadata '+attackText,source_url:'https://arxiv.org/abs/2601.00001v1',published:'2026-01-02'},
@@ -115,6 +117,10 @@ async function main() {
     check('persisted tool receipts show readable statuses attempts and reuse', ['检索原文证据','已完成','解析论文','等待中','导入公开论文','失败','第 3 次尝试','12 毫秒','复用已保存结果','BM25 词法检索','本地向量检索降级'].every(text => trace.includes(text)));
     const skipped = await page.locator('.rs-agent-trace li').filter({hasText:'tool_budget_exhausted'}).innerText();
     check('calls over budget are clearly marked as unexecuted', skipped.includes('超出调用上限，未执行') && !skipped.includes('毫秒') && !skipped.includes('次尝试'));
+    const oversized = await page.locator('.rs-agent-trace li').filter({hasText:'tool_result_too_large'}).allTextContents();
+    check('oversized tool results show a readable failure even with an inconsistent success status',
+      oversized.length === 2 && oversized.every(text => text.includes('失败：工具返回内容过大') &&
+        text.includes('第 1 次尝试') && text.includes('毫秒') && !text.includes('已完成') && !text.includes('未执行')), oversized);
     const toolLog = page.getByText('执行与工具记录',{exact:true});
     check('detailed tool events start collapsed after completion', !await toolLog.evaluate(el => el.parentElement.open));
     await toolLog.click();

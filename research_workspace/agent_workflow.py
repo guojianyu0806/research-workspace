@@ -129,10 +129,12 @@ def _planning_result(outcome):
 
 
 def _tool_message(call, outcome):
+    """Return the model message and the receipt shared by the trace and journal."""
     content = json.dumps(outcome, ensure_ascii=False, allow_nan=False)
     if len(content) > MAX_TOOL_RESULT_CHARS:
-        content = json.dumps(_error("tool_result_too_large"))
-    return {"role": "tool", "tool_call_id": call["id"], "content": content}
+        outcome = _error("tool_result_too_large")
+        content = json.dumps(outcome, ensure_ascii=False, allow_nan=False)
+    return {"role": "tool", "tool_call_id": call["id"], "content": content}, outcome
 
 
 def _record(store, job_id, state, name, outcome, current, *, reused=False):
@@ -197,9 +199,9 @@ async def _execute_pending(store, job_id, state, tools, check_cancel):
         store._yield_step(job_id, stage="agent_waiting_parse", message="等待后台解析完成，已保存工具调用。",
                           repeat_event=False)
         return False
-    outcome = _planning_result(outcome)
+    message, outcome = _tool_message(call, _planning_result(outcome))
     state["outcomes"][key] = {"attempt": current["attempt"], "result": outcome}
-    state["messages"].append(_tool_message(call, outcome))
+    state["messages"].append(message)
     state["pending"].pop(0)
     state["current"] = None
     _record(store, job_id, state, name, outcome, current, reused=reused)
@@ -262,8 +264,8 @@ async def agent_step(store, service, job):
             # A saved assistant turn can contain more calls than the remaining
             # budget. Close each unexecuted call without consuming an attempt.
             for call in state["pending"]:
-                outcome = _error("tool_budget_exhausted")
-                state["messages"].append(_tool_message(call, outcome))
+                message, outcome = _tool_message(call, _error("tool_budget_exhausted"))
+                state["messages"].append(message)
                 _record(store, job_id, state, call["function"]["name"], outcome, None)
             state["pending"].clear()
             state["stop_reason"] = "tool_limit"

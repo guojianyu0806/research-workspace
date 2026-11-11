@@ -155,6 +155,57 @@ def test_tool_budget_records_one_receipt_for_each_call_in_the_last_batch(app, mo
     assert not state["pending"] and state["current"] is None
 
 
+def test_oversized_tool_result_keeps_public_trace_equal_to_model_receipts(app, monkeypatch):
+    from research_workspace.agent_tools import AgentTools
+
+    library = app.state.library
+    document = library.import_document(pdf_bytes("Alpha", "The encoder has six layers."), "alpha.pdf")["document"]
+    while library.process_next_job():
+        pass
+    document_id = document["id"]
+    run_id = library.get_document(document_id)["available_run"]["id"]
+    job = request_job(app, question="Find the encoder structure.", document_ids=[document_id])
+    store = JobStore(library)
+    evidence = []
+    for index in range(12):
+        block_id = f"{index:032x}"
+        # Escaping can exceed the JSON limit even after each preview was clipped.
+        evidence.append({"evidence_id": f"E_{block_id}", "document_id": document_id, "run_id": run_id,
+                         "block_id": block_id, "page": 1, "document_title": '"' * 150,
+                         "text": "a" + "\\" * 599})
+    executed = []
+
+    async def execute(self, name, arguments, **kwargs):
+        executed.append(name)
+        return {"status": "ok", "code": "evidence_found", "evidence": evidence,
+                "selected_runs": {document_id: run_id}}
+
+    monkeypatch.setattr(AgentTools, "execute", execute)
+    arguments = {"query": "encoder structure", "document_ids": [document_id], "limit": 12}
+    receipt = {"status": "error", "code": "tool_result_too_large", "retryable": False}
+    received = []
+
+    def model(request):
+        last = model_input(request)["messages"][-1]
+        if last["role"] == "user":
+            return tool_turn("oversized", "search_evidence", arguments)
+        assert json.loads(last["content"]) == receipt
+        received.append(last["tool_call_id"])
+        if last["tool_call_id"] == "oversized":
+            return tool_turn("repeated", "search_evidence", arguments)
+        return stop_turn()
+
+    run_job(library, store, model)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        saved = client.get(f"/api/research/tasks/{job['id']}").json()["job"]
+    assert saved["status"] == "completed", saved["error"]
+    assert received == ["oversized", "repeated"] and executed == ["search_evidence"]
+    trace = saved["result"]["agent_trace"]
+    assert [(item["status"], item["code"]) for item in trace] == [(receipt["status"], receipt["code"])] * 2
+    assert trace[1]["reused"] is True
+    assert [entry["result"] for entry in store.load_agent_state(job["id"])["outcomes"].values()] == [receipt]
+
+
 def test_agent_repairs_an_unknown_short_citation_and_preserves_canonical_audit(app, monkeypatch):
     monkeypatch.setenv("RESEARCH_SEMANTIC_ENABLED", "0")
     library = app.state.library

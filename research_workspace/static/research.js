@@ -937,8 +937,10 @@
           if (!entry || typeof entry !== "object") continue;
           const tool = String(entry.tool || "未知工具"), status = String(entry.status || "未记录状态");
           const overBudget = entry.code === "tool_budget_exhausted";
+          const resultTooLarge = entry.code === "tool_result_too_large";
           const parts = [Object.hasOwn(toolLabels, tool) ? toolLabels[tool] : tool,
-            overBudget ? "超出调用上限，未执行" : (Object.hasOwn(traceStatuses, status) ? traceStatuses[status] : status)];
+            overBudget ? "超出调用上限，未执行" : resultTooLarge ? "失败：工具返回内容过大"
+              : (Object.hasOwn(traceStatuses, status) ? traceStatuses[status] : status)];
           if (typeof entry.code === "string" && entry.code) parts.push(`状态码：${entry.code}`);
           if (Number.isInteger(entry.attempt) && entry.attempt > 0) parts.push(`第 ${entry.attempt} 次尝试`);
           if (!overBudget && typeof entry.elapsed_ms === "number" && Number.isFinite(entry.elapsed_ms) && entry.elapsed_ms >= 0) parts.push(`${entry.elapsed_ms} 毫秒`);
