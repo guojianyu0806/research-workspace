@@ -242,7 +242,7 @@ Dockerfile.submission与compose.submission.yaml目前是部署草案，未构建
 
 源码与 Flash 验收以 `3b4d6676f269fcbac58a3f792f72182cd509df62` 为基线。源码 ZIP 收录 694 个受 Git 跟踪的文件，包含可恢复 codex/function-calling-agent 和 main 两个分支的 Git bundle。冻结版本有 322 条提交，随包提供恢复说明与 SHA-256 校验。
 
-评审可免登录浏览公开仓库、冻结源码和提交历史。核验时默认分支指向 2f1b1a6，包含 323 条提交，其中最后一条为提交文档更新。
+评审可免登录浏览公开仓库、冻结源码和提交历史。上次核验记录为提交 2f1b1a6，共 323 条提交。GitHub 当前提交数量以提交历史页为准。
 
 [GitHub 仓库首页](https://github.com/guojianyu0806/research-workspace) · [v6 冻结源码](https://github.com/guojianyu0806/research-workspace/tree/3b4d6676f269fcbac58a3f792f72182cd509df62) · [完整提交历史](https://github.com/guojianyu0806/research-workspace/commits/)
 

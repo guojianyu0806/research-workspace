@@ -4,9 +4,9 @@
 
 ## 代码仓库与版本
 
-评审可以免登录浏览仓库、源码和完整 Git 提交历史。公开仓库默认分支 `codex/function-calling-agent` 指向 `2f1b1a63b3c4e635adbe0259331d059750602d8f`，含 323 条可达提交。提交历史已与本地逐条核对。[GitHub 仓库](https://github.com/guojianyu0806/research-workspace) · [完整提交历史](https://github.com/guojianyu0806/research-workspace/commits/)
+评审可以免登录浏览仓库、源码和完整 Git 提交历史。上次核验记录为提交 `2f1b1a63b3c4e635adbe0259331d059750602d8f`，共 323 条提交，当时已与本地逐条核对。GitHub 当前提交数量以提交历史页为准。[GitHub 仓库](https://github.com/guojianyu0806/research-workspace) · [完整提交历史](https://github.com/guojianyu0806/research-workspace/commits/)
 
-应用与 Flash 验收冻结于 `3b4d6676f269fcbac58a3f792f72182cd509df62`。网盘源码 ZIP 提供该提交的 694 个跟踪文件和含 322 条可达提交的 Git bundle，可恢复候选分支和 `main`。仓库默认分支在应用冻结后多出一次文档提交。[v6 冻结源码](https://github.com/guojianyu0806/research-workspace/tree/3b4d6676f269fcbac58a3f792f72182cd509df62)
+应用与 Flash 验收冻结于 `3b4d6676f269fcbac58a3f792f72182cd509df62`。网盘源码 ZIP 提供该提交的 694 个跟踪文件和含 322 条可达提交的 Git bundle，可恢复候选分支和 `main`。[v6 冻结源码](https://github.com/guojianyu0806/research-workspace/tree/3b4d6676f269fcbac58a3f792f72182cd509df62)
 
 ## 正式表单第 5 至 7 项
 
