@@ -60,7 +60,7 @@ async def repair_rejected_claims(service, result, reviews, evidence, catalog, pa
             removed.add(i)
             continue
         allowed={b.evidence_id:catalog[b.evidence_id] for b in focused}
-        service._resolve_citation_spans([repaired.claim],allowed)
+        service._resolve_citation_spans([repaired.claim],allowed,evidence=focused)
         service._validate_claims([repaired.claim],focused)
         from .task_scope import attach_task_scope
         attach_task_scope(service,repaired.claim,evidence,catalog,payload.get("required_training_tasks",{}),audit,

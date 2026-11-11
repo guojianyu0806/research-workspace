@@ -38,6 +38,7 @@ PROMPT_DIRECTORY = Path(__file__).with_name("prompts")
 MAX_DOCUMENTS = 20
 MAX_EVIDENCE = 24
 MAX_EVIDENCE_CHARS = 5000
+MAX_CITATION_QUOTE_CHARS = 3000
 MAX_BLOCK_CHARS = 16000
 MAX_TRANSLATION_TEXT_CHARS = 200000
 MAX_OUTPUT_TOKENS = 8192
@@ -125,7 +126,7 @@ class RetrievalQueryPayload(StrictModel):
 
 class Citation(StrictModel):
     evidence_id: str = Field(min_length=1, max_length=80)
-    quote: str = Field(default="", max_length=3000)
+    quote: str = Field(default="", max_length=MAX_CITATION_QUOTE_CHARS)
     quote_id: str | None = Field(default=None, pattern=r"^Q[1-9][0-9]*$")
 
 
@@ -1113,7 +1114,8 @@ class IntelligenceService:
         return {"step": step, "detail": detail}
 
     @staticmethod
-    def _citation_spans(evidence: list[Evidence], *, omit_trailing_fragment: bool = False) -> dict[str, dict[str, str]]:
+    def _citation_spans(evidence: list[Evidence], *, omit_trailing_fragment: bool = False,
+                        whole_units_only: bool = False) -> dict[str, dict[str, str]]:
         """Number contiguous canonical passages; the model selects, never copies."""
         catalog = {}
         for block in evidence:
@@ -1125,8 +1127,10 @@ class IntelligenceService:
             units = ([block.text] if author_contact else
                 re.split(r"(?<=[.!?。！？])(?=\s+(?:[A-Z\u3400-\u9fff]|$))", block.text))
             spans = []
+            chunked = set()
             for unit in units:
                 remaining = unit.strip()
+                first_span = len(spans)
                 while len(remaining) > 1800:
                     cut = remaining.rfind(" ", 0, 1800)
                     if cut < 900:
@@ -1135,39 +1139,62 @@ class IntelligenceService:
                     remaining = remaining[cut:].strip()
                 if remaining:
                     spans.append(remaining)
-            catalog[block.evidence_id] = {f"Q{index + 1}": text for index, text in enumerate(spans)}
+                if whole_units_only and len(spans) > first_span + 1:
+                    # A length cut may leave the qualifier or negation in another
+                    # piece. Preserve subsequent quote numbers but omit every piece.
+                    chunked.update(range(first_span, len(spans)))
+            catalog[block.evidence_id] = {f"Q{index + 1}": text for index, text in enumerate(spans)
+                                          if index not in chunked}
             # Responses should not select a visibly unfinished final sentence after
             # complete prose (common at PDF page boundaries). Keep standalone
             # headings, formulas and tables; this is not a general grammar test.
             complete = lambda text: bool(re.search(r'''[.!?。！？]["'”’\)\]]*(?:\d{1,3}|\[\d+\])?\s*$''', text))
-            if (omit_trailing_fragment and len(spans) > 1 and not complete(spans[-1])
-                    and any(complete(text) for text in spans[:-1])):
-                del catalog[block.evidence_id][f"Q{len(spans)}"]
+            if spans and not complete(spans[-1]) and (
+                    (whole_units_only and block.truncated)
+                    or (omit_trailing_fragment and any(complete(text) for text in spans[:-1]))):
+                catalog[block.evidence_id].pop(f"Q{len(spans)}", None)
             # A bounded complete paragraph retains antecedents for statements
             # such as "this model" or "Training took" without changing source.
             paragraph=block.text.strip()
             if (len(spans)>1 and len(paragraph)<=1800 and complete(paragraph)
+                    and not (whole_units_only and block.truncated)
                     and re.search(r'\b(?:this|these|our|their)\b|\bTraining took\b',paragraph,re.I)):
                 catalog[block.evidence_id][f"Q{len(spans)+1}"]=paragraph
         return catalog
 
     @staticmethod
     def _resolve_citation_spans(claims: list[Claim], catalog: dict[str, dict[str, str]],
-                                references: dict[str, tuple[str, str]] | None = None) -> None:
+                                references: dict[str, tuple[str, str]] | None = None, *,
+                                evidence: list[Evidence] | None = None) -> None:
+        whole_blocks = {block.evidence_id: block.text.strip() for block in evidence or []
+                        if not block.truncated and len(block.text.strip()) <= MAX_CITATION_QUOTE_CHARS}
         for index, claim in enumerate(claims):
             for citation_index, citation in enumerate(claim.citations):
+                location = f"claim[{index}].citations[{citation_index}]"
                 if references:
                     reference = references.get(citation.evidence_id)
-                    location = f"claim[{index}].citations[{citation_index}]"
                     if reference is not None:
                         if citation.quote_id is not None:
                             raise ModelOutputError(f"{location} 使用短引用编号时，quote_id 必须为 null。")
                         citation.evidence_id, citation.quote_id = reference
                     elif citation.evidence_id not in catalog:
                         raise ModelOutputError(f"{location} 引用编号不在本次目录中。请选择 citation_spans 中列出的 reference_id。")
+                spans = catalog.get(citation.evidence_id, {})
                 if citation.quote_id is None:
-                    continue  # Legacy quote-only responses still face exact membership.
-                quote = catalog.get(citation.evidence_id, {}).get(citation.quote_id)
+                    # Accept an exact catalog span or a whole untruncated block
+                    # from quote-only responses, never a model-selected substring.
+                    original = _quote_normalized(citation.quote)
+                    match = next(((qid, text) for qid, text in spans.items()
+                                  if _quote_normalized(text) == original), None)
+                    if match is not None:
+                        citation.quote_id, citation.quote = match
+                        continue
+                    whole = whole_blocks.get(citation.evidence_id)
+                    if whole and citation.evidence_id in catalog and _quote_normalized(whole) == original:
+                        citation.quote = whole
+                        continue
+                    raise ModelOutputError(f"{location} 引文必须对应完整原文片段。请选择 citation_spans 中的片段编号。")
+                quote = spans.get(citation.quote_id)
                 if quote is None:
                     if references:
                         raise ModelOutputError(f"{location} 的原文片段编号不属于所选证据块。请改用对应片段的 reference_id。")
@@ -1696,7 +1723,7 @@ class IntelligenceService:
         frozen_review_message: str | None = None
         isolated_repair_result = None
         catalog = self._citation_spans(evidence, omit_trailing_fragment=(
-            structured_review or bool(payload.get("allow_isolated_claim_repair"))))
+            structured_review or bool(payload.get("allow_isolated_claim_repair"))), whole_units_only=True)
         if payload.get("allow_isolated_claim_repair"):
             audit["citation_catalog_policy"] = "omit_unfinished_trailing_prose; preserve_original_ids_and_standalone_headings_formulas_tables; bounded_complete_antecedent_paragraph_v1"
         named_identifiers = self._named_attribution_identifiers(catalog)
@@ -1745,7 +1772,7 @@ class IntelligenceService:
             if report_phase:
                 report_phase("review")
             try:
-                self._resolve_citation_spans(claims, catalog, references)
+                self._resolve_citation_spans(claims, catalog, references, evidence=evidence)
                 used = self._validate_claims(claims, evidence)
                 if payload.get("allow_isolated_claim_repair") and payload.get("required_training_tasks"):
                     from .task_scope import attach_task_scope
@@ -2073,7 +2100,7 @@ class IntelligenceService:
                 retrieval.get("queries", []), request=question,
                 max_evidence=min(64,max(24,8*len(document_ids)*len(explicit_aspects))), subject_names=names)
             retrieval["response_dimension_search"] = dimensions
-            spans = self._citation_spans(evidence, omit_trailing_fragment=True)
+            spans = self._citation_spans(evidence, omit_trailing_fragment=True, whole_units_only=True)
             training_requested = any(is_training_aspect(aspect) for aspect in explicit_aspects)
             for document in document_ids:
                 own = [block for block in evidence if block.document_id == document]
@@ -2302,7 +2329,7 @@ class IntelligenceService:
                     [block for block in retrieval["_snapshot_blocks"] if block.document_id == document], names.get(document, []))
                 if requirement:
                     review_state["training_requirements"][document] = requirement
-            spans = self._citation_spans(evidence, omit_trailing_fragment=True)
+            spans = self._citation_spans(evidence, omit_trailing_fragment=True, whole_units_only=True)
             for document in document_ids:
                 own = [block for block in evidence if block.document_id == document]
                 for aspect in request_aspects(instruction, retrieval["queries"]):

@@ -152,6 +152,100 @@ def test_span_and_supplied_quote_must_agree():
         IntelligenceService._resolve_citation_spans(claim, IntelligenceService._citation_spans([evidence()]))
 
 
+@pytest.mark.parametrize("quote_id", [None, "Q1"])
+def test_model_cannot_turn_a_negative_sentence_into_a_positive_verbatim_quote(tmp_path, quote_id):
+    fragment = "the model uses a decoder."
+    original = "We found no evidence that the model uses a decoder."
+    source = evidence().model_copy(update={"text": original})
+    bad = answer(fragment, fragment)
+    bad.claims[0].citations[0].quote_id = quote_id
+    good = answer(original, original)
+    provider = SequenceProvider([bad, good, coverage()])
+    service = IntelligenceService(Library(tmp_path), provider)
+    saved, _, audit = asyncio.run(service._generate_grounded("fixture", {
+        "task": "qa", "question": "Does the model use a decoder?", "require_request_coverage": True,
+    }, AnswerPayload, [source], use_citation_references=True))
+
+    assert saved.claims[0].text == original
+    assert saved.claims[0].citations[0].quote == original
+    assert saved.claims[0].citations[0].quote_id == "Q1"
+    first, final = audit["attempts"]
+    assert first["citation_validation"] == "failed" and not first["reviews"]
+    assert final["reviews"][0]["method"] == "exact_quote"
+    assert [schema for _, schema in provider.calls] == [AnswerPayload, AnswerPayload, CoveragePayload]
+
+
+def test_valid_span_still_requires_semantic_review_for_a_clipped_claim(tmp_path):
+    original = "We found no evidence that the model uses a decoder."
+    source = evidence().model_copy(update={"text": original})
+    clipped = answer("the model uses a decoder.", "")
+    clipped.claims[0].citations[0].quote_id = "Q1"
+    provider = SequenceProvider([clipped, review("unsupported", "The complete passage does not affirm use."),
+                                 answer(original, original)])
+    service = IntelligenceService(Library(tmp_path), provider)
+    saved, _, audit = asyncio.run(service._generate_grounded("fixture", {"task": "qa"},
+        AnswerPayload, [source], use_citation_references=True))
+
+    assert saved.claims[0].text == original
+    review_input, schema = provider.calls[1]
+    assert schema is ClaimSupportPayload
+    assert review_input["claim"]["citations"][0]["quote"] == original
+    assert audit["attempts"][0]["reviews"][0]["method"] == "isolated_review"
+    assert audit["claim_reviews"][0]["method"] == "exact_quote"
+
+
+def test_isolated_repair_rejects_a_clipped_quote_that_removes_negation(tmp_path):
+    original = "We found no evidence that the model uses a decoder."
+    source = evidence().model_copy(update={"text": original})
+    clipped = "the model uses a decoder."
+    provider = SequenceProvider([answer(clipped, original), review("unsupported", "The passage is negative."),
+                                 ClaimRepairPayload(claim=answer(clipped, clipped).claims[0])])
+    service = IntelligenceService(Library(tmp_path), provider)
+    with pytest.raises(ModelOutputError, match="完整原文片段") as caught:
+        asyncio.run(service._generate_grounded("fixture", {"task": "qa", "allow_isolated_claim_repair": True},
+            AnswerPayload, [source]))
+    assert caught.value.grounding_diagnostics["diagnostic_only"]
+    assert [schema for _, schema in provider.calls] == [AnswerPayload, ClaimSupportPayload, ClaimRepairPayload]
+
+
+def test_forced_length_cut_does_not_offer_a_negated_sentences_positive_suffix(tmp_path):
+    start = "We found no evidence in document "
+    relation = " that "
+    prefix = start + "x" * (1799 - len(start) - len(relation)) + relation
+    fragment = "ORION uses a decoder."
+    intact = "The model uses an encoder."
+    source = evidence().model_copy(update={"text": prefix + fragment + " " + intact})
+    bad = answer(fragment, "")
+    bad.claims[0].citations[0].quote_id = "Q2"
+    provider = SequenceProvider([bad, answer(intact, intact)])
+    service = IntelligenceService(Library(tmp_path), provider)
+    saved, _, audit = asyncio.run(service._generate_grounded("fixture", {"task": "qa"},
+        AnswerPayload, [source], use_citation_references=True))
+
+    offered = provider.calls[0][0]["evidence"][0]["citation_spans"]
+    assert [entry["text"] for entry in offered] == [intact]
+    assert saved.claims[0].text == intact
+    assert saved.claims[0].citations[0].quote_id == "Q3"
+    assert audit["attempts"][0]["citation_validation"] == "failed"
+    assert audit["claim_reviews"][0]["method"] == "exact_quote"
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+def test_complete_legacy_block_quote_remains_valid_only_without_truncation(tmp_path, truncated):
+    text = "The model uses attention. The model predicts removed words."
+    source = evidence().model_copy(update={"text": text, "truncated": truncated})
+    provider = SequenceProvider([answer(text, text), answer(text, text)])
+    service = IntelligenceService(Library(tmp_path), provider)
+    pending = service._generate_grounded("fixture", {"task": "qa"}, AnswerPayload, [source])
+    if truncated:
+        with pytest.raises(ModelOutputError, match="完整原文片段"):
+            asyncio.run(pending)
+    else:
+        saved, _, audit = asyncio.run(pending)
+        assert saved.claims[0].citations[0].quote == text
+        assert audit["claim_reviews"][0]["method"] == "exact_quote"
+
+
 def test_catalog_is_bounded_and_every_entry_is_an_exact_source_substring():
     source = evidence().model_copy(update={"text": ("Conﬁguration x² = 4; long-\nrange dependencies. " * 160)})
     spans = IntelligenceService._citation_spans([source])[source.evidence_id]

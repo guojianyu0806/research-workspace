@@ -113,7 +113,7 @@ def verified_single_training_task_role(service, identity, document, names, requi
 def training_task_requirements(service, source, names):
     """Recognize only an explicit named multi-task declaration plus numbered tasks."""
     ordered = service._reading_order(source)
-    catalog = service._citation_spans(service._excerpts(ordered), omit_trailing_fragment=True)
+    catalog = service._citation_spans(service._excerpts(ordered), omit_trailing_fragment=True, whole_units_only=True)
     numbers = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
                **{str(n): n for n in range(2, 7)}}
     for pos, block in enumerate(ordered):

@@ -177,7 +177,8 @@ def restored_plan(proposal, conditions):
 def _checked_finding(service, proposed, evidence):
     if proposed is None:return None
     claim=Claim.model_validate(proposed)
-    service._resolve_citation_spans([claim],service._citation_spans(evidence,omit_trailing_fragment=True))
+    catalog = service._citation_spans(evidence, omit_trailing_fragment=True, whole_units_only=True)
+    service._resolve_citation_spans([claim], catalog, evidence=evidence)
     service._validate_claims([claim],evidence)
     identity={'claim_index':0,**service._review_claim_identity(claim,evidence)}
     ids={c.evidence_id for c in claim.citations}
@@ -281,8 +282,10 @@ async def filter_step(store,service,job,result):
             save(key('evidence'),record,total,'已保存本方向独立的固定版本全文检索证据。')
             return None
         evidence=[Evidence.model_validate(x) for x in saved[key('evidence')]['result']['evidence']]
-        evidence_input=[{**b.model_dump(),'citation_spans':[{'quote_id':i,'text':text} for i,text in spans.items()]}
-            for b in evidence for spans in [service._citation_spans([b],omit_trailing_fragment=True)[b.evidence_id]]]
+        catalog = service._citation_spans(evidence, omit_trailing_fragment=True, whole_units_only=True) if evidence else {}
+        evidence_input=[{**block.model_dump(), 'citation_spans': [
+            {'quote_id': quote_id, 'text': text} for quote_id, text in catalog[block.evidence_id].items()
+        ]} for block in evidence]
         if key('findings') not in saved:
             record={'status':'unavailable','conditions':[]}
             if usable and evidence:

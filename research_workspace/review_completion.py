@@ -85,7 +85,7 @@ async def complete_review(service, result, evidence, retrieval, documents, instr
         search["retired_uncited_block_ids"] = [identifier for identifier in retired
                                                if identifier not in {block.block_id for block in evidence}]
         shared_state["review_evidence"] = evidence
-        catalog = service._citation_spans(evidence, omit_trailing_fragment=True)
+        catalog = service._citation_spans(evidence, omit_trailing_fragment=True, whole_units_only=True)
         frozen = [claim for section in result.sections for claim in section.claims]
         original_ids = [service._review_claim_identity(claim, evidence)["claim_id"] for claim in frozen]
         entry = {"round": round_number + 1, "missing_pairs": [
