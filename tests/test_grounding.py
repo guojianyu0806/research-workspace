@@ -250,6 +250,8 @@ _TRANSFORMER_LAYER_COMPOSITION = (
 )
 _GENERAL_TRANSDUCTION = "Most competitive neural sequence transduction models have an encoder-decoder structure."
 _LAYER_COUNTS_ONLY = "The encoder consists of six layers. The decoder consists of six layers."
+_NATIVE_LAYER_STACKS = ("The encoder is composed of a stack of N = 6 identical layers. "
+                        "The decoder is also composed of a stack of N = 6 identical layers.")
 _USAGE_CLAIM = "Transformer 的编码器和解码器均使用堆叠自注意力层和逐位置全连接层。"
 _COMPOSITION_CLAIM = "Transformer 的编码器和解码器均由堆叠自注意力层和逐位置全连接层构成。"
 _CLASSIFICATION_CLAIM = "Transformer 是序列转导模型。"
@@ -270,7 +272,8 @@ def comparison_evidence():
         "evidence_id": "E_transformer", "document_id": "transformer", "document_title": "Transformer",
         "run_id": "transformer-original-run", "block_id": "transformer-architecture", "page": 3,
         "text": " ".join((_TRANSFORMER_LAYER_USAGE, _TRANSFORMER_CLASSIFICATION,
-                          _TRANSFORMER_LAYER_COMPOSITION, _GENERAL_TRANSDUCTION, _LAYER_COUNTS_ONLY)),
+                          _TRANSFORMER_LAYER_COMPOSITION, _GENERAL_TRANSDUCTION, _LAYER_COUNTS_ONLY,
+                          _NATIVE_LAYER_STACKS)),
     })
     bert = evidence().model_copy(update={
         "evidence_id": "E_bert", "document_id": "bert", "document_title": "BERT", "run_id": "bert-original-run",
@@ -343,6 +346,22 @@ def test_comparison_scope_guard_accepts_explicit_support_on_the_same_card(tmp_pa
     assert [item["method"] for item in audit["attempts"][0]["reviews"]] == ["isolated_review", "isolated_review"]
     assert len(audit["attempts"]) == 1
     assert audit["status"] == "passed"
+
+
+def test_comparison_accepts_original_encoder_and_also_decoder_stack_definitions(tmp_path):
+    text = "Transformer 的编码器和解码器均由六个相同的层堆叠组成。"
+    result = comparison_answer(text, ["Q1", "Q7", "Q8"])
+    provider = SequenceProvider([result, review("supported"), review("supported"), coverage()])
+    service = IntelligenceService(Library(tmp_path), provider)
+    saved, _, audit = asyncio.run(service._generate_grounded(
+        "fixture", {"task": "compare", "question": "比较模型的层数和堆叠组成。"},
+        AnswerPayload, comparison_evidence(), required_documents=["transformer", "bert"]))
+
+    assert saved.claims[0].text == text
+    assert " ".join(citation.quote for citation in saved.claims[0].citations[1:]) == _NATIVE_LAYER_STACKS
+    assert audit["status"] == "passed" and len(audit["attempts"]) == 1
+    assert [entry["method"] for entry in audit["claim_reviews"]] == ["isolated_review", "isolated_review"]
+    assert audit["claim_model_calls"] == 2
 
 
 def test_unchanged_unsupported_claim_is_cached_but_never_accepted(tmp_path):

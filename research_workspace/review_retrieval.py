@@ -251,10 +251,10 @@ _POSITIVE_ACTION = re.compile(
     r"(?:(?:请|需要|然后|并|只|仅)\s*)*(?:比较|讨论|说明|解释|描述|介绍|分析|回答|给出|列出|展示|写)"
     r"|\b(?:(?:please|then|only)\s+)*(?:compare|discuss|explain|describe|analy[sz]e|give|list|show|write|cover)\b", re.I)
 _REQUEST_EXCLUSION = re.compile(
-    r"不要|不用|无需|不必|不需要|不要求|不讨论|不包括|勿"
+    r"不要|不用|无需|不必|不需要|不要求|不讨论|不包括|不涉及|不包含|不谈|不提|不介绍|不考虑|不展开|勿"
     r"|\b(?:do\s+not|don['’]t|no\s+need(?:\s+to)?|avoid|omit|skip|exclude"
     r"|without\s+(?:discussing|comparing|covering|including|describing|mentioning))\b", re.I)
-_FACTUAL_QUESTION = re.compile(r"是否|能否|为什么|为何|\b(?:whether|why|how)\b", re.I)
+_FACTUAL_QUESTION = re.compile(r"是否|能否|为什么|为何|如何|怎样|怎么|有没有|有无|是不是|\b(?:whether|why|how)\b", re.I)
 
 
 def positive_request_parts(request: str) -> list[str]:
@@ -264,7 +264,8 @@ def positive_request_parts(request: str) -> list[str]:
         excluded = False
         for clause in re.split(r"[，,]", sentence):
             clause = clause.strip()
-            if not clause or (excluded and not _POSITIVE_ACTION.match(clause)):
+            factual = bool(_FACTUAL_QUESTION.search(clause))
+            if not clause or (excluded and not (_POSITIVE_ACTION.match(clause) or factual)):
                 continue
             exclusion = _REQUEST_EXCLUSION.search(clause)
             prefix = clause[:exclusion.start()] if exclusion else ""

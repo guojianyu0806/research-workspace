@@ -15,6 +15,16 @@ from research_workspace.review_retrieval import (supplement_review_evidence, dir
     ("Compare architectures, but do not discuss training objectives or knowledge sources.", ["模型结构"]),
     ("Without discussing training objectives, describe external knowledge sources.", ["外部知识的作用"]),
     ("说明模型是否不需要特定训练任务。", ["训练目标"]),
+    ("只比较模型架构，不涉及训练目标和损失函数。", ["模型结构"]),
+    ("比较模型架构，不包含训练目标，不谈外部知识来源。", ["模型结构"]),
+    ("不展开训练目标，不介绍外部知识，解释模型架构。", ["模型结构"]),
+    ("说明模型是否不包含某个训练目标。", ["训练目标"]),
+    ("模型为何不涉及训练目标？", ["训练目标"]),
+    ("不讨论模型架构，训练目标能否不包含掩码预测？", ["训练目标"]),
+    ("不谈模型架构，为什么训练目标不包含掩码预测？", ["训练目标"]),
+    ("不要解释模型如何训练。", []),
+    ("不谈训练目标为什么不同。", []),
+    ("不要谈损失，模型为何需要训练目标？", ["训练目标"]),
 ])
 def test_explicit_opt_outs_do_not_become_requested_dimensions(question, expected):
     assert request_aspects(question, []) == expected

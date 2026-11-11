@@ -425,8 +425,9 @@ def _normalized(text: str) -> str:
 
 _ONE_CLAIM_PER_PAPER = re.compile(
     r"每篇(?:论文|文献)?\s*(?:(?:各|只|仅|分别|需)\s*)*(?:用|写|给出|出|输出|提供|保留)?\s*"
-    r"(?:一|1)\s*(?:句|条(?:结论|事实|论断))"
-    r"|\b(?:one|1)\s+(?:claim|fact|sentence|conclusion)\s+(?:per|for each)\s+(?:paper|document)\b",
+    r"(?:一|1)\s*(?:句|条\s*(?:(?:简短|简洁|简要|精炼)(?:的)?\s*)?(?:结论|事实|论断))"
+    r"|\b(?:one|1)\s+(?:(?:concise|short|brief)\s+)?(?:claim|fact|sentence|conclusion)\s+(?:per|for each)\s+(?:paper|document)\b"
+    r"|\bonly\s+(?:one|1)\s+(?:per|for each)\s+(?:paper|document)\b",
     re.IGNORECASE,
 )
 
@@ -1296,8 +1297,8 @@ class IntelligenceService:
                 r"解码[器端]\s*(?:和|与|及|以及|、)\s*编码[器端]|编解码(?:器|两端)|两端|"
                 r"\b(?:encoders? and (?:the )?decoders?|decoders? and (?:the )?encoders?|both ends)\b)")
         composition = (r"(?:\s*(?:均|都|皆)?\s*(?:是\s*)?(?:仅|只|完全|主要)?由[^。!?；;]{1,140}?(?:构成|组成)|"
-                       r"\s+(?:(?:both|each)\s+)?(?:consists?\s+(?:(?:entirely|solely|only)\s+)?of|"
-                       r"(?:is|are)\s+(?:(?:each|both|entirely|solely|only)\s+)?(?:composed|made up)\s+of|comprises?)\b)")
+                       r"\s+(?:(?:both|each|also)\s+)*(?:consists?\s+(?:(?:entirely|solely|only)\s+)?of|"
+                       r"(?:is|are)\s+(?:(?:each|both|also|entirely|solely|only)\s+)*(?:composed|made up)\s+of|comprises?)\b)")
         transduction = r"(?:\bsequence[-\s]+(?:transduction|transformation)\b|序列(?:转导|转换|变换))"
         claims_composition = re.search(pair + composition, text, re.I)
         claims_transduction = re.search(transduction, text, re.I)

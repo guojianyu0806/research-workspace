@@ -451,6 +451,14 @@
     function updatePageLimit() {
       const doc = state.documents.find((item) => item.id === single.value);
       if (doc) page.max = String(doc.page_count); else page.removeAttribute("max");
+      const value = page.valueAsNumber;
+      if (!page.disabled && Number.isInteger(value) && Number.isInteger(doc?.page_count) && doc.page_count > 0) {
+        const bounded = Math.min(doc.page_count, Math.max(1, value));
+        if (bounded !== value) {
+          page.value = String(bounded);
+          life.show(`已按当前文献调整为第 ${bounded} 页（共 ${doc.page_count} 页）。`);
+        }
+      }
     }
     function changeKind() {
       const taskKind = kind.value, isDocumentTranslation = taskKind === "translate", isTextTranslation = taskKind === "translate_text";
@@ -460,7 +468,9 @@
       updateAgentImport();
       documentsGroup.hidden = isDocumentTranslation || isTextTranslation;
       singleField.hidden = !isDocumentTranslation; scopeGroup.hidden = !isDocumentTranslation;
-      pageField.hidden = scope.value !== "page"; page.required = isDocumentTranslation && scope.value === "page";
+      const isPageTranslation = isDocumentTranslation && scope.value === "page";
+      pageField.hidden = !isPageTranslation; page.required = isPageTranslation; page.disabled = !isPageTranslation;
+      updatePageLimit();
       targetField.hidden = !isDocumentTranslation && !isTextTranslation;
       glossaryField.hidden = !isDocumentTranslation && !isTextTranslation;
       futureSearchOptions.hidden=taskKind!=='future_work';

@@ -425,8 +425,15 @@ def test_local_compare_handles_tool_error_and_keeps_original_quote_gate(app, cor
     assert result["grounding"]["mode"] == "isolated_claim_citations"
 
 
-@pytest.mark.parametrize("first_error", ["duplicate", "mixed_sources", "repeated_duplicate"])
-def test_compare_enforces_requested_one_claim_per_paper(app, first_error):
+@pytest.mark.parametrize(("first_error", "question"), [
+    ("duplicate", "正式回答只写两条事实，每篇各用一句中文改述。"),
+    ("mixed_sources", "正式回答只写两条事实，每篇各用一句中文改述。"),
+    ("repeated_duplicate", "正式回答只写两条事实，每篇各用一句中文改述。"),
+    ("duplicate", "每篇论文只给出一条简短结论。"),
+    ("duplicate", "Give one short conclusion per document."),
+    ("duplicate", "Only one per document."),
+])
+def test_compare_enforces_requested_one_claim_per_paper(app, first_error, question):
     library = app.state.library
     statements = {
         "Transformer": "The Transformer model architecture uses an encoder and a decoder.",
@@ -438,8 +445,8 @@ def test_compare_enforces_requested_one_claim_per_paper(app, first_error):
         pass
     ids = list(documents.values())
     job = request_job(app, document_ids=ids, agent_mode="compare",
-        question="正式回答只写两条事实，每篇各用一句中文改述。第一条说明 Transformer 的总体模型架构，"
-                 "第二条说明 BERT 的总体模型架构。每条引用对应论文的原文。不要讨论层数、训练目标或实验结果。")
+        question=question + " 第一条说明 Transformer 的总体模型架构，第二条说明 BERT 的总体模型架构。"
+                 "每条引用对应论文的原文。不要讨论层数、训练目标或实验结果。")
     generated = []
     checked = []
     store = JobStore(library)

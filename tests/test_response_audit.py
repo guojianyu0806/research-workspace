@@ -109,8 +109,14 @@ def test_exact_quotes_still_require_requested_coverage_when_public_answer_requir
     assert g["response_coverage"][0]["missing_aspects"]
 
 
-@pytest.mark.parametrize("request_training", [True, False])
-def test_public_comparison_searches_only_requested_dimensions_in_frozen_snapshot(tmp_path,monkeypatch,request_training):
+@pytest.mark.parametrize(("question", "request_training"), [
+    ("比较模型结构和训练目标。", True),
+    ("比较两篇论文的总体模型架构。不要讨论层数、训练目标、损失公式或实验准确率。", False),
+    ("只比较模型架构，不涉及训练目标和损失公式或实验准确率。", False),
+    ("比较模型架构，不包含训练目标、损失公式或实验准确率。", False),
+    ("比较模型架构，不谈训练目标、损失公式或实验准确率。", False),
+])
+def test_public_comparison_searches_only_requested_dimensions_in_frozen_snapshot(tmp_path,monkeypatch,question,request_training):
     def block(key,text,y):return source().model_copy(update={"evidence_id":"E_"+key,"block_id":key,
         "text":text,"bbox":[.1,y,.8,y+.04]})
     architecture=block("architecture","ORION models use attention.",.1)
@@ -147,8 +153,6 @@ def test_public_comparison_searches_only_requested_dimensions_in_frozen_snapshot
         return {"evidence":[architecture,other],"queries":[],"trace":[],"_snapshot_blocks":snapshot}
     monkeypatch.setattr(service,"retrieve_for_question",retrieve)
     monkeypatch.setattr(service,"_blocks",lambda *x:(_ for _ in ()).throw(AssertionError("Snapshot reopened")))
-    question = ("比较模型结构和训练目标。" if request_training else
-                "比较两篇论文的总体模型架构。不要讨论层数、训练目标、损失公式或实验准确率。")
     result=asyncio.run(service.answer(question,["doc","other"],mode="compare"))
     search = result["retrieval"]["response_dimension_search"]
     assert search["selected_runs"] == {"doc": "frozen", "other": "frozen"}
