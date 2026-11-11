@@ -337,13 +337,26 @@ def test_follow_up_reuses_the_saved_compare_runs_through_retry_and_model(app):
             assert all(block["run_id"] == pinned[block["document_id"]] for block in payload.get("evidence", []))
             return completion(payload)
         assert {tool["function"]["name"] for tool in call["tools"]} == {"search_evidence", "build_citation_graph"}
+        papers = json.loads(call["messages"][1]["content"])["selected_documents"]
+        assert papers == [{"document_id": "D1", "title": "Alpha"}, {"document_id": "D2", "title": "Beta"}]
+        refs = [paper["document_id"] for paper in papers]
         last = call["messages"][-1]
         if last["role"] == "user":
             return tool_turn("outside", "search_evidence", {"query": "encoder layers", "document_ids": [outsider]})
         outcome = json.loads(last["content"])
         if last["tool_call_id"] == "outside":
             assert outcome["code"] == "document_out_of_scope"
-            return tool_turn("fixed", "search_evidence", {"query": "encoder layers", "document_ids": selected})
+            return tool_turn("truncated", "build_citation_graph", {"document_ids": [selected[0], selected[1][:-1]]})
+        if last["tool_call_id"] == "truncated":
+            assert outcome["code"] == "document_out_of_scope"
+            return tool_turn("unassigned", "build_citation_graph", {"document_ids": [refs[0], "D3"]})
+        if last["tool_call_id"] == "unassigned":
+            assert outcome["code"] == "document_out_of_scope"
+            return tool_turn("graph", "build_citation_graph", {"document_ids": refs})
+        if last["tool_call_id"] == "graph":
+            assert outcome["code"] == "graph_built"
+            assert {node["document_id"]: node["run_id"] for node in outcome["graph"]["nodes"]} == pinned
+            return tool_turn("fixed", "search_evidence", {"query": "encoder layers", "document_ids": refs})
         assert outcome["selected_runs"] == pinned
         return stop_turn()
 
@@ -351,6 +364,9 @@ def test_follow_up_reuses_the_saved_compare_runs_through_retry_and_model(app):
     saved = store.get(child["id"])
     assert saved["status"] == "completed", saved["error"]
     assert {doc["document_id"]: doc["run_id"] for doc in saved["result"]["sources"]} == pinned
+    assert [entry["code"] for entry in saved["result"]["agent_trace"]] == [
+        "document_out_of_scope", "document_out_of_scope", "document_out_of_scope", "graph_built", "evidence_found"
+    ]
     assert store.get(parent["id"])["result"] == parent_result
 
 

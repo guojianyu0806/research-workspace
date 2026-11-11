@@ -6,7 +6,7 @@ import json
 import time
 
 from .agent_protocol import request_tool_turn
-from .agent_tools import AgentTools, decode_arguments
+from .agent_tools import AgentTools, decode_arguments, selected_document_references
 from .intelligence import Evidence, MAX_DOCUMENTS, ModelOutputError, _prompt
 from .library import LibraryError
 from .research_scope import validate_pinned_documents
@@ -74,11 +74,14 @@ def prepare_scope(library, payload: dict) -> dict:
 
 
 def _new_state(scope, question):
+    references = {identifier: reference for reference, identifier in selected_document_references(scope).items()}
+    model_documents = [{"document_id": references[item["document_id"]], "title": item["title"]}
+                       for item in scope["documents"]]
     return {
         "messages": [
-            {"role": "system", "content": _prompt("agent_tools_v1")},
+            {"role": "system", "content": _prompt("agent_tools_v2")},
             {"role": "user", "content": json.dumps({
-                "question": question, "mode": scope["mode"], "selected_documents": scope["documents"],
+                "question": question, "mode": scope["mode"], "selected_documents": model_documents,
                 "public_query": scope["public_query"], "may_check_subscription": bool(scope["subscription_id"]),
                 "import_limit": scope["import_limit"],
             }, ensure_ascii=False)},

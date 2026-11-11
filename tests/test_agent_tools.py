@@ -125,25 +125,29 @@ def test_selected_scope_and_account_boundary_apply_before_retrieval(setup,tmp_pa
     library,doc,tools = setup
     outside = add(library,"Unselected Private Article")
     foreign = add(Library(tmp_path/"other-account"),"Different Account Article")
-    for identifier in [outside["id"],foreign["id"]]:
+    for identifier in [outside["id"], foreign["id"], doc["id"][:-1], "D2", "d1", "D01", "D1 "]:
         result = invoke(tools,"search_evidence",{"query":"retrieval","document_ids":[identifier]})
         assert result["code"] == "document_out_of_scope"
     tools.scope["document_ids"].append(foreign["id"])
     assert invoke(tools,"build_citation_graph",{"document_ids":[foreign["id"]]})["code"] == "resource_unavailable"
     library.archive_document(doc["id"])
     assert invoke(tools,"search_evidence",{"query":"retrieval","document_ids":[doc["id"]]})["code"] == "document_unavailable"
+    assert invoke(tools,"search_evidence",{"query":"retrieval","document_ids":["D1"]})["code"] == "document_unavailable"
 
 
-def test_retrieval_keeps_fixed_run_and_canonical_evidence_without_model(setup):
+@pytest.mark.parametrize("use_reference", [False, True])
+def test_retrieval_keeps_fixed_run_and_canonical_evidence_without_model(setup, use_reference):
     library,doc,tools = setup
     fixed = doc["available_run"]["id"]
     library.create_run(doc["id"]); library.process_next_job()
     assert library.get_document(doc["id"])["available_run"]["id"] != fixed
-    result = invoke(tools,"search_evidence",{"query":"retrieval architecture","document_ids":[doc["id"]],"limit":4})
+    identifier = "D1" if use_reference else doc["id"]
+    result = invoke(tools,"search_evidence",{"query":"retrieval architecture","document_ids":[identifier],"limit":4})
     assert result["status"] == "ok" and result["evidence"]
+    assert result["selected_runs"] == {doc["id"]: fixed}
     assert result["retrieval"]["semantic"]["status"] == "disabled"
     assert result["retrieval"]["expansion"]["calls"] == 0
-    assert all(item["run_id"] == fixed for item in result["evidence"])
+    assert all((item["document_id"], item["run_id"]) == (doc["id"], fixed) for item in result["evidence"])
     for item in result["evidence"]:
         page = library.get_page(doc["id"],item["page"],fixed)
         original = next(block for block in page["blocks"] if block["id"] == item["block_id"])
@@ -159,9 +163,11 @@ def test_graph_exact_runs_and_damping_preserve_existing_default_api(setup):
     tools.scope["document_ids"].append(source["id"])
     tools.state["run_ids"][source["id"]] = source["available_run"]["id"]
     library.create_run(source["id"]); library.process_next_job()
-    result = invoke(tools,"build_citation_graph",{"document_ids":[source["id"],target["id"]]})
+    result = invoke(tools,"build_citation_graph",{"document_ids":["D2",target["id"]]})
     assert result["graph"]["method"]["damping"] == .85
     assert len(result["graph"]["edges"]) == 1
+    edge, = result["graph"]["edges"]
+    assert (edge["source"], edge["target"]) == (source["id"], target["id"])
     assert result["graph"]["edges"][0]["evidence_ids"]
     assert all(block["run_id"] == source["available_run"]["id"] for block in tools.state["evidence"])
     assert GraphService(library).build()["nodes"]

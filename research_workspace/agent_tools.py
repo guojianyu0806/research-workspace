@@ -23,7 +23,8 @@ from .library import LibraryError
 MAX_EVIDENCE = 48
 MAX_EVIDENCE_CHARS = 96000
 Identifier = Annotated[str, Field(min_length=1, max_length=150)]
-DocumentIds = Annotated[list[Identifier], Field(min_length=1, max_length=20)]
+DocumentIds = Annotated[list[Identifier], Field(min_length=1, max_length=20,
+    description="初始选中文献使用任务内短编号（如 D1），导入文献使用成功回执的完整文献 ID。")]
 
 
 class ToolInput(BaseModel):
@@ -54,7 +55,7 @@ class ImportPaper(ToolInput):
 
 
 class PrepareParse(ToolInput):
-    document_id: Identifier
+    document_id: Identifier = Field(description="本任务成功导入回执中的完整文献 ID。")
 
 
 def _error(code, *, retryable=False):
@@ -78,6 +79,11 @@ def decode_arguments(arguments):
     return json.loads(arguments, object_pairs_hook=_pairs, parse_constant=_reject_constant)
 
 
+def selected_document_references(scope: dict) -> dict[str, str]:
+    """Number only the initial documents in the trusted, ordered task scope."""
+    return {f"D{index}": identifier for index, identifier in enumerate(scope.get("document_ids", []), 1)}
+
+
 class AgentTools:
     """Service is already bound to the authenticated Library; scope is trusted.
 
@@ -92,8 +98,8 @@ class AgentTools:
         "import_paper": ImportPaper, "prepare_parse": PrepareParse,
     }
     _descriptions = {
-        "search_evidence": "检索本任务授权文献的固定解析版本，返回可定位的原文证据，不调用查询扩展模型。",
-        "build_citation_graph": "从授权文献固定版本的参考书目构建局域引用图谱。PageRank 阻尼为0.85，非学界总体影响力。",
+        "search_evidence": "检索授权文献的固定解析版本。初始文献请复制其短编号（如 D1、D2）；返回可定位原文，不调用查询扩展模型。",
+        "build_citation_graph": "从授权文献固定版本的参考书目构建局域图谱。初始文献请复制其短编号（如 D1、D2）；PageRank 阻尼为0.85。",
         "search_arxiv": "仅用用户授权的原始公开检索词查询 arXiv。不得改写成私有论文片段；返回元数据不等于全文证据。",
         "check_arxiv_updates": "检查用户明确选中的订阅；不能选择、创建或修改其他订阅。",
         "import_paper": "导入本任务已发现的公开论文，受本任务导入配额限制；不接受任意URL。",
@@ -156,7 +162,8 @@ class AgentTools:
                 return _error("source_validation_failed")
 
     def _documents(self, identifiers, *, require_run=True):
-        selected = list(dict.fromkeys(identifiers))
+        references = selected_document_references(self.scope)
+        selected = list(dict.fromkeys(references.get(identifier, identifier) for identifier in identifiers))
         allowed = set(self.scope.get("document_ids", [])) | {
             value["document_id"] for value in self.state["imported"].values()}
         if not set(selected) <= allowed:
