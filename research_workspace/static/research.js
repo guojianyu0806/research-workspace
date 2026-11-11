@@ -601,12 +601,28 @@
       }
     }
     for (const filter of [historyDocument, historyStatus]) life.on(filter, "change", () => { void loadHistory(); });
-    function openEvidence(source) {
+    function openEvidence(source, jobId, {showError = true} = {}) {
       if (typeof options.onEvidence !== "function") return Promise.resolve();
-      return Promise.resolve().then(() => options.onEvidence(source)).catch((error) => life.show(error.message || "无法打开原文出处。", true));
+      if (currentTask()?.id !== jobId) {
+        if (life.alive && !state.suspended && state.taskRead) life.show(state.taskRead.error
+          ? "请先重新读取或选择任务，再查看原文引用。" : "任务切换中，请等待读取完成后再查看原文引用。");
+        return Promise.resolve();
+      }
+      // Viewing this result is a newer intent than an earlier pending create.
+      // Keep its task as the return point if that creation completes offscreen.
+      const revision = ++state.selectionRevision;
+      return Promise.resolve().then(() => {
+        if (revision === state.selectionRevision && currentTask()?.id === jobId) return options.onEvidence(source);
+      }).catch((error) => {
+        if (revision === state.selectionRevision && currentTask()?.id === jobId) {
+          if (showError) life.show(error.message || "无法打开原文出处。", true);
+          else throw error; // Bilingual reading retains its own feedback handler.
+        }
+      });
     }
     function citationButtons(claim, sources, contextLabel = "") {
       const row = node("div", "rs-citations");
+      const jobId = state.selectedJob?.id;
       for (const [index,citation] of (Array.isArray(claim.citations) ? claim.citations : []).entries()) {
         const source = sources.get(citation.evidence_id); if (!source) continue;
         const caption=`第${source.page}页 · ${source.document_title || source.filename || "原文"}`;
@@ -614,7 +630,7 @@
         if(contextLabel)cite.setAttribute('aria-label',`${contextLabel}，引用${index+1}，${caption}`);
         cite.className = "rs-citation"; cite.title = citation.quote || "查看原文";
         cite.disabled = typeof options.onEvidence !== "function";
-        cite.addEventListener("click", () => openEvidence(source)); row.append(cite);
+        cite.addEventListener("click", () => openEvidence(source, jobId)); row.append(cite);
       }
       return row;
     }
@@ -706,7 +722,7 @@
       if (job.kind === "translate") {
         if (job.translationPaging) {
           output = job.translation_summary.result_metadata;
-          state.bilingual = window.ResearchBilingual.render(resultArea, output, { onEvidence: options.onEvidence,
+          state.bilingual = window.ResearchBilingual.render(resultArea, output, { onEvidence: typeof options.onEvidence === "function" ? source => openEvidence(source, job.id, {showError: false}) : undefined,
             sourceKey: job.id, paging: job.translationPaging, onStale: () => {
               if (state.selectedJob?.id === job.id) { state.selectedJob.translationPaging = null; state.resultStamp = ""; }
             } });
@@ -728,7 +744,7 @@
         const value = output || { blocks: job.completed_items || [], status: "partial", total_blocks: job.total || undefined,
           target_language: job.payload?.target_language || "zh" };
         if (window.ResearchBilingual) {
-          state.bilingual = window.ResearchBilingual.render(resultArea, value, { onEvidence: options.onEvidence, sourceKey: job.id });
+          state.bilingual = window.ResearchBilingual.render(resultArea, value, { onEvidence: typeof options.onEvidence === "function" ? source => openEvidence(source, job.id, {showError: false}) : undefined, sourceKey: job.id });
           addGlossary();
         } else {
           resultArea.replaceChildren(node("p", "rs-muted", "双语阅读组件未加载；可通过任务导出查看已保存结果。"));
@@ -904,7 +920,7 @@
               const open = button(); open.classList.add("rs-agent-edge-primary");
               open.append(node("span", "rs-agent-edge-title", label), node("span", "rs-agent-edge-page", `查看参考文献 · PDF 第 ${primary.source.page} 页`));
               open.disabled = typeof options.onEvidence !== "function";
-              open.addEventListener("click", () => openEvidence(primary.source)); item.append(open);
+              open.addEventListener("click", () => openEvidence(primary.source, job.id)); item.append(open);
               if (anchors.length > 1) {
                 const row = node("div", "rs-agent-edge-anchors");
                 for (const anchor of anchors) {
@@ -913,7 +929,7 @@
                   const cite = button(caption); cite.className = "rs-citation rs-agent-edge-anchor";
                   cite.setAttribute("aria-label", `${label}，${caption}`);
                   cite.disabled = open.disabled;
-                  cite.addEventListener("click", () => openEvidence(anchor.source)); row.append(cite);
+                  cite.addEventListener("click", () => openEvidence(anchor.source, job.id)); row.append(cite);
                 }
                 item.append(row);
               }
@@ -1175,6 +1191,7 @@
     }
     async function selectJob(id, reveal = false) {
       if (!life.alive || !id) return;
+      if (id !== state.requestedJobId) options.invalidateEvidenceNavigation?.();
       if (reveal) ++state.selectionRevision;
       const generation = ++state.readGeneration;
       const current = () => isCurrentRead(id, generation);
@@ -1235,6 +1252,7 @@
         if (!state.suspended) renderHistory();
         return false;
       }
+      if (job.id !== state.requestedJobId) options.invalidateEvidenceNavigation?.();
       ++state.selectionRevision; ++state.readGeneration;
       state.requestedJobId = job.id;
       if (state.suspended) {
