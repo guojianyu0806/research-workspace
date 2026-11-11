@@ -140,8 +140,13 @@ def test_job_export_keeps_actual_version_and_partial_result(application):
         store = JobStore(application.state.library)
         job = store.create('translate',{'document_id':'fixture','run_id':'original-run'})
         store.save_item(job['id'],'block-a',{'block_id':'block-a','source_text':'source','translated_text':'译文','page':1},2)
+        path = '/api/research/tasks/'+job['id']
+        active = browser.get(path).json()['job']
+        assert active['status'] == 'queued' and active['completed_items'] == []
         store.finish(job['id'],'failed',error='fixture interrupted')
-        exported = browser.get('/api/research/tasks/'+job['id']+'/export')
+        failed = browser.get(path).json()['job']
+        assert failed['status'] == 'failed' and failed['completed_items'][0]['block_id'] == 'block-a'
+        exported = browser.get(path+'/export')
         assert 'source' in exported.text and '译文' in exported.text
         assert 'failed' in exported.text
-        assert browser.post('/api/research/tasks/'+job['id']+'/retry').json()['job']['progress']==1
+        assert browser.post(path+'/retry').json()['job']['progress']==1

@@ -500,8 +500,7 @@ def build_router():
     @router.get('/research/tasks/{job_id}')
     def task(job_id:str,include_result:bool=True,library:Library=Depends(library_for)):
         store = JobStore(library)
-        summary = store.summary(job_id)
-        job = store.get(job_id,include_items=summary['status'] not in {'queued','running'},include_result=include_result)
+        job = store.get(job_id,include_items=None,include_result=include_result)
         if include_result:
             job['follow_up'] = follow_up_preview(store, job)
         return {'job': job}

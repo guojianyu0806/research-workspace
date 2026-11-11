@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import pytest
 
 from research_workspace.accounts import Accounts, AuthenticationError
@@ -41,6 +43,51 @@ def test_job_claim_cancel_recovery_and_progress(tmp_path):
     store.retry(job['id'])
     assert store.get(job['id'])['progress']==1
     assert store.get(job['id'])['status']=='queued'
+
+
+@pytest.mark.parametrize('read_method', ['get', 'summary'])
+def test_job_read_keeps_snapshot_when_tool_receipt_commits(tmp_path, monkeypatch, read_method):
+    reader = JobStore(Library(tmp_path))
+    writer = JobStore(Library(tmp_path))
+    job_id = reader.create('agent_research', {
+        'question': 'Check the imported document',
+        'agent_scope': {'document_ids': ['selected-document']},
+    })['id']
+    connect = reader.library._connection
+    committed = False
+
+    class InterleavedRead:
+        def __init__(self, db):
+            self.db = db
+
+        def execute(self, query, parameters=()):
+            nonlocal committed
+            if not committed and query.startswith('SELECT') and 'FROM research_job_events' in query:
+                # The first SELECT already read the queued job. A separate WAL
+                # connection claims it and commits a new source and its receipt.
+                assert writer.claim()['id'] == job_id
+                writer.save_agent_state(job_id, {'run_ids': {'imported-document': 'parsed-run'}},
+                                        events=(('agent_tool', 'Imported public paper'),))
+                committed = True
+            return self.db.execute(query, parameters)
+
+    @contextmanager
+    def connect_with_interleaving():
+        with connect() as db:
+            yield InterleavedRead(db)
+
+    monkeypatch.setattr(reader.library, '_connection', connect_with_interleaving)
+    snapshot = getattr(reader, read_method)(job_id)
+    assert committed
+    event = snapshot['events'][-1] if read_method == 'get' else snapshot['last_event']
+    assert snapshot['status'] == 'queued'
+    assert event['stage'] == 'queued'
+    assert snapshot['document_ids'] == ['selected-document']
+
+    latest = writer.get(job_id)
+    assert latest['status'] == 'running'
+    assert latest['events'][-1]['stage'] == 'agent_tool'
+    assert latest['document_ids'] == ['selected-document', 'imported-document']
 
 
 def test_history_metadata_uses_saved_scope_and_keeps_private_data_in_details(tmp_path):

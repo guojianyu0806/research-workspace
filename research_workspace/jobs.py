@@ -87,8 +87,10 @@ class JobStore:
         return self.get(job_id)
 
     def get(self,job_id,*,include_items=True,include_result=True):
+        """Read one task snapshot. With include_items=None, defer items for active tasks."""
         if not include_result:return self.header(job_id)
         with self.library._connection() as db:
+            db.execute('BEGIN')
             row = db.execute('SELECT * FROM research_jobs WHERE id=?',(job_id,)).fetchone()
             if row is None:
                 raise KeyError(job_id)
@@ -96,6 +98,8 @@ class JobStore:
             item['payload'] = json.loads(item['payload'])
             item['result'] = json.loads(item['result']) if item['result'] else None
             item['events'] = [dict(r) for r in db.execute('SELECT stage,message,created_at FROM research_job_events WHERE job_id=? ORDER BY id',(job_id,))]
+            if include_items is None:
+                include_items = item['status'] not in {'queued','running'}
             item['completed_items'] = [json.loads(r[0]) for r in db.execute('SELECT payload FROM research_job_items WHERE job_id=? ORDER BY rowid',(job_id,))] if include_items else []
             item['usage']=self.usage_store.summary(db,job_id)
             item['model_calls']=self.usage_store.calls(db,job_id)
@@ -132,8 +136,7 @@ class JobStore:
         if include_history:
             columns += f',{self.HISTORY_COLUMNS}'
         with self.library._connection() as db:
-            if include_stage_event:
-                db.execute('BEGIN')
+            db.execute('BEGIN')
             row = db.execute(f'SELECT {columns} FROM research_jobs WHERE id=?',(job_id,)).fetchone()
             if row is None:
                 raise KeyError(job_id)
@@ -266,13 +269,19 @@ class JobStore:
             row = db.execute('SELECT payload FROM research_agent_state WHERE job_id=?', (job_id,)).fetchone()
         return json.loads(row[0]) if row else None
 
-    def save_agent_state(self, job_id, state, *, wait_seconds=0):
+    def save_agent_state(self, job_id, state, *, wait_seconds=0, events=()):
+        """Save the protocol checkpoint and any associated public events together."""
         ready_at = (datetime.now(timezone.utc) + timedelta(seconds=wait_seconds)).isoformat() if wait_seconds else ''
         with self.library._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
             self._exists(db, job_id)
             db.execute('INSERT INTO research_agent_state VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET payload=excluded.payload,ready_at=excluded.ready_at',
                        (job_id, json.dumps(state, ensure_ascii=False, allow_nan=False), ready_at))
-            db.execute('UPDATE research_jobs SET updated_at=? WHERE id=?', (_now(), job_id))
+            now = _now()
+            db.execute('UPDATE research_jobs SET updated_at=? WHERE id=?', (now, job_id))
+            if events:
+                db.executemany('INSERT INTO research_job_events(job_id,stage,message,created_at) VALUES(?,?,?,?)',
+                               ((job_id, stage, message, now) for stage, message in events))
 
     def retry(self,job_id,*,include_result=True):
         with self.library._connection() as db:

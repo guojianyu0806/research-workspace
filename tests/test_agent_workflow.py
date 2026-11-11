@@ -641,6 +641,9 @@ def test_public_import_resumes_same_tool_id_without_repeating_network(app, monke
     assert len(library.list_documents()) == 1
     assert [item["code"] for item in result["agent_trace"]] == [
         "public_papers_found", "paper_imported", "parse_pending", "parse_ready", "evidence_found"]
+    event_codes = [event["message"].split("（")[-1].removesuffix("）")
+                   for event in saved["events"] if event["stage"] == "agent_tool"]
+    assert event_codes == [item["code"] for item in result["agent_trace"]]
     assert result["claims"][0]["citations"][0]["quote"] == "The fixture encoder has 7 layers."
 
 

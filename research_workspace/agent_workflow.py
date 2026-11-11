@@ -137,7 +137,7 @@ def _tool_message(call, outcome):
     return {"role": "tool", "tool_call_id": call["id"], "content": content}, outcome
 
 
-def _record(store, job_id, state, name, outcome, current, *, reused=False):
+def _record(state, name, outcome, current, *, reused=False):
     tool = name if name in TOOL_LABELS else "unknown"
     record = {
         "tool": tool, "status": outcome["status"], "code": outcome["code"],
@@ -155,7 +155,7 @@ def _record(store, job_id, state, name, outcome, current, *, reused=False):
     label = TOOL_LABELS.get(tool, "未注册工具")
     message = (f'{label} · 超出本次工具调用上限，未执行。' if record["code"] == "tool_budget_exhausted"
                else f'{label} · {status}（{record["code"]}）')
-    store.event(job_id, "agent_tool", message)
+    return "agent_tool", message
 
 
 async def _execute_pending(store, job_id, state, tools, check_cancel):
@@ -185,17 +185,16 @@ async def _execute_pending(store, job_id, state, tools, check_cancel):
         else:
             check_cancel()
             state["current"] = current
-            store.event(job_id, "agent_tool_started", f'正在{TOOL_LABELS.get(name, "校验工具调用")}。')
-            store.save_agent_state(job_id, state)
+            started = ("agent_tool_started", f'正在{TOOL_LABELS.get(name, "校验工具调用")}。')
+            store.save_agent_state(job_id, state, events=(started,))
             outcome = await tools.execute(name, arguments)
     if outcome["status"] == "waiting" and time.time() - current["started_at"] >= PARSE_WAIT_SECONDS:
         outcome = _error("parse_wait_timeout")
     if outcome["status"] == "waiting":
-        if not current["waiting"]:
-            _record(store, job_id, state, name, outcome, current)
+        events = () if current["waiting"] else (_record(state, name, outcome, current),)
         current["waiting"] = True
         state["current"] = current
-        store.save_agent_state(job_id, state, wait_seconds=1)
+        store.save_agent_state(job_id, state, wait_seconds=1, events=events)
         store._yield_step(job_id, stage="agent_waiting_parse", message="等待后台解析完成，已保存工具调用。",
                           repeat_event=False)
         return False
@@ -204,10 +203,10 @@ async def _execute_pending(store, job_id, state, tools, check_cancel):
     state["messages"].append(message)
     state["pending"].pop(0)
     state["current"] = None
-    _record(store, job_id, state, name, outcome, current, reused=reused)
-    store.save_agent_state(job_id, state)
+    events = [_record(state, name, outcome, current, reused=reused)]
     if current["waiting"]:
-        store.event(job_id, "agent_resume_parse", "固定版本解析检查已返回，继续执行研究任务。")
+        events.append(("agent_resume_parse", "固定版本解析检查已返回，继续执行研究任务。"))
+    store.save_agent_state(job_id, state, events=events)
     return True
 
 
@@ -254,6 +253,7 @@ async def agent_step(store, service, job):
         store.event(job_id, f"agent_answer_{phase}", ANSWER_PHASE_MESSAGES[phase])
 
     tools = AgentTools(service, scope=scope, state=state, check_cancel=check_cancel)
+    terminal_events = []
     while not state["stop_reason"]:
         check_cancel()
         if state["pending"] and (state["current"] or state["calls"] < MAX_CALLS):
@@ -266,7 +266,7 @@ async def agent_step(store, service, job):
             for call in state["pending"]:
                 message, outcome = _tool_message(call, _error("tool_budget_exhausted"))
                 state["messages"].append(message)
-                _record(store, job_id, state, call["function"]["name"], outcome, None)
+                terminal_events.append(_record(state, call["function"]["name"], outcome, None))
             state["pending"].clear()
             state["stop_reason"] = "tool_limit"
             break
@@ -288,7 +288,7 @@ async def agent_step(store, service, job):
             state["stop_reason"] = "model_finished"
         store.save_agent_state(job_id, state)
 
-    store.save_agent_state(job_id, state)
+    store.save_agent_state(job_id, state, events=terminal_events)
     check_cancel()
     if follow_up_runs is not None:
         validate_pinned_documents(store.library, follow_up_runs)
